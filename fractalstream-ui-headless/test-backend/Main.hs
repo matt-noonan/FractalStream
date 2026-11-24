@@ -11,6 +11,7 @@ import FractalStream.Console (transliterateConsole)
 import FractalStream.Backends (BackendId(..), backendPreference)
 import Data.DynamicValue (setValue')
 import qualified DragSpec
+import qualified ShowIfSpec
 import qualified GeometrySpec
 import qualified DiskSpec
 import qualified GroupSpec
@@ -34,4 +35,4 @@ main = do
   -- (on the CPU, as fsrun draws by default: these check how the CPU
   -- draws, coarse passes and all; ChainSpec sets its own orders)
   setValue' backendPreference [Cpu]
-  hspec (OverlaySpec.spec >> GeometrySpec.spec >> DiskSpec.spec >> GroupSpec.spec >> PixelSizeSpec.spec >> BlocksSpec.spec >> ChainSpec.spec >> DragSpec.spec >> TextSpec.spec >> ToolAutocolorSpec.spec >> TableSpec.spec >> HoistSpec.spec >> SphereDrawSpec.spec)
+  hspec (OverlaySpec.spec >> GeometrySpec.spec >> DiskSpec.spec >> GroupSpec.spec >> PixelSizeSpec.spec >> BlocksSpec.spec >> ChainSpec.spec >> DragSpec.spec >> TextSpec.spec >> ToolAutocolorSpec.spec >> TableSpec.spec >> HoistSpec.spec >> SphereDrawSpec.spec >> ShowIfSpec.spec)

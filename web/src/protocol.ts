@@ -221,6 +221,9 @@ export interface ViewerInfo {
   disk: boolean;
   /** Whether it shows the hyperbolic plane as the upper half-plane. */
   halfPlane: boolean;
+  /** Whether it's shown: its script's `show_if=` holds (or it has none).
+      A hidden viewer's window is hidden, and it isn't drawn. */
+  visible: boolean;
   /** Whether it can (a complex viewer). */
   complex: boolean;
   /** Whether it's smoothed. */
@@ -346,6 +349,8 @@ export type Message =
   | { type: "pointer"; viewer: number; text: string }
   /** The engine moved a viewer's view (a pixel's size in the canvas's pixels). */
   | { type: "view"; viewer: number; cx: number; cy: number; px: number; py: number; sphere: boolean; disk: boolean; halfPlane: boolean }
+  /** A viewer's `show_if=` came to hold (`on`), or stopped holding. */
+  | { type: "visible"; viewer: number; on: boolean }
   /** Where a viewer is, as "Jump to view…" shows it: x is null for ∞, and
       turn null on the plane. */
   | { type: "where"; viewer: number; x: number | null; y: number; turn: number | null; pixelSize: number;

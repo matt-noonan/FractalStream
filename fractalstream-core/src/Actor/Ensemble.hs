@@ -110,7 +110,7 @@ import Data.List (nub, (\\))
 import Data.Typeable (Typeable)
 
 import Language.Code (usedVarsInCode)
-import Language.Value.Evaluator (evaluate, evaluateInContext)
+import Language.Value.Evaluator (evaluate, evaluateInContext, HaskellValue)
 
 import Control.Exception (Exception, IOException, SomeException, SomeAsyncException, fromException, displayException, throwIO, try)
 import System.IO (hPutStrLn, stderr)
@@ -935,6 +935,12 @@ checkViewer configEnv env myTools ViewerFields{..} = do
   mIterPV <- parseMaybeAttrValue vfIterLimit
   mEscPV  <- parseMaybeAttrValue vfEscape
   mVanPV  <- parseMaybeAttrValue vfVanish
+  -- (`show_if=` is a truth value over the configuration)
+  parseMaybeAttrValue vfShowIf >>= mapM_ (\pv ->
+    withEnvFromMap (Map.fromList configEnv) $ \cenv -> withEnvironment cenv $
+      case showIfValue pv cenv of
+        Left err -> Left (NoSourceRange, err)
+        Right _ -> Right ())
 
   -- Checks the main code (and, below, its tools) against the
   -- environment they actually see. Needs its own explicit
@@ -1173,6 +1179,7 @@ data ViewerFields = ViewerFields
   , vfEscape    :: Maybe String
   , vfVanish    :: Maybe String
   , vfPixelVar  :: Maybe String
+  , vfShowIf    :: Maybe String
   , vfCode      :: ParsedCode
   }
 
@@ -1184,6 +1191,7 @@ viewerFields = \case
     , vfGroup = vsGroup, vfGroupCenter = vsGroupCenter
     , vfIterLimit = vsIterLimit, vfEscape = vsEscape, vfVanish = vsVanish
     , vfPixelVar = vsPixelVar
+    , vfShowIf = vsShowIf
     , vfCode = vsCode
     }
   _ -> Nothing
@@ -1570,7 +1578,11 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
   viewerGroupSource ViewerFields{..} >>=? \groupSource ->
   parseMaybeAttrValue vfIterLimit >>=? \mIterPV ->
   parseMaybeAttrValue vfEscape >>=? \mEscPV ->
-  parseMaybeAttrValue vfVanish >>=? \mVanPV -> do
+  parseMaybeAttrValue vfVanish >>=? \mVanPV ->
+  parseMaybeAttrValue vfShowIf >>=? \mShowIfPV ->
+  -- (`show_if=` must be a truth value over the configuration, as
+  -- 'checkViewer' checks too)
+  showIfProblem contextDyn mShowIfPV >>= \problem -> (\k -> maybe k (pure . Left . (NoSourceRange,)) problem) $ do
 
     cvTitleP     <- constParsed vfTitle (Right vfTitle)
     -- The view: a complex viewer can show the plane or the sphere, each
@@ -1758,6 +1770,7 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
               , cvOverlay = listToMaybe overlays
               , cvGroup = groupDyn
               , cvGroupProblem = groupProblem
+              , cvVisible = maybe (pure True) (`showIfDynamic` contextDyn) mShowIfPV
               }
 
 ------------------------------------------------------------
@@ -1989,7 +2002,13 @@ prepareComplexViewer backend autocolorState someContext configArgs ComplexViewer
         -- refreshing it is cheap next to re-rendering the viewer)
         vListenOverlay action = case (cvOverlay, someContext) of
           (Nothing, _) -> pure (pure ())
-          (Just _, SomeContext ctx) -> watchDynamic (anyChanged ctx) (\_ -> action)
+          -- (not while the viewer's hidden by its `show_if=`; and once
+          -- more when it's shown again)
+          (Just _, SomeContext ctx) -> do
+            let whenShown = getDynamic cvVisible >>= \shown' -> when shown' action
+            stopValues <- watchDynamic (anyChanged ctx) (\_ -> whenShown)
+            stopVisible <- watchDynamic cvVisible (\shown' -> when shown' action)
+            pure (stopValues >> stopVisible)
           where
             anyChanged :: forall env. Context DynamicValue' env -> Dynamic ()
             anyChanged = \case
@@ -2004,6 +2023,7 @@ prepareComplexViewer backend autocolorState someContext configArgs ComplexViewer
             vCodeWithArgs = CodeWithArgs (pure $ Right EmptyContext) Nothing
                               (ViewerChain [(Cpu, pure (Right (cpuViewer allGrey)))])
             vListen = const (pure $ pure ())
+            vVisible = cvVisible
 
         putStrLn ("Can't build viewer: " ++ err)
         pure (shown Viewer{..})
@@ -2026,10 +2046,14 @@ prepareComplexViewer backend autocolorState someContext configArgs ComplexViewer
                     EmptyContext  -> pure ()
               let cc = (\(SomeContext c) -> changed c) someContext
               -- (and redraw when colors already given out by autocolor
-              -- tables change)
-              stopValues <- watchDynamic cc (\_ -> action)
-              stopAutocolor <- watchDynamic (autocolorEdits autocolorState) (\_ -> action)
-              pure (stopValues >> stopAutocolor)
+              -- tables change; but a hidden viewer isn't drawn, until
+              -- it's shown again: see 'vVisible')
+                  whenShown = getDynamic cvVisible >>= \shown' -> when shown' action
+              stopValues <- watchDynamic cc (\_ -> whenShown)
+              stopAutocolor <- watchDynamic (autocolorEdits autocolorState) (\_ -> whenShown)
+              stopVisible <- watchDynamic cvVisible (\shown' -> when shown' action)
+              pure (stopValues >> stopAutocolor >> stopVisible)
+            vVisible = cvVisible
 
         withEnvironment env $ do
 
@@ -2227,6 +2251,36 @@ groupFoldDyn model cache src contextDyn = case src of
                                       (groupFromTable c t >>= prepareGroup model)
           writeIORef cache (Just (version, fd))
           pure fd
+
+-- | A viewer's @show_if=@, typed as a truth value in the configuration's
+-- environment (with the standard library's functions expanded).
+showIfValue :: forall env. KnownEnvironment env => ParsedValue -> EnvironmentProxy env
+            -> Either String (Language.Value.Value '(env, 'BooleanT))
+showIfValue pv _ = case expandStdlibCalls pv >>= \e -> atType e BooleanType of
+  TC (Left err) -> Left ("A viewer's `show_if=` says whether it's shown, from the configuration's \
+                         \values, so it must be a truth value that only uses them: " ++ ppError err)
+  TC (Right v) -> Right v
+
+-- | What's wrong with a viewer's @show_if=@, as the configuration is now,
+-- if anything (see 'showIfValue').
+showIfProblem :: Dynamic (Either String (SomeContext DynamicValue)) -> Maybe ParsedValue -> IO (Maybe String)
+showIfProblem contextDyn = \case
+  Nothing -> pure Nothing
+  Just pv -> getDynamic contextDyn <&> \case
+    Right (SomeContext ctx) -> let env = contextToEnv ctx in
+      withEnvironment env (either Just (const Nothing) (showIfValue pv env))
+    Left _ -> Nothing
+
+-- | Whether a viewer with this @show_if=@ is shown, as the configuration's
+-- values change. (A problem with the configuration, reported as such,
+-- leaves it shown.)
+showIfDynamic :: ParsedValue -> Dynamic (Either String (SomeContext DynamicValue)) -> Dynamic Bool
+showIfDynamic pv contextDyn = contextDyn >>= \case
+  Left _ -> pure True
+  Right (SomeContext ctx) -> let env = contextToEnv ctx in withEnvironment env $
+    case showIfValue pv env of
+      Left _ -> pure True
+      Right v -> evaluate v <$> mapContextM @DynamicValue @HaskellValue (\_ _ x -> x) ctx
 
 -- | A group's values, for a grouped viewer's code (see
 -- 'Actor.Viewer.Group.groupValueNames').

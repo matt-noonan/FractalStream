@@ -412,7 +412,9 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
       view <- getDynamic vView
       globe <- getDynamic vGlobe
       Isometry (ar :+ ai) (br :+ bi) <- getDynamic vIsometry
-      shown <- windowIsShown f
+      -- (hidden by its `show_if=`, it's still one the user has open:
+      -- that follows from the configuration, so isn't saved)
+      shown <- (||) <$> windowIsShown f <*> (not <$> getDynamic vVisible)
       -- Leave out what's the same as the default anyway, so that a
       -- saved project file only says what's special about each window.
       pure ViewerProperties
@@ -645,6 +647,15 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     -- A viewer whose window was closed when the project was saved
     -- stays closed (just hidden, as closing it does) until asked for.
     unless (startVisible || reused) (set f [ visible := False ])
+
+    -- A viewer whose `show_if=` doesn't hold is hidden, and shown again
+    -- (where it was, with its view) when it does. (It isn't drawn while
+    -- it's hidden: see 'Actor.Viewer.vVisible'.)
+    showIfNow <- getDynamic vVisible
+    unless showIfNow (set f [ visible := False ])
+    wxWatchDynamic host vVisible $ \case
+      True -> void (windowShow f)
+      False -> set f [ visible := False ]
 
 
     -- `requestRefresh` can be used from any thread to queue up a

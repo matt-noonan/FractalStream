@@ -92,6 +92,9 @@ import { start, Checks, kinds } from "./harness.mjs";
 //   issues    a render whose script indexes a list out of range
 //             (dev-tools/web/bad-index.fs): magenta pixels, and the viewer
 //             says why; gone with a render that's fine
+//   showif    a viewer with show_if= (dev-tools/web/show-if.fs): hidden,
+//             and not drawn, until a tool makes it hold; then shown and
+//             drawn; hidden again when it stops holding
 //   viewkind  an edit that changes a viewer's view (dev-tools/web/
 //             view-kind.fs), rebuilt: from the plane to the sphere, it's on
 //             the sphere (not kept on the plane, as its old view was), and
@@ -100,7 +103,7 @@ import { start, Checks, kinds } from "./harness.mjs";
 const args = process.argv.slice(2);
 let shots = null;
 if (args[0] === "--screenshots") { shots = args[1]; args.splice(0, 2); fs.mkdirSync(shots, { recursive: true }); }
-const all = { welcome, project, fit, links, drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, disk, group, progressive, menu, autocolor, tables, capture, path: pathMovie, panel, preferences, backends, issues, viewkind };
+const all = { welcome, project, fit, links, drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, disk, group, progressive, menu, autocolor, tables, capture, path: pathMovie, panel, preferences, backends, issues, viewkind, showif };
 const wanted = args.length ? args : Object.keys(all);
 for (const w of wanted) if (!all[w]) { console.error(`no section "${w}" (there are: ${Object.keys(all).join(", ")})`); process.exit(2); }
 
@@ -1088,6 +1091,33 @@ async function viewkind() {
   c.check(w?.kind === "sphere", `and the engine's view is the sphere's (${w?.kind})`);
   const plane = await rebuilt("");
   c.check(plane?.viewers[0].sphere === false, `rebuilt without it, it's back on the plane (${plane?.viewers[0].sphere})`);
+}
+
+async function showif() {
+  const p = await app.openFile(new URL("show-if.fs", import.meta.url).pathname);
+  const [mandel, julia] = p.viewers;
+  const juliaWin = page.locator(".window", { hasText: "Julia set" }).first();
+  const displayed = () => juliaWin.evaluate((w) => w.style.display !== "none");
+  const patchesOf = async (id) => (await app.messages("patch")).filter((m) => m.viewer === id).length;
+  await page.waitForTimeout(1500);
+  c.check(mandel.visible === true && julia.visible === false, `the engine says which are shown (${mandel.visible}, ${julia.visible})`);
+  c.check(!(await displayed()), "a viewer whose show_if= doesn't hold is hidden");
+  c.check(await patchesOf(julia.id) === 0, `and isn't drawn (${await patchesOf(julia.id)} patches)`);
+  // a click with the tool sets selected_C
+  await app.forgetMessages();
+  await app.send({ type: "selectTool", viewer: mandel.id, name: "Pick C" });
+  await app.waitForMessage("(m) => m.type === 'tool' && m.name === 'Pick C'", 10000);
+  await app.send({ type: "event", viewer: mandel.id, kind: 0, x1: -0.1, y1: 0, x2: -0.1, y2: 0 });
+  await app.waitForMessage(`(m) => m.type === 'visible' && m.viewer === ${julia.id} && m.on`, 10000);
+  await app.waitForMessage(`(m) => m.type === 'patch' && m.viewer === ${julia.id}`, 30000).catch(() => {});
+  c.check(await displayed(), "once it holds, the window is shown");
+  c.check(await patchesOf(julia.id) > 0, `and drawn (${await patchesOf(julia.id)} patches)`);
+  // and hidden again when it stops holding
+  await app.forgetMessages();
+  await app.send({ type: "set", name: "selected_C", text: "false" });
+  await app.waitForMessage(`(m) => m.type === 'visible' && m.viewer === ${julia.id} && !m.on`, 10000);
+  await page.waitForTimeout(300);
+  c.check(!(await displayed()), "and hidden again when it stops holding");
 }
 
 /** Drop a file's bytes on the page (any bytes: not only a project's text). */

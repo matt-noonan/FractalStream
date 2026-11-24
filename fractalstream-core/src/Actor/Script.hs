@@ -172,6 +172,9 @@ data ParsedStanza
         -- ^ The @colorizer=@ attribute, if given: the colorizer this
         -- viewer uses by default (see "Actor.Colorizer"), as written,
         -- e.g. @Rainbow@ or @Smooth(z)@.
+      , vsShowIf      :: Maybe String
+        -- ^ The @show_if=@ attribute, if given: a truth value, over the
+        -- configuration, for whether the viewer is shown, as written.
       , vsColoring    :: [ColorizerSetting]
         -- ^ The settings of an optional @coloring:@ block: values for its
         -- default colorizer's settings, in place of the colorizer's own
@@ -658,7 +661,7 @@ scriptGrammar defs = mdo
     (\ehdr mcoloringE code ->
         (\ViewerHeader{..} mcoloring ->
             ViewerStanza vhTitle vhCoord vhCenter vhPixelSize vhAspect vhView vhGroup vhGroupCenter vhIterLimit vhEscape vhVanish
-                         vhPixelVar vhColorizer (fromMaybe [] mcoloring) code (funNames defs))
+                         vhPixelVar vhColorizer vhShowIf (fromMaybe [] mcoloring) code (funNames defs))
         <$> ehdr <*> sequence mcoloringE)
     <$> viewerHeader <*> optional coloringBlock
     <*> (withCommon defs <$> viewerBody)
@@ -798,6 +801,7 @@ data ViewerHeader = ViewerHeader
   , vhVanish    :: Maybe String
   , vhPixelVar  :: Maybe String
   , vhColorizer :: Maybe String
+  , vhShowIf    :: Maybe String
   }
 
 data ToolHeader = ToolHeader
@@ -845,7 +849,7 @@ validateViewerHeader sr vhTitle attrs = do
       Left (sr, "The `" ++ k ++ "` attribute is no longer part of a `@viewer` stanza.")
   checkKnownAttrs sr
     [ "var", "xvar", "yvar", "center", "pixelSize", "aspect", "view", "group", "groupCenter"
-    , "limit", "escape", "vanish", "pixelVar", "colorizer" ]
+    , "limit", "escape", "vanish", "pixelVar", "colorizer", "show_if" ]
     attrs
   -- A beginner's first viewer doesn't need to think about a
   -- coordinate-variable name at all -- `z` is a reasonable default,
@@ -906,6 +910,7 @@ validateViewerHeader sr vhTitle attrs = do
     , vhVanish    = lookupAttr "vanish"   attrs <|> Just "vanishing_radius"
     , vhPixelVar  = lookupAttr "pixelVar" attrs <|> Just "pixel_size"
     , vhColorizer = lookupAttr "colorizer" attrs
+    , vhShowIf    = lookupAttr "show_if" attrs
     }
 
   where
