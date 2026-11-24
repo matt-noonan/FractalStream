@@ -126,11 +126,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                               no-op
                                                             set `[internal] iteration count` := [internal] fresh #25
                                                             set `[internal] stuck` := ([internal] fresh #25 = [internal] fresh #26)
-                                                      if (let [internal] [std] find_cycle #0.x @17:21 = [internal] [std] find_cycle.tortoise #0 in (|[internal] [std] find_cycle #0.x @17:21| < 2:R) and let [internal] [std] find_cycle #0.x @17:21 = [internal] [std] find_cycle.hare #0 in (|[internal] [std] find_cycle #0.x @17:21| < 2:R)) then:
+                                                      if (let [internal] [std] find_cycle #0.x @17:21 = [internal] [std] find_cycle.tortoise #0 in (|[internal] [std] find_cycle #0.x @17:21| < 2:R) and (let [internal] [std] find_cycle #0.x @17:21 = [internal] [std] find_cycle.hare #0 in (|[internal] [std] find_cycle #0.x @17:21| < 2:R) and let [internal] [std] find_cycle #0.x @17:21 = [internal] [std] find_cycle.tortoise #0 in let [internal] [std] find_cycle #0.y @17:21 = [internal] [std] find_cycle.hare #0 in (|([internal] [std] find_cycle #0.x @17:21 - [internal] [std] find_cycle #0.y @17:21)| < [internal] vanishing radius))) then:
                                                         block:
                                                           set `[internal] [std] find_cycle.tortoise #0` := [internal] [std] find_cycle.z #0
                                                           let `[internal] fresh #25` = 0 in:
-                                                            let `[internal] fresh #26` = [internal] iteration limit in:
+                                                            let `[internal] fresh #26` = [internal] [std] find_cycle.max_period #0 in:
                                                               block:
                                                                 if (!let [internal] [std] find_cycle #0.x @17:21 = [internal] [std] find_cycle.tortoise #0 in let [internal] [std] find_cycle #0.y @17:21 = [internal] [std] find_cycle.hare #0 in (|([internal] [std] find_cycle #0.x @17:21 - [internal] [std] find_cycle #0.y @17:21)| < [internal] vanishing radius) and ([internal] fresh #25 < [internal] fresh #26)) then:
                                                                   do-while (!let [internal] [std] find_cycle #0.x @17:21 = [internal] [std] find_cycle.tortoise #0 in let [internal] [std] find_cycle #0.y @17:21 = [internal] [std] find_cycle.hare #0 in (|([internal] [std] find_cycle #0.x @17:21 - [internal] [std] find_cycle #0.y @17:21)| < [internal] vanishing radius) and ([internal] fresh #25 < [internal] fresh #26)):
@@ -147,7 +147,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                             block:
                                                               set `[internal] [std] find_cycle.hare #0` := let [internal] f.z #0 = [internal] [std] find_cycle.tortoise #0 in (([internal] f.z #0 ^ 2:R:C) + C)
                                                               let `[internal] fresh #26` = 0 in:
-                                                                let `[internal] fresh #27` = [internal] iteration limit in:
+                                                                let `[internal] fresh #27` = [internal] [std] find_cycle.max_period #0 in:
                                                                   block:
                                                                     if (!let [internal] [std] find_cycle #0.x @17:21 = [internal] [std] find_cycle.tortoise #0 in let [internal] [std] find_cycle #0.y @17:21 = [internal] [std] find_cycle.hare #0 in (|([internal] [std] find_cycle #0.x @17:21 - [internal] [std] find_cycle #0.y @17:21)| < [internal] vanishing radius) and ([internal] fresh #26 < [internal] fresh #27)) then:
                                                                       do-while (!let [internal] [std] find_cycle #0.x @17:21 = [internal] [std] find_cycle.tortoise #0 in let [internal] [std] find_cycle #0.y @17:21 = [internal] [std] find_cycle.hare #0 in (|([internal] [std] find_cycle #0.x @17:21 - [internal] [std] find_cycle #0.y @17:21)| < [internal] vanishing radius) and ([internal] fresh #26 < [internal] fresh #27)):
@@ -164,7 +164,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                       no-op
                                                                     set `[internal] iteration count` := [internal] fresh #26
                                                                     set `[internal] stuck` := ([internal] fresh #26 = [internal] fresh #27)
-                                                              set `[internal] [std] find_cycle #0` := (True, ([internal] [std] find_cycle.hare #0, [internal] [std] find_cycle.λ #0))
+                                                              if let [internal] [std] find_cycle #0.x @17:21 = [internal] [std] find_cycle.tortoise #0 in let [internal] [std] find_cycle #0.y @17:21 = [internal] [std] find_cycle.hare #0 in (|([internal] [std] find_cycle #0.x @17:21 - [internal] [std] find_cycle #0.y @17:21)| < [internal] vanishing radius) then:
+                                                                block:
+                                                                  set `[internal] [std] find_cycle #0` := (True, ([internal] [std] find_cycle.hare #0, [internal] [std] find_cycle.λ #0))
+                                                              else:
+                                                                no-op
                                                       else:
                                                         no-op
                                           else:
