@@ -33,8 +33,9 @@
 //             and a drag of the view
 //   lattice   a viewer with a lattice (lattice=τ, dev-tools/web/lattice.fs):
 //             each pixel folded into the lattice's parallelogram, a tool's
-//             point folded too, its drawings in every tile, and a new τ
-//             followed
+//             point folded too, its drawings in every tile, a new τ
+//             followed; "Show fundamental domain" (the rest greyed out,
+//             drawings only in the domain), saved and reopened so
 //   disk      a disk viewer (view=disk, dev-tools/web/disk.fs): Navigate's
 //             drag moves the view by a hyperbolic translation (the point
 //             under the pointer stays under it); its menu has no "Show on
@@ -1428,6 +1429,37 @@ async function lattice() {
   await page.waitForFunction((n) => Number(document.querySelector(".viewer").dataset.frames) > n, frames, { timeout: 60000 });
   await page.waitForTimeout(500);
   c.check(isBlue(await pixelAt(at(0.6, 0.85))), "with τ = 0.5 + 0.9i, 0.6 + 0.85i is in the tile τ away");
+  // only the fundamental domain, from the menu: the rest greyed out, and
+  // the tool's drawings (the marker) only in the domain
+  await page.locator(".window").nth(0).locator(".window-menu-button").click();
+  const domainItem = page.locator(".window-menu button", { hasText: "Show fundamental domain" });
+  c.check(await domainItem.getAttribute("aria-checked") === "false", "its menu shows all of its tiles to begin with");
+  let framesBefore = await app.frames(0);
+  await domainItem.click();
+  await page.waitForFunction((n) => Number(document.querySelector(".viewer").dataset.frames) > n, framesBefore, { timeout: 60000 });
+  await page.waitForTimeout(1000);
+  const isDim = ([r, g, b]) => b > 100 && b < 200 && r > 60 && r < 140;
+  c.check(isRed(await pixelAt(at(0.1, -0.2))), "the fundamental domain is drawn as it was");
+  const dim = await pixelAt(at(1.0, -0.3));
+  c.check(isDim(dim), `a tile beside it is greyed out (${dim})`);
+  const single = await app.drawing(0);
+  c.check(single && single.filter((s) => s.k === "marker").length === 1, `the marker is only drawn in the domain (${kinds(single)})`);
+  // saved, with it, and reopened so
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => { window.showSaveFilePicker = undefined; });
+  const download = page.waitForEvent("download", { timeout: 10000 });
+  await app.projectMenu("Save project as");
+  const saved = fs.readFileSync(await (await download).path(), "utf8");
+  c.check(/tiled: false/.test(saved), "saved, with it");
+  const copy = path.join(os.tmpdir(), "lattice-domain.fs");
+  fs.writeFileSync(copy, saved);
+  await app.openFile(copy);
+  await page.waitForTimeout(1500);
+  c.check(isDim(await pixelAt(at(1.0, -0.3))), "reopened, it still shows only the fundamental domain");
+  await page.locator(".window").nth(0).locator(".window-menu-button").click();
+  c.check(await page.locator(".window-menu button", { hasText: "Show fundamental domain" }).getAttribute("aria-checked") === "true",
+          "and its menu says so");
+  await page.keyboard.press("Escape");
 }
 
 async function progressive() {

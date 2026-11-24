@@ -290,8 +290,12 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     -- remembered: its size, position, and current view all replace the
     -- defaults the viewer was built with.
     title0 <- getDynamic vTitle
+    -- (with a lattice or a group, whether its script starts it showing
+    -- all of its tiles: only a change from that is saved)
+    tiled0 <- traverse getDynamic vTiled
     (restored, clampViewer) <- restoreViewer wxLayout title0
     forM_ restored $ \ViewerProperties{..} -> do
+      forM_ vTiled $ \t -> mapM_ (setValue' t) vpTiled
       Dimensions (w0, h0) <- getDynamic vSize
       setValue' vSize (Dimensions (fromMaybe w0 vpWidth, fromMaybe h0 vpHeight))
       Dimensions (x0, y0) <- getDynamic vPosition
@@ -412,6 +416,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
       view <- getDynamic vView
       globe <- getDynamic vGlobe
       Isometry (ar :+ ai) (br :+ bi) <- getDynamic vIsometry
+      tiled <- traverse getDynamic vTiled
       -- (hidden by its `show_if=`, it's still one the user has open:
       -- that follows from the configuration, so isn't saved)
       shown <- (||) <$> windowIsShown f <*> (not <$> getDynamic vVisible)
@@ -430,6 +435,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
         , vpRotation = Nothing
         , vpZoom = Nothing
         , vpIsometry = if isJust (hyperbolicDisplay view) then Just [ar, ai, br, bi] else Nothing
+        , vpTiled = if tiled == tiled0 then Nothing else tiled
         }
 
     -- When the configuration's variables change (which ones there are,
@@ -2086,6 +2092,17 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
       -- (a viewer shows the plane, or the sphere, for good: its points
       -- are complex numbers, or points of Ĉ)
       ComplexCoordinate{} -> pure ()
+
+    -- (a viewer with a lattice or a group shows all of its tiles, or only
+    -- its fundamental domain, the rest greyed out)
+    forM_ vTiled $ \tiledV -> do
+      domainItem <- menuItem hamburgerMenu [ text := "Show fundamental domain", checkable := True ]
+      let refreshItem = getDynamic tiledV >>= \t -> set domainItem [ checked := not t ]
+      refreshItem
+      set domainItem [ on command := do
+        getDynamic tiledV >>= setValue' tiledV . not
+        refreshItem ]
+      modifyIORef' beforeMenu (>> refreshItem)
 
     smoothingSelection <- menuItem hamburgerMenu [ text := "Use subpixel smoothing"
                                                  , checkable := True

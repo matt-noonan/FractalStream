@@ -178,6 +178,10 @@ data ParsedStanza
         -- the viewer's points are folded by (see "Actor.Viewer.Lattice").
       , vsLatticeCenter :: Maybe String
         -- ^ The @latticeCenter=@ attribute: its parallelogram's center.
+      , vsTiled       :: Maybe String
+        -- ^ The @tiled=@ attribute: whether a viewer with a lattice or a
+        -- group starts out showing all of its tiles (@true@, the default)
+        -- or only its fundamental domain (@false@).
         -- ^ The @show_if=@ attribute, if given: a truth value, over the
         -- configuration, for whether the viewer is shown, as written.
       , vsColoring    :: [ColorizerSetting]
@@ -666,7 +670,7 @@ scriptGrammar defs = mdo
     (\ehdr mcoloringE code ->
         (\ViewerHeader{..} mcoloring ->
             ViewerStanza vhTitle vhCoord vhCenter vhPixelSize vhAspect vhView vhGroup vhGroupCenter vhIterLimit vhEscape vhVanish
-                         vhPixelVar vhColorizer vhShowIf vhLattice vhLatticeCenter (fromMaybe [] mcoloring) code (funNames defs))
+                         vhPixelVar vhColorizer vhShowIf vhLattice vhLatticeCenter vhTiled (fromMaybe [] mcoloring) code (funNames defs))
         <$> ehdr <*> sequence mcoloringE)
     <$> viewerHeader <*> optional coloringBlock
     <*> (withCommon defs <$> viewerBody)
@@ -809,6 +813,7 @@ data ViewerHeader = ViewerHeader
   , vhShowIf    :: Maybe String
   , vhLattice   :: Maybe String
   , vhLatticeCenter :: Maybe String
+  , vhTiled     :: Maybe String
   }
 
 data ToolHeader = ToolHeader
@@ -856,7 +861,7 @@ validateViewerHeader sr vhTitle attrs = do
       Left (sr, "The `" ++ k ++ "` attribute is no longer part of a `@viewer` stanza.")
   checkKnownAttrs sr
     [ "var", "xvar", "yvar", "center", "pixelSize", "aspect", "view", "group", "groupCenter"
-    , "limit", "escape", "vanish", "pixelVar", "colorizer", "show_if", "lattice", "latticeCenter" ]
+    , "limit", "escape", "vanish", "pixelVar", "colorizer", "show_if", "lattice", "latticeCenter", "tiled" ]
     attrs
   -- A beginner's first viewer doesn't need to think about a
   -- coordinate-variable name at all -- `z` is a reasonable default,
@@ -920,6 +925,7 @@ validateViewerHeader sr vhTitle attrs = do
     , vhShowIf    = lookupAttr "show_if" attrs
     , vhLattice   = lookupAttr "lattice" attrs
     , vhLatticeCenter = lookupAttr "latticeCenter" attrs
+    , vhTiled     = lookupAttr "tiled" attrs
     }
 
   where

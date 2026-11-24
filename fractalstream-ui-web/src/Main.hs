@@ -588,6 +588,7 @@ foreign export javascript "fs_smoothing" setSmoothing :: Bool -> IO ()
 foreign export javascript "fs_density" setDensity :: Double -> IO ()
 foreign export javascript "fs_sphere_shading" setSphereShading :: Double -> IO ()
 foreign export javascript "fs_viewer_smoothing" setViewerSmoothing :: Int -> Bool -> IO ()
+foreign export javascript "fs_viewer_tiled" setViewerTiled :: Int -> Bool -> IO ()
 foreign export javascript "fs_rendering" setRendering :: JSString -> IO ()
 foreign export javascript "fs_viewer_backend" setViewerBackend :: Int -> JSString -> IO ()
 foreign export javascript "fs_navigate" navigateTo :: Int -> Int -> IO ()
@@ -943,8 +944,9 @@ startProject how projectTitle fileName rebuilt carried ensemble = do
     let disk = isJust (hyperbolicDisplay kind)
         halfPlane = kind == HalfPlaneView
     visible <- getDynamic (vVisible viewer)
+    tiled <- traverse getDynamic (vTiled viewer)
     pure (Aeson.object [ "id" .= k, "title" .= title, "width" .= w, "height" .= h, "sphere" .= sphere, "disk" .= disk
-                       , "halfPlane" .= halfPlane, "visible" .= visible
+                       , "halfPlane" .= halfPlane, "visible" .= visible, "tiled" .= tiled
                        , "tools" .= tools, "complex" .= complex, "smooth" .= smooth, "colorizer" .= colorizer
                        , "animates" .= animates, "backends" .= map backendKey (viewerBackends viewer)
                        , "drawWith" .= fmap backendKey override ])
@@ -1208,6 +1210,15 @@ setViewerSmoothing :: Int -> Bool -> IO ()
 setViewerSmoothing k on = withViewerState k $ \vs -> do
   before <- atomicModifyIORef' (vsSmooth vs) (on,)
   when (before /= on) $ writeIORef (vsCovered vs) Nothing >> requestRender (vsSignal vs)
+
+-- | Whether a viewer with a lattice or a group shows all of its tiles
+-- ("Show fundamental domain", unchecked), or only its fundamental domain.
+setViewerTiled :: Int -> Bool -> IO ()
+setViewerTiled k on = withViewerState k $ \vs -> forM_ (vTiled (vsViewer vs)) $ \t -> do
+  before <- getDynamic t
+  -- (the viewer is drawn again, as it is when a value its code uses
+  -- changes: see 'Actor.Viewer.vListen')
+  when (before /= on) $ setValue t on
 
 ------------------------------------------------------------------------
 -- Views: history, navigating, the sphere or the plane
@@ -1654,6 +1665,10 @@ applySavedView v saved title = case saved of
         forM_ (KM.lookup "aspect" p) $ \case
           Aeson.Number a | a > 0 -> setValue (vAspect v) (realToFrac a)
           _ -> pure ()
+        -- (with a lattice or a group, whether it shows all of its tiles)
+        case (vTiled v, KM.lookup "tiled" p) of
+          (Just t, Just (Aeson.Bool b)) -> setValue t b
+          _ -> pure ()
         case KM.lookup "view" p of
           -- (a complex viewer's plane or sphere is its script's, so an
           -- older "plane" or "sphere" here is ignored)
@@ -1679,11 +1694,13 @@ withViews viewers = \case
       globe <- getDynamic (vGlobe v)
       Isometry (ar :+ ai) (br :+ bi) <- getDynamic (vIsometry v)
       aspect <- getDynamic (vAspect v)
+      tiled <- traverse getDynamic (vTiled v)
       let viewName = case kind of { SphereView -> "sphere"; PlaneView -> "plane"; DiskView -> "disk"; HalfPlaneView -> "halfplane" }
           extra = [ ("view", Aeson.String viewName) | kind /= vOriginalView v ]
                ++ [ ("aspect", Aeson.toJSON aspect) | aspect /= vOriginalAspect v ]
                ++ [ ("mobius", Aeson.toJSON (globeEntries globe)) | kind == SphereView ]
                ++ [ ("isometry", Aeson.toJSON [ar, ai, br, bi]) | isJust (hyperbolicDisplay kind) ]
+               ++ [ ("tiled", Aeson.Bool t) | Just t <- [tiled], tiled /= vOriginalTiled v ]
       pure $ case KM.lookup (fromString title) acc of
         Just (Aeson.Object p) -> KM.insert (fromString title) (Aeson.Object (foldr (uncurry KM.insert) p extra)) acc
         _ -> acc) vs (Map.elems viewers)
@@ -2041,8 +2058,9 @@ setToolField k name text = withViewerState k $ \vs -> readIORef (vsTool vs) >>= 
 postDrawings :: ViewerState -> IO ()
 postDrawings ViewerState{..} = do
   changed <- vDrawCmdsChanged vsViewer
-  -- (on the sphere or in the disk, drawings move with the view)
-  curved <- (/= PlaneView) <$> getDynamic (vView vsViewer)
+  -- (on the sphere or in the disk, drawings move with the view; with a
+  -- lattice, their copies are in the tiles the view shows)
+  curved <- (\kind -> kind /= PlaneView || isJust (vLattice vsViewer)) <$> getDynamic (vView vsViewer)
   when (changed || curved) $ do
     layers <- vDrawCmds vsViewer
     proj <- viewProjection (vOriginalView vsViewer) (vView vsViewer) (vGlobe vsViewer) (vIsometry vsViewer)

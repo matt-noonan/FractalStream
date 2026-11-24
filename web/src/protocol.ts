@@ -67,6 +67,9 @@ export type Request =
   | { type: "smoothing"; on: boolean }
   /** Whether a viewer is smoothed ("Use subpixel smoothing"). */
   | { type: "viewerSmoothing"; viewer: number; on: boolean }
+  /** Whether a viewer with a lattice or a group shows all of its tiles
+      (or only its fundamental domain: "Show fundamental domain"). */
+  | { type: "viewerTiled"; viewer: number; on: boolean }
   /** The order viewers try the backends in (the preference). */
   | { type: "rendering"; order: string[] }
   /** The backend a viewer tries first ("Draw with"), or none. */
@@ -224,6 +227,9 @@ export interface ViewerInfo {
   /** Whether it's shown: its script's `show_if=` holds (or it has none).
       A hidden viewer's window is hidden, and it isn't drawn. */
   visible: boolean;
+  /** With a lattice or a group, whether it shows all of its tiles (or
+      only its fundamental domain, the rest greyed out); null without. */
+  tiled: boolean | null;
   /** Whether it can (a complex viewer). */
   complex: boolean;
   /** Whether it's smoothed. */

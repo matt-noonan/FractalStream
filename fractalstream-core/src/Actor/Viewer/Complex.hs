@@ -33,6 +33,10 @@ data ComplexViewer = ComplexViewer
   , cvView :: ViewKind
     -- ^ How the viewer starts out showing its points (@view=@).
   , cvViewV :: Variable ViewKind
+  , cvTiledV :: Maybe (Variable Bool)
+  , cvOriginalTiled :: Maybe Bool
+    -- ^ With a lattice or a group, whether it shows all of its tiles
+    -- (or only its fundamental domain).
     -- ^ How it shows them now: a complex viewer can switch between the
     -- plane and the sphere.
   , cvGlobeV :: Variable Globe

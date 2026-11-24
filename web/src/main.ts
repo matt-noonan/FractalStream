@@ -2034,6 +2034,14 @@ class ViewerView {
     if (this.info.disk) {
       items.push({ kind: "toggle", label: "Show as the half-plane", on: this.info.halfPlane, toggle: () => this.navigate(3) });
     }
+    // (a viewer with a lattice or a group shows all of its tiles, or only
+    // its fundamental domain, the rest greyed out)
+    if (this.info.tiled !== null) {
+      items.push({ kind: "toggle", label: "Show fundamental domain", on: !this.info.tiled, toggle: () => {
+        this.info.tiled = !this.info.tiled;
+        send({ type: "viewerTiled", viewer: this.info.id, on: this.info.tiled });
+      } });
+    }
     // (a complex viewer's pixels are square)
     if (!this.info.complex) {
       items.push({ kind: "action", label: "Aspect ratio…", run: () => this.askAspect() });

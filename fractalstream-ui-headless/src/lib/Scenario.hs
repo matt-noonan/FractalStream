@@ -73,6 +73,9 @@ data Command
   | SetViewerPixelSize ParsedValue
   | SetViewerAspect ParsedValue
   | SetViewerView ViewKind
+  | SetViewerTiled Bool
+    -- ^ Whether a viewer with a lattice or a group shows all of its tiles,
+    -- or only its fundamental domain (the rest greyed out).
 
   | ClickAt Point
   | DoubleClickAt Point
@@ -236,6 +239,10 @@ scenarioGrammar = mdo
                        -- half-plane)
                        *> ((DiskView <$ kw "disk") <|> (HalfPlaneView <$ kw "halfplane")) <* nl)
 
+  setViewerTiled <- rule $
+    SetViewerTiled <$> (kw "set" *> kw "viewer" *> kw "tiled" *> kw "to"
+                        *> ((True <$ kw "true") <|> (False <$ kw "false")) <* nl)
+
   clickAt <- rule $
     ClickAt <$> (kw "click" *> kw "at" *> point <* nl)
   doubleClickAt <- rule $
@@ -296,7 +303,7 @@ scenarioGrammar = mdo
   command <- ruleChoice
     [ selectViewer, selectTool, deselectTool
     , setParameter, setToolParameter, setColorizerParameter
-    , resizeViewer, setViewerCenter, setViewerScreenCenter, setViewerPixelSize, setViewerAspect, setViewerView
+    , resizeViewer, setViewerCenter, setViewerScreenCenter, setViewerPixelSize, setViewerAspect, setViewerView, setViewerTiled
     , clickAt, doubleClickAt, dragViewFromTo, dragFromTo
     , pressButton, triggerRefresh, triggerTimer
     , waitForViewer

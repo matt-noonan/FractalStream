@@ -213,6 +213,11 @@ execCommand st = \case
       then switchView viewer kind >> pure (Right st)
       else pure (Left "only a viewer of the hyperbolic plane (`view=disk` or `view=halfplane`) can change its view")
 
+  -- (only a viewer with a lattice or a group has tiles)
+  SetViewerTiled tiled -> withCurrentViewer st $ \viewer -> case vTiled viewer of
+    Just v -> setValue' v tiled >> pure (Right st)
+    Nothing -> pure (Left "only a viewer with a `lattice=` or a `group=` has tiles to show or hide")
+
   SetViewerPixelSize pv -> withCurrentViewer st $ \viewer ->
     withResolved (resolveReal pv) $ \px -> getDynamic (vView viewer) >>= \case
       -- (on the sphere, the size of a pixel in the middle, on the sphere:

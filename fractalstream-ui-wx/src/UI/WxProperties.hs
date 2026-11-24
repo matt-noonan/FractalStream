@@ -96,6 +96,9 @@ data ViewerProperties = ViewerProperties
     -- ^ In the disk, the view of the hyperbolic plane (a and b of
     -- s ↦ (a s + b)/(b̄ s + ā): re a, im a, re b, im b). Its center and
     -- pixel size are then on the disk's screen plane.
+  , vpTiled     :: Maybe Bool
+    -- ^ With a lattice or a group, whether it shows all of its tiles,
+    -- when that isn't what its script's @tiled=@ starts it with.
   }
 
 instance FromJSON ViewerProperties where
@@ -105,6 +108,7 @@ instance FromJSON ViewerProperties where
     <*> o .:? "resizable" <*> o .:? "visible"
     <*> o .:? "center" <*> o .:? "pixel-size" <*> o .:? "aspect"
     <*> o .:? "view" <*> o .:? "mobius" <*> o .:? "rotation" <*> o .:? "zoom" <*> o .:? "isometry"
+    <*> o .:? "tiled"
 
 instance ToJSON ViewerProperties where
   toJSON ViewerProperties{..} = object $ catMaybes
@@ -115,6 +119,7 @@ instance ToJSON ViewerProperties where
     , ("aspect" .=) <$> vpAspect
     , ("view" .=) <$> vpView, ("mobius" .=) <$> vpMobius
     , ("isometry" .=) <$> vpIsometry
+    , ("tiled" .=) <$> vpTiled
     ]
 
 -- | Where a window without anything else worth remembering sits.

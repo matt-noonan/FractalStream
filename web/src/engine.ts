@@ -158,6 +158,7 @@ scope.addEventListener("message", async (e: MessageEvent<Request>) => {
       case "density": await engine.fs_density(r.value); break;
       case "sphereShading": await engine.fs_sphere_shading(r.value); break;
       case "viewerSmoothing": await engine.fs_viewer_smoothing(r.viewer, r.on); break;
+      case "viewerTiled": await engine.fs_viewer_tiled(r.viewer, r.on); break;
       case "rendering": await engine.fs_rendering(r.order.join(",")); break;
       case "viewerBackend": await engine.fs_viewer_backend(r.viewer, r.backend ?? ""); break;
       case "navigate": await engine.fs_navigate(r.viewer, r.what); break;
