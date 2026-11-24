@@ -160,10 +160,37 @@ simple mechanisms, fairly sophisticated tools can be built.
 | `activated` | The user switched to this tool |
 | `deactivated` | The user switched away from this tool |
 | `refresh` | The tool's viewer redrew itself, often because some parameter changed value |
-| `click` / `click at NAME` | The user clicked at a point, represented by `NAME` (or the viewer's variable, if `NAME` was not given) |
-| `click-or-drag` / `click-or-drag at NAME` | The user clicked or dragged to a point, represented by `NAME` (or the viewer's variable, if `NAME` was not given) |
-| `drag from NAME1 to NAME2` | The user continued a drag; the starting point is stored in the variable `NAME1` and the ending point in `NAME2` |
+| `click` | The user clicked at a point; and, if the tool has no `drag` block, the user is dragging |
+| `double-click` | The user double-clicked at a point |
+| `drag` | The user continued a drag (this runs each time the pointer moves) |
+| `drag-finished` | The user let go at the end of a drag |
 | `button TEXT` | The tool's button labeled with `TEXT` was pressed |
+| `timer TEXT every N ms` | Runs every `N` milliseconds while the tool is selected |
+
+A block for a click or a drag is given the point the user clicked or dragged to, by a keyword
+that only means that point inside the blocks it belongs to:
+
+| Keyword | Available in | Is |
+| ------- | ------------ | -- |
+| `click` | `on click:`, `on double-click:` | The point clicked (or, in `on click:` while dragging, where the pointer is now) |
+| `drag start` | `on drag:`, `on drag-finished:` | Where the drag started |
+| `drag end` | `on drag:`, `on drag-finished:` | Where the pointer is now, or where the drag ended |
+
+The point is the same kind of point as the viewer's: a complex number in a complex viewer, a pair
+of real numbers in a real viewer (so `(x, y) := click` takes it apart), and a point of `Ĉ` in a
+viewer of the Riemann sphere, ∞ included. To give it a name of your own, declare a variable:
+`w := click`.
+
+A tool with an `on click:` block but no `on drag:` block runs its `on click:` block while the user
+drags, too, with `click` wherever the pointer is. That's what you want for a tool that follows the
+pointer, like the "Orbits" tool in the {doc}`scripting tutorial <scripting>`. A tool with neither
+block leaves dragging to move the view.
+
+A tool doesn't see its viewer's own variable: in the tool for a viewer of `z`, there is no `z`
+unless the tool declares one. In a parameter plane (a viewer like `@viewer "Parameter plane" var=C`
+with `C` a configuration value), `C` in the viewer's code is each pixel's own value, but `C` in
+its tools is the configuration's value. So a tool that sets the parameter to the point clicked
+says so: `C <- click`.
 
 A tool can also have its own configuration panel, which only appears when the tool is activated.
 Any `@config`-style variable definitions immediately following the `@tool` header will go

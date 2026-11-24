@@ -118,6 +118,22 @@ integer division, use `//` instead.
 | `/` | Division | Integer/integer division results in a real |
 | `//` | Integer division | |
 | `^`  | Exponentiation | Fractional exponents are allowed, integer exponents will be optimized |
+| `mod(a, b)` | Remainder | For integers or real numbers; never negative (see below) |
+
+`mod(a, b)` is the remainder of dividing `a` by `b`: the number `r` with `a = b k + r` for a whole
+number `k`, and `0 ≤ r < |b|`. It is never negative, whatever the signs of `a` and `b`:
+`mod(-7, 3)` is 2, `mod(7, -3)` is 1, and `mod(-0.5, 1)` is 0.5. For integers, `a // b` is that
+`k`, so `a = b (a // b) + mod(a, b)`: `-7 // 3` is -3, and `7 // -3` is -2. Dividing by 0 gives 0
+both ways: `mod(a, 0)` and `a // 0` are both 0.
+
+`round(x)` is the whole number nearest `x`, with a half rounding away from zero: `round(2.5)` is 3
+and `round(-2.5)` is -3. `floor(x)` rounds down, and `ceiling(x)` (or `ceil(x)`) rounds up.
+
+A power of integers is an integer (`2^10` is 1024), unless the exponent is written as a negative
+number (`10^(-2)` is 0.01). With a variable exponent, as in `2^k`, the power is an integer, unless
+it is used as a real number (as in `2^k / 3`), where it is computed as a real power. Integers are
+64-bit, and wrap around when they overflow: `2^k` is 0 for `k` of 64 or more, so use `2.0^k`
+when `k` can be large.
 
 Piecewise-definitions can be made with `if CONDITION then VALUE1 else VALUE2`, as in
 
@@ -152,6 +168,9 @@ Inequality can be tested with the `!=` /  `=/=` / `≠` operator.
 - Rounding functions: `round`, `floor`, `ceiling` / `ceil`.
 - Functions for points of the Riemann sphere: `affine`, `chart`, `chordal` (see {ref}`riemann-sphere`).
 - Derivatives: `diff`, `partial` (see {ref}`derivatives`).
+- From the standard library (see {ref}`standard-library`): `min`, `max`, `clamp`, `compose`,
+  `newton_root`, `find_cycle`, `S`, `riemann_sum`, `residue`, `winding_number`, and color
+  functions like `cycle` and `rainbow`.
 
 (derivatives)=
 ### Derivatives
@@ -172,7 +191,7 @@ to a parameter, needs no extra bookkeeping:
 ``` fractalstream
 w := z
 iterate w -> w^2 + C until w escapes
-distance := |w| log |w| / |diff(z, w)|
+distance := |w| log |w| / |diff(w, z)|
 ```
 
 A few rules apply:
@@ -184,14 +203,14 @@ A few rules apply:
   `round`, `mod`, `//`, and, with respect to a complex variable, `|w|`, `re`, `im`, `conj` and
   `arg`.
 
-`diff(x, EXPRESSION, 2)` is the second derivative, and so on.
+`diff(EXPRESSION, x, 2)` is the second derivative, and so on.
 
 If you want the derivative of an expression *alone*, treating every other variable as a constant
-no matter how it was computed, use `partial(VARIABLE, EXPRESSION)` instead. For example,
-`partial(c, z^2 + c)` is always `1`.
+no matter how it was computed, use `partial(EXPRESSION, VARIABLE)` instead. For example,
+`partial(z^2 + c, c)` is always `1`.
 
-Both can also be written as fractions, just as on paper: `ⅆw/ⅆz` means `diff(z, w)`, and
-`∂w/∂z` means `partial(z, w)`. Higher derivatives are written with superscripts, as in `ⅆ²w/ⅆz²`,
+Both can also be written as fractions, just as on paper: `ⅆw/ⅆz` means `diff(w, z)`, and
+`∂w/∂z` means `partial(w, z)`. Higher derivatives are written with superscripts, as in `ⅆ²w/ⅆz²`,
 and mixed partial derivatives look like `∂²f/∂x∂y`. To raise a derivative to a power, use
 parentheses: `(ⅆw/ⅆz)^2`. In the editor, type `\d` and a space for `ⅆ`, and `\partial` for `∂`.
 
@@ -202,8 +221,8 @@ f(z) := z^2 + C
 
 # ...later...
 
-dz := diff(f, z)
-dC := diff(f, C)
+dz := diff(f(z), z)
+dC := diff(f(z), C)
 # dz is now equal to 2 z, and dC is equal to 1
 ```
 
@@ -221,7 +240,13 @@ iterate z -> z - f(z) / f'(z) until z stops
 color <- rainbow((1 + arg(z)/pi) / 2)
 ```
 
-Higher derivatives may be denoted with additional primes.
+Higher derivatives may be denoted with additional primes: `f''(z)` is the second derivative.
+The prime works on any function of one value: a function with a body (see {ref}`functions`), a
+parameter that has been given a function, and a composition, as in `(f ∘ g)'(z)` (see
+{ref}`composition`).
+
+The Schwarzian derivative $S_f(x)$ can be computed by the built-in function `S(f, x)`. For
+example, `S(z -> z^3, z)` is equal to `-4 / z^2`.
 
 (riemann-sphere)=
 ### Points of the Riemann sphere
@@ -277,31 +302,53 @@ way. To convert between the two types, use a type annotation: `(p : Ĉ)` or `(w 
 Configuration values can be points of the sphere too, as in `c : Ĉ := ∞` or `p : ℙ¹ := [1 : 0]`,
 as can lists and tuples of them. In a configuration text box, a point is written as `∞`, as a
 complex number, or (for `ℙ¹`) as `[a : b]`.
-=======
-The Schwarzian derivative $S_f(x)$ is can be computed by the built-in function
-`S(f, x)`. For example, `S(z -> z^3, z)` is equal to `-4 / z^2`.
 
-**TODO derivatives across statements**
-
-**TODO partial derivatives**
-
+(integration)=
 ### Integration
 
 FractalStream can approximate line integrals using Riemann sums, via the built-in function
 `riemann_sum`. In the real or complex domain, use `riemann_sum(γ, f, N)` to denote the
 Riemann sum that approximates the integral $\int_0^1 f(\gamma(t)) \gamma'(t) \mathrm{d} t$ using
-$N$ equally-spaced subdivisions of the $[0,1]$ interval.
+$N$ equally-spaced subdivisions of the $[0,1]$ interval. The path `γ` and the function `f` can
+be given by name, or written in place. For example, the integral of $1/z$ once around the unit
+circle is close to $2 \pi i$:
 
-**TODO example**
+``` fractalstream
+I := riemann_sum(t -> e^{2 π i t}, z -> 1 / z, 1000)
+```
 
-**TODO residue**
+The more subdivisions, the closer the sum is to the integral, and the longer it takes to work out.
 
-**TODO winding number**
+Two common uses of contour integrals have functions of their own:
 
+- `residue(f, z, r, N)` approximates the residue of `f` at `z`, as $\frac{1}{2 \pi i}$ times the
+  integral of `f` around the circle of radius `r` about `z`, using `N` subdivisions. The circle
+  should contain no other pole of `f`. For example, `residue(w -> 1 / (w^2 + 1), i, 0.5, 1000)` is
+  close to `-0.5 i`.
+- `winding_number(γ, z0, N)` is the number of times the closed path `γ` (with `γ(0) = γ(1)`) winds
+  around the point `z0`, counterclockwise, as a whole number. For example,
+  `winding_number(t -> e^{4 π i t}, 0, 1000)` is 2. It is rounded from an approximate integral, so
+  `N` has to be large enough for the path's shape, and `z0` mustn't be on the path.
+
+(newton)=
 ### Newton's method
 
-**TODO**
+`newton_root(f, x)` runs Newton's method on the function `f`, starting from `x`, and gives back a
+pair `(found, root)`: whether the iteration settled down, and where it ended up. The derivative is
+worked out for you, so `f` is all it needs, given by name or written in place:
 
+``` fractalstream
+(found, root) := newton_root(w -> w^3 - 1, z)
+color <- if found then rainbow(arg(root) / (2 π)) else black
+```
+
+The starting point has to be a real or complex number, so write `2.0` rather than `2`. It stops
+when a step moves less than `vanishing_radius` (the `=` test), or after `max_iters` steps.
+For your own limit and stopping test, use `full_newton_root(f, x, N, stop)`, which takes at most `N`
+steps, and stops when `stop(new, old)` holds for the latest step, as in
+`full_newton_root(w -> w^3 - 1, z, 50, (a, b) -> |a - b| < 10^(-12))`.
+
+(cycles)=
 ### Cycle detection
 
 FractalStream can detect approximate cycles in a dynamical system using a variation of
@@ -319,6 +366,18 @@ each other; `(x,y) -> x === y` would check if `x` and `y` are literally the same
 $z^2 + C$, this could be something like `z -> |z| < 2` or `z -> not (z escapes)`. If you don't
 want to restrict where to look for the cycle, use the constant characteristic function `z -> true`.
 
+`find_cycle` gives back a triple `(found, w, period)`: whether it found a cycle, a point `w` on it,
+and its period. It only finds a cycle that the orbit settles into within `max_period` steps after
+the warmup; otherwise (an orbit that escapes, or one that never settles down, as on a chaotic
+parameter), `found` is false. With the cycle in hand, its multiplier is the derivative of the
+`period`-th iterate at `w` (see {ref}`standard-library` for `compose`):
+
+``` fractalstream
+(found, w, period) := find_cycle(z -> z^2 + C, 0, 1000, 100, (x, y) -> x = y, z -> not (z escapes))
+if found:
+  multiplier := ⅆ(compose(z -> z^2 + C, period, w))/ⅆw
+```
+
 (colors-and-gradients)=
 ### Colors and gradients
 
@@ -335,6 +394,14 @@ Beyond the color constants, you can construct or modify existing colors using th
 | `hsl(H,S,L)` | Build a color from hue/saturation/lightness components, each in the range from 0 to 1 |
 | `invert C` | Invert the color `C` in RGB space |
 | `blend(T,C1,C2)` | Perform a linear blend in RGB space from color `C1` to color `C2` using parameter `0 <= T <= 1` |
+| `cycle(T,C1,C2)` | Go back and forth between `C1` (at whole numbers `T`) and `C2` (halfway between them) |
+
+The standard library also has *color wheels*: functions of a real number `T` that go once around
+a circle of colors as `T` goes from 0 to 1, and repeat with period 1. They are `rainbow` and
+`arenberg` (a phase wheel for domain coloring); `romao`, `bamo`, `broco`, `corko` and `viko` (cyclic
+scientific color maps); and `ice`, `fire`, `wheat`, `rose`, `forest`, `ocean`, `winter`, `spring`,
+`summer` and `fall`, which go out through five colors and back. For example,
+`color <- rainbow(iterations / 20)` goes once around the rainbow every 20 iterations.
 
 
 ### List and table indexing
@@ -403,6 +470,34 @@ whole and take it apart as you would any other tuple:
 (crit, found) := crits @ point c else (0, 0)
 ```
 
+(standard-library)=
+### The standard library
+
+Some of FractalStream's functions are written in the scripting language itself, in its *standard
+library*. Every project has them, as if they were in its `@common` stanza. A project can define any
+of these names for itself, and then its own definition is the one it uses; a new function added to
+the standard library in a later version of FractalStream never changes what an existing script
+means.
+
+| Function | Meaning |
+| -------- | ------- |
+| `min(x, y)`, `max(x, y)` | The smaller / larger of two numbers |
+| `clamp(x, lo, hi)` | `x`, moved into the range from `lo` to `hi` |
+| `compose(f, N, x)` | `f` applied `N` times to `x` (see {ref}`composition`) |
+| `newton_root(f, x)`, `full_newton_root(f, x, N, stop)` | Newton's method (see {ref}`newton`) |
+| `find_cycle(f, z, warmup, max_period, same, χ)` | Finding an attracting cycle (see {ref}`cycles`) |
+| `S(f, x)` | The Schwarzian derivative of `f` at `x` |
+| `riemann_sum(γ, f, N)`, `residue(f, z, r, N)`, `winding_number(γ, z0, N)` | Contour integrals (see {ref}`integration`) |
+| `cycle(t, c1, c2)` | A color going back and forth between `c1` (at whole numbers) and `c2` (halfway between) |
+| `rgb255(r, g, b)` | A color from red, green and blue components from 0 to 255 |
+| `rainbow(t)`, `arenberg(t)`, ... | Color wheels with period 1 (see {ref}`colors-and-gradients`) |
+| `domain_color(z)` | The usual domain coloring of the complex number `z` |
+| `pixel_size_at(p)` | The size of a screen pixel at the point `p` of the viewer, in its own coordinates |
+
+Functions with a body, like `compose` and `newton_root`, can be called anywhere a function with a
+body can (see {ref}`functions`). The standard library's source is
+[`fractalstream-core/stdlib/standard.fs`](https://github.com/matt-noonan/FractalStream/blob/main/fractalstream-core/stdlib/standard.fs).
+
 ## Scripts
 
 FractalStream scripts are made up of a sequence of commands, each of which is a single line.
@@ -447,6 +542,7 @@ can be replaced with the multiple assignment
 x, y <- x + y, x
 ```
 
+(functions)=
 ### Functions
 
 The `:=` notation can also be used to define functions:
@@ -482,8 +578,14 @@ Every way through the function's body must give it a value: in every branch of a
 needs an `else`), and not only inside a loop, which might not run at all. A function computes a
 value and does nothing else: its variables are its own, and it can't draw, change a
 configuration value, or set `color`. Its loops don't change the caller's `iterations` or `stuck`.
-For now, a function with a body can only be called as the whole right-hand side of an assignment,
-as in `x := f(a)` or `(x, y) := f(a)`.
+
+A function with a body is called like any other, anywhere in a script: `x <- x - f(x) / g(x)`,
+`if close(f(z), 0):`, `while f(z) > tol:`. It is only called when its value is needed, so in
+`if c then f(a) else b`, `f(a)` is only worked out when `c` holds. A few places can't call one,
+because they can only hold a single value: a one-line function's own definition (`g(x) := 1 + f(x)`
+is an error; make `g` a function with a body too), a configuration value's default, and the inside
+of `partial` (use `diff` instead). `diff` sees through a function with a body, and so does the prime
+notation, `f'(x)`.
 
 A function can also be given to another function, or to a script fragment, as an argument. Give
 it by name, or write it in place as `w -> ...` (or `(u, v) -> ...` for a function of two values):
@@ -501,7 +603,42 @@ define shade(h):
 run shade(n -> n / 20)
 ```
 
-Nothing special marks a parameter as a function: it is one wherever it is given a function.
+Nothing special marks a parameter as a function: it is one wherever it is given a function. Any
+function can be given to any function: a one-line function, a function with a body, or one written
+in place. Inside, a parameter given a function can also be differentiated with a prime:
+
+``` fractalstream
+newton_step(f, z) := z - f(z) / f'(z)
+
+w := newton_step(u -> u^2 - 4, 4)    # 2.5
+```
+
+(composition)=
+### Composing functions
+
+`f ∘ g` is the function that applies `g`, then `f`: `(f ∘ g)(x)` means `f(g(x))`. In the editor,
+type `\circ` and a space for `∘`. Each side can be a function's name (including built-in functions of
+one value, like `sin` or `exp`), a parameter that has been given a function, or, in parentheses, a
+function written in place or another composition. Compositions chain, so `f ∘ g ∘ h` means
+`f ∘ (g ∘ h)`. A composition can be applied, differentiated, or given to a function:
+
+``` fractalstream
+sq(a) := a a
+inc(a) := a + 1
+twice(g, v) := g(g(v))
+
+x := (sq ∘ inc)(2)              # 9
+y := (sin ∘ sq)(0)              # 0
+d := (sq ∘ inc)'(2)             # 6
+t := twice(sq ∘ inc, 1)         # 25
+```
+
+When `g` gives back a tuple, and `f` takes as many values as the tuple has parts, the parts become
+`f`'s arguments. This works for any call, not only for compositions: with `sub(a, b) := a - b` and
+`pair(t) := (t + 5, t)`, both `(sub ∘ pair)(2)` and `sub(pair(2))` are 5.
+
+To apply a function many times over, use the standard library's `compose(f, N, x)`, which applies
+`f` to `x`, `N` times: `compose(sq, 3, x)` is `sq(sq(sq(x)))`.
 
 ### If / else blocks
 
@@ -591,8 +728,18 @@ repeat:
 until |z| >= 10
 ```
 
-If you need your loop to run a specific number of times independent of the `max_iters` variable,
-add an `... up to N times` clause.
+To run a block a fixed number of times, use `repeat N times:`. Unlike the loops above, it has no
+condition, and always runs its body exactly `N` times (or not at all if `N` is 0 or less):
+
+``` fractalstream
+repeat 10 times:
+  z <- z^2 + C
+```
+
+For a single variable, `iterate z -> z^2 + C for 10 times` does the same in one line.
+
+If you need a loop with a condition to stop after a specific number of times, independent of the
+`max_iters` variable, add an `... up to N times` clause.
 
 ``` fractalstream
 iterate z -> z^2 + C until z escapes up to 1000 times
@@ -695,7 +842,51 @@ else:
 
 ### Lists
 
-**TODO**
+A list is written as a `,`-separated sequence of items in square brackets, like `[1, 2, 3]`. All
+of a list's items have the same type: `[1, 2, 3]` is a `List of ℤ`, `[1, 2, i]` is a `List of ℂ`,
+and `[[1], [2, 3]]` is a `List of (List of ℤ)`, but `[1, [2, 3]]` is an error. In a configuration
+text box, a list is written without the outer brackets, as `1, 2, 3`. An item given a type needs
+parentheses, as in `[(k : R), 2]`, because `[a : b]` is a point of `ℙ¹` (see {ref}`riemann-sphere`).
+
+| Operation | Meaning |
+| --------- | ------- |
+| `length(xs)` | The number of items in `xs` |
+| `xs @ k` | The `k`th item, counting from 1; an index outside the list stops the script |
+| `xs @@ k` | The `k`th item, counting cyclically, so `xs @@ 0` is the last item and `xs @@ -1` the one before it |
+| `range(a, b)` | The list of integers `[a, a + 1, ..., b]` |
+| `join(xs, ys, ...)` | The lists one after another |
+| `append(xs, x)` / `prepend(xs, x)` | `xs` with `x` added at the end / at the start |
+| `remove(xs, item -> P)` | `xs` without the items for which `P` holds |
+| `transform(xs, item -> E)` | Each item replaced by `E` (of the same type) |
+| `find(xs, item -> P, d)` | The first item for which `P` holds, or `d` if there isn't one |
+
+``` fractalstream
+xs : List of Z := [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+odds := remove(xs, k -> mod(k, 2) = 0)        # [1, 3, 5, 7, 9]
+squares := transform(odds, k -> k^2)          # [1, 9, 25, 49, 81]
+big := find(squares, k -> k > 10, 0)          # 25
+```
+
+To run some commands for each item of a list, use `for each`:
+
+``` fractalstream
+total := 0
+for each k in xs:
+  total <- total + k
+```
+
+Unlike `while` and `until` loops, a `for each` loop isn't limited by `max_iters`: it always goes
+through the whole list.
+
+To run some commands on the first item that matches a condition, and others if no item does, use
+`with first ... matching`:
+
+``` fractalstream
+with first k matching k^2 > 10 in xs:
+  x <- k
+else:
+  x <- 0
+```
 
 (language-tables)=
 ### Tables

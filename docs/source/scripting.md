@@ -13,7 +13,7 @@ Here is an example of a script that defines two viewers (the blue and purple box
 configuration variable (green box), and one tool (yellow box):
 
 ```{figure} _static/script-components.jpg
-[Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=vVKxTsMwEN37FaesKFGapkkaqRJSZ8Q3uM4lPZHalu2mtGJCLOzs_QckNiY-pV-CSUhbCksXNr_nu-f37my4JmVzeBgAXDeEa9Tg3Wyg2Ai2JG48x5NFzSzCFva7d9h-vMIVzGAlLNWOQ8OZQjM4E1BMsyW6TlA1E-hBw_R05oqcyvMLhBfpcilKqlpdg9aSqFpjM8hh__TYCvphMIyiceI0wiCN4yyhttVKWYN3q-dkjQel1NPzeFKAxlKjWeQOAThTBju-QMYtNc5k8euO18TvfKn9QrPq5y04QYXMdmwbeffWB_zmXNcalCRhgVnYnrI1CYRSy6VrtBKUxobkynwXnc9njXNfaalQW0Lz9WS3BdO9fhK2t8Pv83b-7XlzPLtFceyLfEiDCfqjA0yCJEY_OuAwGE2S7ASmUdZDjRVJcZSKgyRLx39Ds3Axchj2bs8-zoWmwyAeRun_mf4E&edit)
+[Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=vVKxTsMwFNz7FU9ZUaI0TZM0UiWkzohvcJ2X9onUtmw3pRETYmFn7z8gsTHxKf0STELaUli6sPnO9853eTFck7I5PAwArmvCDWrwbrZQbAVbETee48miZhahgf3uHZqPV7iCGayFpcpxaDhTaAZnBopptkI3CapiAj2omZ7OnMi5PL9AeJEvl6KkRetr0FoSizbYDHLYPz22hn4YDKNonDiPMEjjOEuoHbVSVuDd6jlZ40Ep9fS8nhSgsdRolrlDAC6UwY4vkHFLtQtZ_LrjFfG7jm0gn3b4hwicr0JmO1HbfPfW9_zmCs02oCQJC8xCc8pWJBBKLVdu0EpQGmuSa_MtOv9MG5z7SkuF2hKarye7ZZju9ZPOfRx-n7draM_b49nti2Mv8iENJuiPDjAJkhj96IDDYDRJshOYRlkPNS5IiqNVHCRZOv4bmqWrkcOwT3v2_1wYOgziYZT-X-hP&edit)
 ```
 
 In the next few sections, you will learn how to write basic FractalStream viewer scripts and define your own custom tools.
@@ -105,7 +105,7 @@ position of each iteration, and a line connecting each point on the orbit to the
 
 ```{code-block} fs
 ---
-caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=vVKxbsIwEN35ilPWyhEBmkAkpErMVb_BmAtYTWzrbKCJOlVdunfnHyp169RP4UtqEgIU0YGl273n9-7eXWIFSeNSeGYdgDuhVSbnENyX0JRL4k5qFfjHCaSwfX2B7ds7sKizk68krpFq-axUvJCC52BL67DYOaRDb0eoYLv5gur7A258l6VyMvccWsEN2vNGhhMv0DvB5FxhACtO44kXVfXk7lV9ndY5BA80lc4GkGka_5VVKyDMCO0i9QjAT7DY8CKX4pFpYjPi89-v4E0GuWvYOuPms02057xrDUZL5YA7qE7ZXCqEjHThjU6DIVxJvbR70flCa5wyQ9ogOYl2N7I5m22mX1isjSWe0vpwdV0ea39hga2IQRKOkPUPMA7jAbLeAXfD_igensCkN2wh4dz_JsdWgzAeJreXoV34dVKI2tRnX_zK0N1wEPWS_wv9Aw&edit)
+caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=vVK7bsJAEOz5ipHbyBavGLCEFIk6yjccxxpOse9OdwfEVqooTfr0_EOkdKnyKXxJDhsDQaSgSbczN7M7u7blRmiX4DlsAXdcyVTMEdwXqMulYU4oGfjHCRJsX1-wfXtH2Gnt5CtBazKVfFZIlgvOMtjCOsp3DuHI2wkltpsvlN8fuPFdltKJzHNkOdNkzxtpZlhO3gmdMUkBVsyMJ15UVpPbV_V1SmUIHsxUOBsgVWb8V1YlYSg1ZBeJR4CfYKnmeSb4Y82WSMY1_iWC92pirhZVUTefTbA9NzNsDa2EdGAO5SmbCUlIjcq90SloQyuhlnYvOt9rTdNQG6XJOEF2N7K-nq2nX9ivicWfkup-VV0ca39oTo0oxCAaUdg7wDiK-xR2D7gd9Ubx8AQOusMGGpr7v-XYqh_Fw8HtZWgXfp0EnSb12Ye_MnQ76ne6g_8L_QM&edit)
 ---
 @config "My configuration"
 C : C := -1
@@ -120,13 +120,18 @@ iterate z -> z^2 + C until z escapes
 @tool "Orbits" for="My dynamical system"
 on refresh:
   erase
-on click-or-drag:
+on click:
+  z := click
   repeat:
     z <- z^2 + C
     draw point at z
     draw line from z to previous z
   until z escapes
 ```
+
+In the `on click:` block, `click` is the point you clicked. Since the tool has no separate
+`on drag:` block, the same block also runs while you drag, with `click` following the pointer, so
+the orbit updates as you move around.
 
 ## Don't repeat yourself!
 
@@ -138,7 +143,7 @@ are available to all other parts of the script.
 
 ```{code-block} fs
 ---
-caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=vVJLTsMwEN33FKOsQChR0jRfqRJS14gzuOmktUhsy3ZbGrFCbFgiIXaIOyCxY8VRegKOgBv3R1Uk2LCbNzPvzZuxVSGp0DncuB2A84LXNWcmKk-aU1jeP0Lz8QpnMOjYKivpGJyLBdhwKommnDmmOIAclne3LccN2vYZxTnKtn20YKSmBalALZTGesWgGg0doYHly7sdOGWaViaBqiAC1aGKIJLUaGggKsLQgRmR_YFpatqx_u9FNecVOJdySLVyoOSy_5NLzkBiKVFNcoMAjLxCmy8qWly5XLojScbfq2BIAom22dbgy1trZ50wlDkITpkGoqHZz1aUIZSS14alOQiJM8qnat10uM2MVFNUqzn2SezEQQ6B50eJHwVxkgRZN0zNKwZeGCZx5gdpFGa9LPp8fnjqzHHoCskFSk2tkL24skpHzrJZqrjO25u38WIXm8cpcNPkQuJl6IZbGHtxD93uFvtemMXpHky66QZKHJvvtZPqeXGaRMehmph7mLU3rg8-yx9N-14v6Cb_Z_oL&edit)
+caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=vVJLTsMwEN33FKOsQChR0jRfqRJS14gzuOmEWiS2ZbstjVghNiyREDvUOyCxY8VRegKOgBv3R1Uk2LCbN35v5s2MVSGp0Dncuh2A84LXNWcmKk-aU1g-PEHz8QpnMOjYV1bSK3Au5mDDiSSacuaYxwHksLy_azVu0NKnFGcoW_pozkhNC1KBmiuN9UpBNRo5QgPLxbttOGGaViaBqiAC1WEVQSSp0chAVIShA1Mi-wNDatq2_u-Las4rcC7lkGrlQMll_yeXnIHEUqIa5wYBmPIKbb6oaHFtsw3kfYu_kcBoBRJtSa3PxVvrap0YSTIDwSnTQDQ0-9mKMoRS8tqoNAchcUr5RK1Jh0NNSTVBtepjL2M7DnIIPD9K_CiIkyTIumFqjhl4YZjEmR-kUZj1sujz5fG5M8OhKyQXKDW1hezila10ZDuboYqbvF19G893sblRgRuSC4mXoRtuYezFPXS7W-x7YRanezDpphso8cr8sl2pnhenSXQcqrHZhxl74_rgz_zRtO_1gm7yf6a_AA&edit)
 ---
 @common
 f(z) := z^2 + C
@@ -156,7 +161,8 @@ iterate z -> f(z) until z escapes
 @tool "Orbits" for="My dynamical system"
 on refresh:
   erase
-on click-or-drag:
+on click:
+  z := click
   repeat:
     z <- f(z)
     draw point at z

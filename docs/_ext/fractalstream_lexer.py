@@ -79,10 +79,11 @@ __all__ = ["FractalStreamLexer"]
 _RESERVED_KEYWORDS = {
     "if", "then", "else", "or", "and", "not",
     "escapes", "escaped", "vanishes", "vanished", "stops", "stopped",
-    "previous", "times",
+    "previous", "times", "to",
 }
 _RESERVED_CONSTANTS = {"e", "𝑒", "pi", "π", "i", "𝑖", "true", "false"}
-_RESERVED_PSEUDO = {"iterations", "stuck"}
+# (`click`, `drag start` and `drag end` are a tool handler's points)
+_RESERVED_PSEUDO = {"iterations", "stuck", "click", "drag"}
 _RESERVED_FUNCTIONS = {
     "text", "append", "prepend", "join", "remove", "find", "transform",
     "range", "length", "diff",
@@ -103,7 +104,9 @@ _KEYWORDS = {
 
 # Language.Editor.Highlight.builtinFunctions, from the tables in
 # Language.Value.Builtins (realFunctions, commonFunctions,
-# complexFunctions, roundingFunctions, wheels) and the extras listed there.
+# complexFunctions, roundingFunctions), the standard library's functions
+# (Language.Stdlib.stdlibFunctionNames: fractalstream-core/stdlib/standard.fs,
+# less its `internal_` names), and the extras listed there.
 _BUILTIN_FUNCTIONS = {
     # realFunctions
     "arccos", "arcsin", "arctan", "acos", "asin", "atan",
@@ -114,10 +117,15 @@ _BUILTIN_FUNCTIONS = {
     "re", "Re", "im", "Im", "arg", "Arg", "conj", "Conj", "bar", "Bar",
     # roundingFunctions
     "round", "floor", "ceiling", "ceil",
-    # wheels
+    # the standard library
     "rainbow", "arenberg", "romao", "bamo", "broco", "corko", "viko",
     "ice", "fire", "wheat", "rose", "forest", "ocean",
     "winter", "spring", "summer", "fall",
+    "rgb255", "cycle_at", "wheel2_at", "wheel4_at", "wheel8_at", "wheel8",
+    "domain_color", "mobius_stretch", "hyperbolic_stretch_at",
+    "view_stretch_at", "pixel_size_at",
+    "min", "max", "clamp", "compose", "newton_root", "full_newton_root", "S",
+    "find_cycle", "riemann_sum", "residue", "winding_number",
     # the rest
     "mod", "rgb", "hsv", "hsl", "blend", "cycle", "dark", "light", "invert",
     "autocolor", "nearest_autocolor", "get_autocolor",
@@ -156,7 +164,7 @@ _OPERATORS = [
     "+", "-", "*", "×", "//", "/", "^", "|", ":=", "≔", "'", "′",
     ">", "<", "===", "≡", "==", "=", ">=", "<=", "≥", "≤",
     "!=", "=/=", "≠", "->", "<-", "⭢", "⭠", "→", "←", "⟼", "↦", "⟶", "⟵",
-    "@", "@@",
+    "@", "@@", "∘",
 ]
 # (∂ and ⅆ start a derivative written as a fraction, ∂f/∂z and ⅆf/ⅆz,
 # and are classed as built-in functions; ∞ is a built-in value)
@@ -470,12 +478,6 @@ def _code_definitions(toks):
         if len(toks) > 2 and toks[2].is_symbol("("):
             return [(toks[1].name, CODE_BLOCK)] + params(toks[3:])
         return [(toks[1].name, CODE_BLOCK)]
-    if t0.is_ident("on"):
-        # `on click at w:`, `at (x, y)`, `on drag from s to w:`
-        return [(b.name, VARIABLE) for a, b in zip(toks[1:], toks[2:])
-                if b.is_ident() and (a.is_ident("at") or a.is_ident("from")
-                                     or a.is_ident("to")
-                                     or a.is_symbol("(", ","))]
     # homogeneous coordinates, `[a : b] := p`
     if t0.is_symbol("["):
         close = next((k for k, t in enumerate(toks) if t.is_symbol("]")), None)
@@ -516,7 +518,11 @@ def _all_definitions(stanzas):
                 names = viewer_vars.get(s.attrs["for"])
             elif len(viewer_vars) == 1:
                 names = next(iter(viewer_vars.values()))
-            implicit = (names or []) + [("pixel_size", PARAMETER)]
+            # (a tool's handlers name their points `click`, `drag start` and
+            # `drag end`: they see the viewer's pixel and geometry values,
+            # not its coordinate)
+            implicit = ([nw for nw in (names or []) if nw[1] == PARAMETER]
+                        + [("pixel_size", PARAMETER)])
         elif s.kind == "colorizer":
             implicit = [("pixel_size", PARAMETER)]
         elif s.kind == "":
@@ -560,6 +566,10 @@ def _classify_identifier(tok, before, before2, defs):
         return Keyword.Type
     if n == "x" and before is not None and before.is_ident() and before.name in _TYPES:
         return Keyword.Type
+    # (`drag start` and `drag end`, a tool handler's points)
+    if (n in ("start", "end") and before is not None
+            and before.kind == "reserved" and before.name == "drag"):
+        return Name.Builtin.Pseudo
     # (a name the script defines is its own, even a built-in's)
     if n in defs:
         return _DEFINED_TOKENS[defs[n]]
@@ -682,11 +692,11 @@ class FractalStreamLexer(Lexer):
         toks = line.tokens
         is_header = stanza.header is line
 
-        # the event words of a handler's first line: up to its point, or ':'
+        # the event words of a handler's first line, up to its ':'
         event_words = set()
         if _is_handler(line):
             for t in toks[1:]:
-                if t.is_ident("at") or t.is_ident("from") or t.is_symbol(":"):
+                if t.is_symbol(":"):
                     break
                 event_words.add(t.start)
 
