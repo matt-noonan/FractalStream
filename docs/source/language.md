@@ -488,11 +488,40 @@ means.
 | `find_cycle(f, z, warmup, max_period, same, χ)` | Finding an attracting cycle (see {ref}`cycles`) |
 | `S(f, x)` | The Schwarzian derivative of `f` at `x` |
 | `riemann_sum(γ, f, N)`, `residue(f, z, r, N)`, `winding_number(γ, z0, N)` | Contour integrals (see {ref}`integration`) |
+| `theta1(z, τ)` .. `theta4(z, τ)`, `wp(z, ω1, ω2)`, `wp_prime(z, ω1, ω2)`, `g2(ω1, ω2)`, `g3(ω1, ω2)`, `klein_j(τ)` | Elliptic functions (see {ref}`elliptic`) |
 | `cycle(t, c1, c2)` | A color going back and forth between `c1` (at whole numbers) and `c2` (halfway between) |
 | `rgb255(r, g, b)` | A color from red, green and blue components from 0 to 255 |
 | `rainbow(t)`, `arenberg(t)`, ... | Color wheels with period 1 (see {ref}`colors-and-gradients`) |
 | `domain_color(z)` | The usual domain coloring of the complex number `z` |
 | `pixel_size_at(p)` | The size of a screen pixel at the point `p` of the viewer, in its own coordinates |
+
+(elliptic)=
+#### Elliptic functions
+
+The standard library has the Jacobi theta functions and the Weierstrass ℘ function:
+
+| Function | Is |
+| -------- | -- |
+| `theta1(z, τ)` .. `theta4(z, τ)` | The Jacobi theta functions $\theta_1$ .. $\theta_4$ of `z`, with the nome $q = e^{i \pi \tau}$ (and $\operatorname{Im} \tau > 0$), as in [DLMF §20](https://dlmf.nist.gov/20) and Mathematica's `EllipticTheta`, so that $\theta_1(z + \pi) = -\theta_1(z)$ |
+| `wp(z, ω1, ω2)` | The Weierstrass $\wp$ function of the lattice $\omega_1 \mathbb{Z} + \omega_2 \mathbb{Z}$ |
+| `wp_prime(z, ω1, ω2)` | Its derivative, $\wp'$ |
+| `g2(ω1, ω2)`, `g3(ω1, ω2)` | The lattice's invariants, with $\wp'^2 = 4 \wp^3 - g_2 \wp - g_3$ |
+| `klein_j(τ)` | Klein's $j$-invariant, with `klein_j(i)` equal to 1728 |
+
+For example, this viewer colors the plane by $\wp$ for the lattice spanned by 1 and $0.3 + 1.1 i$,
+showing its double poles at the lattice points, and its two zeros in each period parallelogram:
+
+``` fractalstream
+@viewer "Weierstrass p" center=0 pixelSize=1/150
+color <- domain_color(wp(z, 1, 0.3 + 1.1 i))
+```
+
+`wp` and the others work with any basis of the lattice: they reduce it first (so that
+$\tau = \omega_2 / \omega_1$ has $\operatorname{Im} \tau \ge \sqrt{3}/2$), and move `z` into the
+parallelogram around 0, so that their series converge in a few terms. The theta functions
+themselves sum their series as they're given, which is fastest when $\operatorname{Im} \tau$ is
+large and $\operatorname{Im} z$ is small. Because `wp` moves `z` with `round`, `diff` can't follow
+`z` through it: use `wp_prime` for its derivative.
 
 Functions with a body, like `compose` and `newton_root`, can be called anywhere a function with a
 body can (see {ref}`functions`). The standard library's source is
