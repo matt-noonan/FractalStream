@@ -282,6 +282,9 @@ data Viewer = Viewer
     --   ('backendPreference'), if it's been told to prefer one (from its
     --   menu): see 'effectiveOrder'.
   , vTools     :: Dynamic [Tool]
+  , vVisible   :: Dynamic Bool
+    -- ^ Whether the viewer is shown (its @show_if=@): a hidden one's
+    -- window is hidden, and it isn't drawn (see 'vListen').
   , vSelectTool :: Maybe Tool
     -- ^ The built-in "Select ..." tool (also in 'vTools'), when the
     --   viewer's coordinate is a configuration variable (or a pair of
@@ -1170,6 +1173,7 @@ cloneViewer v = do
     , vSize  = newSize
     , vPosition = newPosition
     , vCanResize = vCanResize v
+    , vVisible = vVisible v
     , vCenter = newCenter
     , vPixelSize = newPixelSize
     , vAspect = newAspect

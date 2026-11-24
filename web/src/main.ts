@@ -610,7 +610,13 @@ function relayout(rearrange = false) {
     }
   }
   let places: Place[];
-  if (narrowScreen.matches) places = tiled(minimized, room);
+  if (narrowScreen.matches) {
+    // (only the shown windows are tiled; the hidden ones stay as they are)
+    const shown = windows.map(isShown);
+    const tiles = tiled(minimized.filter((_, i) => shown[i]), room);
+    let t = 0;
+    places = windows.map((w, i) => shown[i] ? tiles[t++] : placeOf(w));
+  }
   else if (rearrange || (tiledNow && windows.some((w) => !w.layout))) {
     // (side by side, each with the shape it has now, as big as they fit,
     // up to the project's sizes)
@@ -697,13 +703,36 @@ function showProject(title: string, panel: Layout, infos: ViewerInfo[], views: S
                            menu: () => v.menu(), titleExtra: v.toolChooser ?? undefined });
     win.addEventListener("pointerdown", () => activate(v), { capture: true });
     v.window = win;
+    // (hidden while its script's `show_if=` doesn't hold)
+    if (!info.visible) win.style.display = "none";
     // (where it goes on a wide screen: as saved; else, if it's been placed
     // on one, there; tiled to begin with, nowhere yet)
     windows.push({ title: info.title, view: v, window: win,
                    layout: s?.place?.length === 4 ? s.place : tiledNow ? null : toFractions(wide[k], d),
                    shape: s?.place?.length === 4 && (s.shape ?? 0) > 0 ? s.shape! : wide[k].width / wide[k].height });
   });
-  activate(windows[0]?.view ?? null);
+  // (tiled, the hidden ones leave no gaps)
+  if (tiledNow && infos.some((i) => !i.visible)) relayout();
+  activate(firstShownViewer());
+}
+
+/** Whether a viewer's window is shown (its `show_if=` holds). */
+function isShown(w: { window: HTMLElement }): boolean {
+  return w.window.style.display !== "none";
+}
+
+function firstShownViewer(): ViewerView | null {
+  return windows.find(isShown)?.view ?? null;
+}
+
+/** A viewer's `show_if=` came to hold, or stopped holding: its window is
+    shown where it was (it's drawn again then), or hidden. */
+function setShown(id: number, on: boolean) {
+  const v = viewers.get(id);
+  if (!v?.window || isShown({ window: v.window }) === on) return;
+  v.window.style.display = on ? "" : "none";
+  if (narrowScreen.matches) relayout();
+  if (!on && activeViewer === v) activate(firstShownViewer());
 }
 
 /** A saved view: its center, and the region it shows (in an older file,
@@ -2255,6 +2284,7 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
       break;
     case "pointer": viewers.get(m.viewer)?.showPointer(m.text); break;
     case "view": viewers.get(m.viewer)?.moved(m); break;
+    case "visible": setShown(m.viewer, m.on); break;
     case "where": viewers.get(m.viewer)?.jumpFrom(m); break;
     case "aspect": viewers.get(m.viewer)?.aspectAnswered(m.error); break;
     case "tableSummary": tableSummaryWaiting?.(m); tableSummaryWaiting = null; break;

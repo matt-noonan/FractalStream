@@ -1121,6 +1121,72 @@ pass
 w <- w + 1
 |] `shouldFailWith` "No variable named"
 
+  describe "a viewer's show_if=" $ do
+
+    let pickC = [r|
+@config "Parameters"
+C : C := 0
+selected_C : Bool := false
+
+@viewer "Mandelbrot set" var=C
+z := 0
+iterate z -> z^2 + C until z escapes
+
+@viewer "Julia set" show_if=selected_C
+iterate z -> z^2 + C until z escapes
+
+@tool "Pick C" for="Mandelbrot set"
+on click:
+  C <- click
+  selected_C <- true
+|]
+
+    it "hides a viewer until it holds, following the configuration" $
+      shouldBuild pickC $ \ens -> do
+        viewers <- getDynamic (ensembleViewers ens)
+        titled <- mapM (\cv -> (\t -> (either (const "") id t, cv)) <$> getDynamic (cvTitle cv)) viewers
+        let visibleOf name = maybe (pure Nothing) (fmap Just . getDynamic . cvVisible) (lookup name titled)
+        visibleOf "Mandelbrot set" >>= (`shouldBe` Just True)
+        visibleOf "Julia set" >>= (`shouldBe` Just False)
+        fields <- ensembleFields ens
+        case [ f | (_, f) <- fields, fieldName f == "selected_C" ] of
+          [selected] -> do
+            setFieldText selected "true" >>= (`shouldBe` Right ())
+            visibleOf "Julia set" >>= (`shouldBe` Just True)
+            setFieldText selected "false" >>= (`shouldBe` Right ())
+            visibleOf "Julia set" >>= (`shouldBe` Just False)
+          other -> expectationFailure ("expected one selected_C field, got " ++ show (length other))
+
+    it "is an expression over the configuration" $
+      shouldBuild [r|
+@config "Parameters"
+n : Z := 3
+show_julia : Bool := true
+
+@viewer "V" show_if="show_julia and max(n, 2) > 2"
+pass
+|] $ \ens -> do
+        [viewer] <- getDynamic (ensembleViewers ens)
+        getDynamic (cvVisible viewer) >>= (`shouldBe` True)
+
+    it "must be a truth value, over the configuration's values only" $ do
+      [r|
+@config "Parameters"
+n : Z := 3
+
+@viewer "V" show_if=n
+pass
+|] `shouldFailWith` "must be a truth value"
+      [r|
+@viewer "V" show_if=nope
+pass
+|] `shouldFailWith` "show_if="
+      -- (the viewer's own variable has no value outside a pixel)
+      [r|
+@viewer "V" show_if="|z| < 1"
+pass
+|] `shouldFailWith` "show_if="
+
   describe "checkScript" $ do
 
     let checkFailsWith :: String -> String -> Expectation

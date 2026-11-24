@@ -199,6 +199,10 @@ untrue later.
 | `record viewer "<name>" to "<file>" frames <N> fps <F> [loop] [base] using "<script>"` | Record a movie of the named viewer (see "Recording movies" below): before each of the `N` frames, run the script's `animate` block with the time, going from 0 to 1. |
 | `record viewer "<name>" to "<file>" frames <N> fps <F> [loop] [base] [inset "<viewer>" [at <corner>]] moving <var> along <point>, <point>, ...` | The same, but moving the complex configuration variable `var` along the path through the given points, at a steady speed (by length in model coordinates). `moving (<x>, <y>) along ...` moves a pair of real configuration variables instead, `x` along the points' first coordinates and `y` along their second. With `inset`, the named viewer (a parameter plane, say) is shown in a corner of each frame (`at top left`, `top right`, `bottom left`, or `bottom right`, the default), with a crosshair at the path's current point. |
 
+A viewer whose `show_if=` doesn't hold is hidden in the apps, so a
+`capture`, `assert` or `record` of it (and `fsrun snapshot` of it) is an
+error that says it's hidden, rather than a picture nobody would see.
+
 #### Recording movies
 
 A movie is a Motion-JPEG file, written without any outside tools

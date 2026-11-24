@@ -1031,6 +1031,39 @@ globe's center on the screen, 0; in the disk, it's the screen's center on
 the disk's drawing (0 until it's zoomed somewhere else). These names can't be declared in
 `@config`.
 
+### Showing a viewer only some of the time
+
+A viewer with `show_if=` is only shown while its truth value holds. The
+value is an expression over the configuration's values (and the standard
+library's functions), worked out again whenever one of them changes:
+
+```
+@config "Parameters"
+C : C := 0
+selected_C : Bool := false
+
+@viewer "Mandelbrot set" var=C
+...
+
+@viewer "Julia set" show_if=selected_C
+...
+
+@tool "Pick C" for="Mandelbrot set"
+on click:
+  C <- click
+  selected_C <- true
+```
+
+An expression with spaces needs quotes, as other attribute values do:
+`show_if="selected_C and not compare_mode"`. While a viewer is hidden,
+its window is hidden, it isn't drawn (even as the configuration
+changes), and its tools and overlay don't run. When it's shown again,
+its window comes back where it was, with the same view, and it's drawn
+with the configuration as it is then. Whether a viewer is shown isn't
+saved with the project, since it follows from the configuration. A
+scenario's `capture viewer` or `assert viewer` of a hidden viewer is an
+error that says it's hidden.
+
 ### Viewers on the Riemann sphere
 
 A complex viewer can show the Riemann sphere instead of the plane: as a

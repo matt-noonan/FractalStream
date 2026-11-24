@@ -57,6 +57,9 @@ data ComplexViewer = ComplexViewer
   , cvGroupProblem :: Dynamic (Maybe String)
     -- ^ What's wrong with its group's table, if anything (the viewer is
     -- paused, saying so, until it's put right).
+  , cvVisible :: Dynamic Bool
+    -- ^ Whether it's shown: its @show_if=@, over the configuration, or
+    -- always, without one.
   , cvOverlay :: Maybe Tool
     -- ^ Its overlay (@\@tool overlay@), if it has one: built like a tool,
     -- but never offered for selection (see 'Actor.Viewer.vRefreshOverlay').

@@ -192,12 +192,13 @@ contents), which the worker forwards to the page.
 Messages:
 
 > { "type": "library", "sections": [ { "name", "startingPoints", "entries": [ { "title", "description", "preview", "id" } ] } ] }
-> { "type": "project", "title", "fileName", "library": <whether it's from the library>, "new": <whether it's a new project, with no file of its own yet (a starting point's, or a translation)>, "edit": <whether to open its script editor>, "notes": [ <a translation's notes> ], "panel": <layout> or null, "viewers": [ { "id", "title", "width", "height", "sphere", "disk", "halfPlane", "tools": [ { "name", "shortcut", "help" } ] } ], "views": <the file's web-properties> or null }
+> { "type": "project", "title", "fileName", "library": <whether it's from the library>, "new": <whether it's a new project, with no file of its own yet (a starting point's, or a translation)>, "edit": <whether to open its script editor>, "notes": [ <a translation's notes> ], "panel": <layout> or null, "viewers": [ { "id", "title", "width", "height", "sphere", "disk", "halfPlane", "visible": <its show_if= holds>, "tools": [ { "name", "shortcut", "help" } ] } ], "views": <the file's web-properties> or null }
 > { "type": "share", "library": <a library project's id> or null, "state": <its state> or null, "file": <the whole project file> or null, "fileName" }
 > { "type": "details", "title", "description", "preview": <a PNG, base64-encoded> or null, "fileName", "fromViewer": <whether it's from "Use this as preview"> }
 > { "type": "unsaved", "on" }   (whether the open project has changes to save, as the desktop app counts them, whenever that changes)
 > { "type": "ancient", "name" }   (an old FractalStream file, to translate with fs_translate, if the user wants)
 > { "type": "view", "viewer", "cx", "cy", "px", "py", "sphere", "disk", "halfPlane" }   (the engine moved the view: a pixel's size in the canvas's pixels)
+> { "type": "visible", "viewer", "on" }   (a viewer's show_if= came to hold, or stopped: show or hide its window)
 > { "type": "where", "viewer", "x" (null for ∞), "y", "turn" (null on the plane), "pixelSize", "kind": "plane" | "sphere" | "hyperbolic" }
 > { "type": "aspect", "viewer", "error": <why it isn't one> or null }
 > { "type": "movieTemplate", "viewer", "script" }
@@ -880,7 +881,10 @@ startProject how projectTitle fileName rebuilt carried ensemble = do
       Nothing -> applySavedView viewer saved title
     smooth <- newIORef (maybe defaultSmooth cSmooth before)
     history <- newIORef (if sameView then cHistory =<< before else Nothing)
-    signal <- newMVar ()   -- (the first frame)
+    -- (the first frame; for a viewer hidden by its `show_if=`, when it's
+    -- first shown: see 'onParameterChanges')
+    shownAtFirst <- getDynamic (vVisible viewer)
+    signal <- if shownAtFirst then newMVar () else newEmptyMVar
     tool <- newIORef Nothing
     lock <- newMVar ()
     draw <- newEmptyMVar
@@ -898,7 +902,11 @@ startProject how projectTitle fileName rebuilt carried ensemble = do
     -- (as the desktop app does, the overlay's refreshed when any
     -- configuration value changes, whether or not the viewer re-renders)
     unlisten <- vListenOverlay viewer (void (tryPutMVar draw ()))
-    pure ((k, vs), (tid, killThread drawTid >> unwatch >> unlisten >> stopTimers vs))
+    -- (the page hides the window while the viewer's `show_if=` doesn't
+    -- hold, and shows it again when it does)
+    unshow <- watchDynamic (vVisible viewer) $ \shown ->
+      post $ Aeson.object [ "type" .= ("visible" :: Text.Text), "viewer" .= k, "on" .= shown ]
+    pure ((k, vs), (tid, killThread drawTid >> unwatch >> unlisten >> unshow >> stopTimers vs))
   unwatchValues <- newIORef (pure ())
   let stop = do
         forM_ (map snd loops) $ \(tid, unwatch) -> killThread tid >> unwatch
@@ -934,8 +942,9 @@ startProject how projectTitle fileName rebuilt carried ensemble = do
     override <- getDynamic (vBackendOverride viewer)
     let disk = isJust (hyperbolicDisplay kind)
         halfPlane = kind == HalfPlaneView
+    visible <- getDynamic (vVisible viewer)
     pure (Aeson.object [ "id" .= k, "title" .= title, "width" .= w, "height" .= h, "sphere" .= sphere, "disk" .= disk
-                       , "halfPlane" .= halfPlane
+                       , "halfPlane" .= halfPlane, "visible" .= visible
                        , "tools" .= tools, "complex" .= complex, "smooth" .= smooth, "colorizer" .= colorizer
                        , "animates" .= animates, "backends" .= map backendKey (viewerBackends viewer)
                        , "drawWith" .= fmap backendKey override ])

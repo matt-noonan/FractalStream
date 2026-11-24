@@ -106,14 +106,16 @@ export class App {
     return this.page.waitForFunction((src) => window.__messages.some(eval(src)), test.toString(), { timeout });
   }
 
-  /** Wait for a project to open, and every viewer to have a frame; give
-      its "project" message. (Slow ones take a while on CI's machines: the
-      forced pendulum, 45 to 60 s.) */
+  /** Wait for a project to open, and every viewer that's shown to have a
+      frame (one hidden by its show_if= isn't drawn); give its "project"
+      message. (Slow ones take a while on CI's machines: the forced
+      pendulum, 45 to 60 s.) */
   async opened(timeout = 180000) {
     await this.page.waitForFunction(() => window.__messages.some((m) => m.type === "project"), null, { timeout });
     try {
       await this.page.waitForFunction(() => {
-        const vs = [...document.querySelectorAll(".viewer")];
+        const vs = [...document.querySelectorAll(".viewer")]
+          .filter((v) => v.closest(".window")?.style.display !== "none");
         return vs.length > 0 && vs.every((v) => Number(v.dataset.frames ?? 0) > 0);
       }, null, { timeout });
     } catch (e) {

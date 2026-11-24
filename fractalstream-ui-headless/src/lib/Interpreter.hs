@@ -293,20 +293,20 @@ execCommand st = \case
 
   -- (the overlay first: what it changes, a group's table say, is in the
   -- picture it's drawn over)
-  CaptureViewer name path -> withNamedViewer st name $ \viewer -> do
+  CaptureViewer name path -> withShownViewer st name $ \viewer -> do
     refreshOverlay viewer
     r <- withRenderedViewerBuffer viewer True $ \view dims buf -> do
       layers <- vDrawCmds viewer
       compositeDrawLayersToFile view layers dims buf path
     traverse (warnIssues name . fst) r <&> (st <$)
 
-  CaptureViewerBase name path -> withNamedViewer st name $ \viewer ->
+  CaptureViewerBase name path -> withShownViewer st name $ \viewer ->
     snapshotToFile viewer True path >>= traverse (warnIssues name) <&> (st <$)
 
   CaptureViewerAsPreview name baseOnly -> case isPreviews st of
     Nothing -> pure (Left "`capture viewer \"...\" as preview` can only be used in a project's \
                           \`metadata: preview-commands:`, run with `fsrun update-preview --project <project.fs>`")
-    Just previews -> withNamedViewer st name $ \viewer ->
+    Just previews -> withShownViewer st name $ \viewer ->
       renderPreview baseOnly viewer >>= \case
         Left err  -> pure (Left err)
         Right png -> do
@@ -314,7 +314,7 @@ execCommand st = \case
           pure (Right st)
 
 
-  AssertPixel name (px, py) expected mtol -> withNamedViewer st name $ \viewer -> do
+  AssertPixel name (px, py) expected mtol -> withShownViewer st name $ \viewer -> do
     refreshOverlay viewer
     r <- withRenderedViewerBuffer viewer True $ \view dims buf -> do
       layers <- vDrawCmds viewer
@@ -323,7 +323,7 @@ execCommand st = \case
       Left err  -> pure (Left err)
       Right (_, img) -> pure (checkPixel name img (px, py) expected mtol st)
 
-  RecordMovie name path MovieOptions{..} animation -> withNamedViewer st name $ \viewer ->
+  RecordMovie name path MovieOptions{..} animation -> withShownViewer st name $ \viewer ->
     case map toLower (takeExtension path) of
       ext | Just fmt <- lookup ext [(".mov", QuickTimeMJPEG), (".avi", AviMJPEG)] -> do
         let settings = defaultMovieSettings
@@ -382,6 +382,15 @@ withNamedViewer :: InterpState -> String -> (Viewer -> IO (Either String InterpS
 withNamedViewer st name k = case Map.lookup name (isViewers st) of
   Nothing     -> pure (Left ("no viewer named " ++ show name))
   Just viewer -> k viewer
+
+-- | A viewer, by its name, to draw: it must be shown (its @show_if=@
+-- holds), since a picture of a hidden viewer is one a user never sees.
+withShownViewer :: InterpState -> String -> (Viewer -> IO (Either String InterpState)) -> IO (Either String InterpState)
+withShownViewer st name k = withNamedViewer st name $ \viewer ->
+  getDynamic (vVisible viewer) >>= \case
+    True -> k viewer
+    False -> pure (Left ("the viewer " ++ show name ++ " is hidden (its `show_if=` doesn't hold), \
+                         \so it can't be drawn"))
 
 deactivateCurrentTool :: InterpState -> IO ()
 deactivateCurrentTool st = case (isCurrentViewer st, isCurrentTool st) of
