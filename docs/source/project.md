@@ -56,6 +56,40 @@ iterate z -> z^2 + C until z escapes
 
 For real plane viewers, use `xvar=` and `yvar=` instead of `var=` to change the variable names.
 
+### Showing a viewer only some of the time
+
+A viewer with a `show_if=` attribute is only shown while its condition holds. The condition is a
+truth value worked out from the configuration's values (and the standard library's functions,
+like `max`), and it's worked out again whenever one of them changes. For example, this project
+shows the Julia set only once a point of the Mandelbrot set has been picked with the "Pick C" tool:
+
+```{code-block} fs
+@config "Parameters"
+C : C := 0
+selected_C : Bool := false
+
+@viewer "Mandelbrot set" var=C
+z := 0
+iterate z -> z^2 + C until z escapes
+
+@viewer "Julia set" show_if=selected_C
+iterate z -> z^2 + C until z escapes
+
+@tool "Pick C" for="Mandelbrot set"
+on click:
+  C <- click
+  selected_C <- true
+```
+
+A condition with spaces in it needs quotes, as other attribute values do:
+`show_if="selected_C and not compare_mode"`. It can only use the configuration's values, not a
+viewer's own variables (like `z`), which only have values pixel by pixel.
+
+While a viewer is hidden, its window is hidden, and it isn't drawn, even as the configuration
+changes; its tools and its overlay don't run. When it's shown again, its window comes back where
+it was, with the same view, and it's drawn with the configuration as it is then. Whether a viewer
+is shown isn't saved with the project, since it follows from the configuration.
+
 ## Shared definitions
 
 Shared definitions are grouped into one or more *common* stanzas, delineated by a `@common` header.
