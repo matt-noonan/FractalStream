@@ -23,6 +23,8 @@ import FractalStream.Prelude
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import Data.Bits (xor)
+import Data.Char (ord)
 
 import Language.Type
 import Language.Typecheck
@@ -71,9 +73,17 @@ differentiateWith env e@(Syn sr node)
         OpSub -> sub sr <$> d a <*> d b
         -- (a b)' = b a' + a b'
         OpMul -> (\da db -> add sr (mul sr b da) (mul sr a db)) <$> d a <*> d b
-        -- (a / b)' = (b a' - a b') / b^2
-        OpDiv -> (\da db -> divide sr (sub sr (mul sr b da) (mul sr a db)) (mul sr b b))
-                   <$> d a <*> d b
+        -- (a / b)' = (a' - (a / b) b') / b, with b worked out once: never
+        -- b^2, which could overflow (or underflow) where b doesn't, and
+        -- which, for an integer b such as 2^k, would be an integer product
+        -- that wraps (b is only ever divided by here, so it's computed as
+        -- a real number). For a b that doesn't depend on x, just a' / b.
+        OpDiv -> d a >>= \da -> d b <&> \db ->
+          if isInt 0 db then divide sr da b
+          else let n = divisorName e
+                   v = Syn sr (EVar n)
+               in Syn sr (ELet n (Syn (synRange b) (EWiden RealT b))
+                                 (divide sr (sub sr da (mul sr (divide sr a v) db)) v))
         OpPow
           -- (a^n)' = n a^(n-1) a', for n independent of x
           | not (dependsOn b) -> (\da -> mul sr (mul sr b (pow sr a (minusOne sr b))) da) <$> d a
@@ -237,6 +247,17 @@ isInt n (Syn _ (ELit _ (SomeHaskellType ty v))) = case ty of
   ComplexType -> v == fromIntegral n
   _ -> False
 isInt _ _ = False
+
+-- | The name a quotient's derivative binds its divisor to: made from the
+-- quotient itself (its shape, not where it is), so that it's different
+-- from the name of any quotient around it or inside it, as a derivative
+-- of a derivative needs (see the rule for 'ELet', which can't
+-- differentiate by a name an inner binding takes again).
+divisorName :: Expr -> String
+divisorName q = "[internal] divisor #" ++ show (fnv1a (show (fmap (const ()) q)))
+  where
+    fnv1a :: String -> Word64
+    fnv1a = foldl' (\h c -> (h `xor` fromIntegral (ord c)) * 1099511628211) 14695981039346656037
 
 add, sub, mul, divide, pow :: SourceRange -> Expr -> Expr -> Expr
 add sr a b
