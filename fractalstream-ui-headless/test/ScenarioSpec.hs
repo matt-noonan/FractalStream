@@ -196,6 +196,12 @@ parseSpec = describe "parseScenario" $ do
       SetViewerView HalfPlaneView -> pure ()
       cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
 
+  it "parses set viewer tiled to false" $
+    onlyCommand [r|set viewer tiled to false
+|] $ \case
+      SetViewerTiled False -> pure ()
+      cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
+
   it "parses set viewer screen center to..." $
     onlyCommand [r|set viewer screen center to (0.5, -0.25)
 |] $ \case
@@ -395,6 +401,7 @@ describeShape = \case
   SetViewerPixelSize{} -> "SetViewerPixelSize"
   SetViewerAspect{}    -> "SetViewerAspect"
   SetViewerView{}      -> "SetViewerView"
+  SetViewerTiled{}     -> "SetViewerTiled"
   ClickAt{}            -> "ClickAt"
   DoubleClickAt{}      -> "DoubleClickAt"
   DragFromTo{}         -> "DragFromTo"

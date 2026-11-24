@@ -29,6 +29,7 @@ module Actor.Viewer.Group
   , foldModelPoint
   , reduceView
   , viewReduction
+  , groupMoved
   , tileViews
   , foldLimit
   , noFolding
@@ -380,11 +381,16 @@ groupFoldCode z px num den = case renameStmt renames <$> parseParsedCode noCommo
   Left err -> error ("internal error: the fold code doesn't parse: " ++ show err)
   where
     locals = [ "gz", "gdz", "gsteps", "gwedge", "gnw", "gaon", "gkz", "gph", "glo", "ghi", "gmid"
-             , "gside", "gnk", "gden2", "gbest", "gbk", "gcand", "gcc", "grr", "gq", "gsd", "gfk" ]
+             , "gside", "gnk", "gden2", "gbest", "gbk", "gcand", "gcc", "grr", "gq", "gsd", "gfk", "gmoved" ]
     renames = Map.fromList $
       [ ("zout", z), ("pxv", px), ("gnum", num), ("gden", den) ]
       ++ groupValueNames
       ++ [ (n, "[internal] group." ++ n) | n <- locals ]
+
+-- | Whether a grouped viewer's point was moved into the polygon (it
+-- wasn't in it already), by the name 'groupFoldCode' gives it.
+groupMoved :: String
+groupMoved = "[internal] group.gmoved"
 
 -- | The fold, in the language (with the names 'groupFoldCode' renames).
 foldSource :: String
@@ -431,6 +437,7 @@ foldSource = unlines $
   [ "side_distance := if gbest < 0 then 1000000.0 else arcsinh(gbest)"
   , "side_index := gbk"
   , "fold_count := gsteps"
+  , "gmoved := gsteps > 0"
   , "gfk := (gk @ 3) gz + gk @ 4"
   , "zout <- ((gk @ 1) gz + gk @ 2) / gfk"
   , "pxv <- pxv gdz / |gfk|^2" ]

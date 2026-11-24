@@ -283,6 +283,13 @@ data Viewer = Viewer
     --   ('backendPreference'), if it's been told to prefer one (from its
     --   menu): see 'effectiveOrder'.
   , vTools     :: Dynamic [Tool]
+  , vTiled     :: Maybe (Variable Bool)
+    -- ^ With a lattice or a group, whether it shows all of its tiles
+    -- (@tiled=@, and its menu), or only its fundamental domain, the rest
+    -- greyed out: its tools' drawings aren't copied into other tiles then,
+    -- and its view isn't reduced (see 'viewReductionFor').
+  , vOriginalTiled :: Maybe Bool
+    -- ^ What its script's @tiled=@ starts 'vTiled' with.
   , vLattice   :: Maybe (Dynamic (Maybe Lattice))
     -- ^ Its lattice (@lattice=@), if it has one: its tools' drawings are
     -- repeated in each tile on the screen (see 'overlayProjections').
@@ -743,9 +750,11 @@ centerViewOn v c = getDynamic (vView v) >>= \kind -> case (kind, hyperbolicDispl
 -- (see 'Actor.Viewer.Group.viewReduction'), as it moves views; otherwise,
 -- leaving views as they are.
 viewReductionFor :: Viewer -> Isometry -> IO (Isometry -> Isometry)
-viewReductionFor v iso = case vGroup v of
-  Nothing -> pure id
-  Just d -> getDynamic d <&> \fd -> viewReduction (hyperbolicModel (vOriginalView v)) fd iso
+viewReductionFor v iso = maybe (pure True) getDynamic (vTiled v) >>= \tiled -> case vGroup v of
+  -- (showing only the fundamental domain, the view stays where it's
+  -- moved, so the domain doesn't jump as the view crosses its sides)
+  Just d | tiled -> getDynamic d <&> \fd -> viewReduction (hyperbolicModel (vOriginalView v)) fd iso
+  _ -> pure id
 
 -- | A view, reduced by a viewer's group (if it has one).
 reducedView :: Viewer -> Isometry -> IO Isometry
@@ -781,7 +790,12 @@ dragView v p@(px, py) q@(qx, qy) = getDynamic (vView v) >>= \kind -> case kind o
 -- drawings are repeated in each (see 'Actor.Viewer.Group.tileViews'). Given
 -- the screen's middle, pixel size, and size in pixels.
 overlayProjections :: Viewer -> Projection -> (Double, Double) -> Double -> (Int, Int) -> IO [Projection]
-overlayProjections v proj (cx, cy) px (w, h) = case (proj, vGroup v) of
+overlayProjections v proj c px wh = do
+  tiled <- maybe (pure True) getDynamic (vTiled v)
+  if tiled then tiledProjections v proj c px wh else pure [proj]
+
+tiledProjections :: Viewer -> Projection -> (Double, Double) -> Double -> (Int, Int) -> IO [Projection]
+tiledProjections v proj (cx, cy) px (w, h) = case (proj, vGroup v) of
   -- (with a lattice, a copy moved to each tile: see 'latticeShifts')
   (FlatProjection, _) | Just ld <- vLattice v -> getDynamic ld <&> \case
     Nothing -> [proj]
@@ -1199,6 +1213,8 @@ cloneViewer v = do
     , vOriginalHyperbolicPixelSizes = vOriginalHyperbolicPixelSizes v
     , vGroup = vGroup v
     , vLattice = vLattice v
+    , vTiled = vTiled v
+    , vOriginalTiled = vOriginalTiled v
     , vOriginalPlaneView = vOriginalPlaneView v
     , vSaveView = vSaveView v
 

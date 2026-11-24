@@ -112,7 +112,7 @@ import Data.Typeable (Typeable)
 
 import Language.Code (usedVarsInCode)
 import Language.Value.Evaluator (evaluate, evaluateInContext, HaskellValue)
-import Actor.Viewer.Lattice (Lattice(..), LatticeSpec(..), latticeSpec, latticeFoldCode, foldLatticePoint)
+import Actor.Viewer.Lattice (Lattice(..), LatticeSpec(..), latticeSpec, latticeFoldCode, foldLatticePoint, tiledValueName, fundamentalDomainShade, latticeMoved)
 
 import Control.Exception (Exception, IOException, SomeException, SomeAsyncException, fromException, displayException, throwIO, try)
 import System.IO (hPutStrLn, stderr)
@@ -839,6 +839,7 @@ checkScriptWithColorizers choices scriptText = do
       -- (with a lattice, its periods are the configuration's values, and
       -- its fold goes before the viewer's code)
       mlattice <- viewerLattice v
+      _ <- viewerTiled v
       forM_ mlattice $ \spec -> withEnvironment env $ forM_ (latticeProblems spec env) (Left . (NoSourceRange,))
       checkViewer configEnv env
         [ t | t <- tools, toolTargets viewerTitles (vfTitle v) t ] (withLatticeFold mlattice v)
@@ -968,6 +969,7 @@ checkViewer configEnv env myTools ViewerFields{..} = do
       -- (a complex viewer's code is also given its view; see
       -- 'viewerViewEntries')
       viewEntries = viewerViewEntries vfCoord vfView (isJust vfGroup)
+                    ++ [ (tiledValueName, SomeType BooleanType) | isJust vfGroup || isJust vfLattice ]
       viewerCheck
         | null viewEntries = checkMainAndTools env
         | otherwise = withEnvFromMap (Map.fromList (configEnv ++ viewEntries)) checkMainAndTools
@@ -1064,11 +1066,14 @@ viewerGeometryArgs coord size center viewValues =
 -- view.
 viewerViewContext :: Coordinate -> ViewKind -> Variable Dimensions -> Variable (Double, Double)
                   -> Variable ViewKind -> Variable Globe -> Variable Isometry -> Maybe (Dynamic FoldData)
+                  -> Maybe (Variable Bool)
                   -> Either String (SomeContext DynamicValue)
-viewerViewContext coord view0 sizeV centerV viewV globeV isometryV mgroup = foldM addOne (SomeContext EmptyContext) entries
+viewerViewContext coord view0 sizeV centerV viewV globeV isometryV mgroup mtiled = foldM addOne (SomeContext EmptyContext) entries
   where
     entries :: [(String, LiveValue)]
-    entries = viewerGeometry coord (dyn sizeV) (dyn centerV) ++ case coord of
+    entries = viewerGeometry coord (dyn sizeV) (dyn centerV)
+      ++ [ (tiledValueName, LiveValue BooleanType (dyn t)) | Just t <- [mtiled] ]
+      ++ case coord of
       RealCoordinates _ _ -> []
       ComplexCoordinate _ | isJust (hyperbolicDisplay view0) ->
         let display = fromMaybe DiskDisplay . hyperbolicDisplay <$> dyn viewV
@@ -1149,7 +1154,8 @@ buildWithValidTargets configGroups viewers tools viewerTitles = do
 
       eViewers <- forM (zip [0 ..] viewers) $ \(n, v) -> case viewerLattice v of
         Left err -> pure (Left err)
-        Right mlattice -> buildComplexViewer contextDyn mlattice
+        Right mlattice | Left err <- viewerTiled v -> pure (Left err)
+                       | otherwise -> buildComplexViewer contextDyn mlattice
           [ t | t <- tools, toolTargets viewerTitles (vfTitle v) t ]
           n (withLatticeFold mlattice v)
 
@@ -1189,6 +1195,7 @@ data ViewerFields = ViewerFields
   , vfShowIf    :: Maybe String
   , vfLattice   :: Maybe String
   , vfLatticeCenter :: Maybe String
+  , vfTiled     :: Maybe String
   , vfCode      :: ParsedCode
   }
 
@@ -1202,6 +1209,7 @@ viewerFields = \case
     , vfPixelVar = vsPixelVar
     , vfShowIf = vsShowIf
     , vfLattice = vsLattice, vfLatticeCenter = vsLatticeCenter
+    , vfTiled = vsTiled
     , vfCode = vsCode
     }
   _ -> Nothing
@@ -1621,6 +1629,8 @@ buildComplexViewer contextDyn mlattice myTools n ViewerFields{..} =
           ( if vfView == DiskView then maybe defaultDiskPixelSize (const pixelVal) vfPixelSize else defaultDiskPixelSize
           , if vfView == HalfPlaneView then maybe defaultHalfPlanePixelSize (const pixelVal) vfPixelSize else defaultHalfPlanePixelSize )
     cvViewV      <- newVariable vfView
+    -- (with a lattice or a group, whether it shows all of its tiles)
+    cvTiledV     <- traverse newVariable (either (const Nothing) id (viewerTiled ViewerFields{..}))
     cvGlobeV     <- newVariable originalGlobe
     cvIsometryV  <- newVariable originalIsometry
     -- (on the sphere, the globe is centered on the screen; so is the disk;
@@ -1712,7 +1722,7 @@ buildComplexViewer contextDyn mlattice myTools n ViewerFields{..} =
           Left err -> Left (NoSourceRange, err)
           Right (SomeContext (configOnly :: Context DynamicValue cEnv0)) ->
             -- (with the viewer's view, for a complex viewer)
-            case viewerViewContext vfCoord vfView cvSizeV cvCenterV cvViewV cvGlobeV cvIsometryV groupDyn of
+            case viewerViewContext vfCoord vfView cvSizeV cvCenterV cvViewV cvGlobeV cvIsometryV groupDyn cvTiledV of
               Left err -> Left (NoSourceRange, err)
               Right (SomeContext viewCtx) -> case configOnly <#> viewCtx of
                 Left err -> Left (NoSourceRange, err)
@@ -1768,6 +1778,8 @@ buildComplexViewer contextDyn mlattice myTools n ViewerFields{..} =
               , cvCoord = vfCoord
               , cvView = vfView
               , cvViewV = cvViewV
+              , cvTiledV = cvTiledV
+              , cvOriginalTiled = either (const Nothing) id (viewerTiled ViewerFields{..})
               , cvGlobeV = cvGlobeV
               , cvIsometryV = cvIsometryV
               , cvCenterV = cvCenterV
@@ -1952,6 +1964,8 @@ prepareComplexViewer backend autocolorState someContext configArgs ComplexViewer
         vOriginalHyperbolicPixelSizes = cvHyperbolicPixelSizes
         vGroup = cvGroup
         vLattice = cvLattice
+        vTiled = cvTiledV
+        vOriginalTiled = cvOriginalTiled
     -- (the same variable the viewer's code and tools read the
     -- center from, starting over from the original view when it's
     -- shown: see 'shown')
@@ -2067,7 +2081,10 @@ prepareComplexViewer backend autocolorState someContext configArgs ComplexViewer
               stopValues <- watchDynamic cc (\_ -> whenShown)
               stopAutocolor <- watchDynamic (autocolorEdits autocolorState) (\_ -> whenShown)
               stopVisible <- watchDynamic cvVisible (\shown' -> when shown' action)
-              pure (stopValues >> stopAutocolor >> stopVisible)
+              -- (and when it switches between all of its tiles and only
+              -- its fundamental domain)
+              stopTiled <- maybe (pure (pure ())) (\t -> watchDynamic (dyn t) (\_ -> whenShown)) cvTiledV
+              pure (stopValues >> stopAutocolor >> stopVisible >> stopTiled)
             vVisible = cvVisible
 
         withEnvironment env $ do
@@ -2301,12 +2318,33 @@ viewerLattice ViewerFields{..} = case vfLattice of
 
 -- | A viewer, with its lattice's fold (if it has one) before its code
 -- (see 'Actor.Viewer.Lattice.latticeFoldCode').
+--
+-- And, for a viewer with a lattice or a group, the statement after its
+-- code (and its colorizer) that greys out pixels outside the fundamental
+-- domain, while it shows only that domain (see 'viewerTiled').
 withLatticeFold :: Maybe LatticeSpec -> ViewerFields -> ViewerFields
-withLatticeFold Nothing vf = vf
-withLatticeFold (Just spec) vf = vf { vfCode = case vfCode vf of
-    Stmt sr (SBlock ss) -> Stmt sr (SBlock (fold ++ ss))
-    c@(Stmt sr _) -> Stmt sr (SBlock (fold ++ [c])) }
-  where fold = latticeFoldCode (vfCoord vf) spec
+withLatticeFold mspec vf
+  | isNothing mspec && isNothing (vfGroup vf) = vf
+  | otherwise = vf { vfCode = case vfCode vf of
+      Stmt sr (SBlock ss) -> Stmt sr (SBlock (fold ++ ss ++ shade))
+      c@(Stmt sr _) -> Stmt sr (SBlock (fold ++ [c] ++ shade)) }
+  where
+    fold = maybe [] (latticeFoldCode (vfCoord vf)) mspec
+    shade = [fundamentalDomainShade (if isJust mspec then latticeMoved else groupMoved)]
+
+-- | Whether a viewer starts out showing all of its tiles (@tiled=@, true
+-- by default), if it has a lattice or a group; only those can have one.
+viewerTiled :: ViewerFields -> Either (SourceRange, String) (Maybe Bool)
+viewerTiled ViewerFields{..}
+  | isNothing vfLattice && isNothing vfGroup = case vfTiled of
+      Nothing -> Right Nothing
+      Just _ -> Left (NoSourceRange, "A viewer's `tiled=` says whether it shows all of its tiles or only its \
+                                     \fundamental domain, so it needs a `lattice=` or a `group=` too.")
+  | otherwise = case vfTiled of
+      Nothing -> Right (Just True)
+      Just "true" -> Right (Just True)
+      Just "false" -> Right (Just False)
+      Just other -> Left (NoSourceRange, "A viewer's `tiled=` is `true` or `false`, not `" ++ other ++ "`.")
 
 -- | What's wrong with a lattice's periods and center, as values of the
 -- configuration (in its environment), if anything.

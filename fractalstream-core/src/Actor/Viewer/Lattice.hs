@@ -22,6 +22,9 @@ module Actor.Viewer.Lattice
   , latticeFoldCode
   , foldLatticePoint
   , latticeShifts
+  , tiledValueName
+  , fundamentalDomainShade
+  , latticeMoved
   ) where
 
 import FractalStream.Prelude
@@ -93,8 +96,28 @@ latticeFoldCode coord LatticeSpec{..} =
     renames = Map.fromList $
       [ ("la", latticeA), ("lb", latticeB), ("lc", latticeC) ] ++ coordRenames
       ++ [ (n, "[internal] lattice." ++ n) | n <- locals ]
-    locals = [ "ldet", "lw", "ls", "lt", "lm", "ln", "lda", "ldb"
+    locals = [ "ldet", "lw", "ls", "lt", "lm", "ln", "lda", "ldb", "lmoved"
              , "lax", "lay", "lbx", "lby", "lcx", "lcy", "lwx", "lwy" ]
+
+-- | Whether a viewer with a lattice or a group shows all of its tiles
+-- (@tiled=@, and the viewer's menu), as its code is given it.
+tiledValueName :: String
+tiledValueName = "[internal] tiled"
+
+-- | Whether a lattice viewer's point was moved into the parallelogram
+-- (it wasn't in it already), by the names 'latticeFoldCode' gives.
+latticeMoved :: String
+latticeMoved = "[internal] lattice.lmoved"
+
+-- | The statement, to go after a folding viewer's code (and its
+-- colorizer), that greys out a pixel outside the fundamental domain
+-- while the viewer shows only that domain: @moved@ is the name of the
+-- viewer's (internal) truth value saying the pixel's point was moved.
+fundamentalDomainShade :: String -> Stmt
+fundamentalDomainShade moved =
+  case parseParsedCode noCommonDefs "if lmoved and not ltiled:\n  color <- blend(0.7, color, rgb(0.5, 0.5, 0.5))\n" of
+    Right stmt -> renameStmt (Map.fromList [("lmoved", moved), ("ltiled", tiledValueName)]) stmt
+    Left err -> error ("internal error: the fundamental domain's shading doesn't parse: " ++ show err)
 
 latticeA, latticeB, latticeC :: String
 latticeA = "[internal] lattice a"
@@ -115,6 +138,7 @@ complexSource = unlines
   , "ln := round(lt)"
   , "zout <- zout - lm * la - ln * lb"
   , "cell := (lm, ln)"
+  , "lmoved := lm != 0 or ln != 0"
   , "lda := (0.5 - |ls - lm|) * |ldet| / |lb|"
   , "ldb := (0.5 - |lt - ln|) * |ldet| / |la|"
   , "side_distance := if lda < ldb then lda else ldb" ]
@@ -134,6 +158,7 @@ realSource = unlines
   , "xout <- xout - lm * lax - ln * lbx"
   , "yout <- yout - lm * lay - ln * lby"
   , "cell := (lm, ln)"
+  , "lmoved := lm != 0 or ln != 0"
   , "lda := (0.5 - |ls - lm|) * |ldet| / sqrt(lbx^2 + lby^2)"
   , "ldb := (0.5 - |lt - ln|) * |ldet| / sqrt(lax^2 + lay^2)"
   , "side_distance := if lda < ldb then lda else ldb" ]

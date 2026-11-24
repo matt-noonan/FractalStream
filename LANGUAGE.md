@@ -1126,6 +1126,10 @@ Its tools' points are folded too, and their drawings are drawn in each tile
 on the screen, except when the tiles are too small to see (more than a few
 thousand of them on the screen).
 
+With `tiled=false`, or its menu's "Show fundamental domain", it shows
+only the parallelogram, the rest greyed out: see "Showing only the
+fundamental domain", below.
+
 ### Viewers on the Riemann sphere
 
 A complex viewer can show the Riemann sphere instead of the plane: as a
@@ -1288,6 +1292,20 @@ radius is in pixels (a marker: see "Drawing circles"), which is the same
 size in every tile. The view is kept *reduced*: after each move, its center
 is folded back into the polygon, which shows the same picture but keeps the
 view's numbers small, however far it's moved.
+
+#### Showing only the fundamental domain
+
+A viewer with a lattice or a group shows all of its tiles, but it can
+instead show only its fundamental domain (the parallelogram, or the
+polygon), with the rest of the plane greyed out: the picture outside it
+is still drawn, but faded toward grey. `tiled=false` in its header starts
+it that way, and its menu's "Show fundamental domain" switches between the
+two (as `set viewer tiled to false` does in a scenario). Which one it
+shows is saved with the project, when it isn't what its header says.
+
+While it shows only its domain, its tools' drawings are only drawn in the
+domain, not copied into the other tiles; and a viewer with a group doesn't
+reduce its view, so the domain stays put as the view moves.
 
 ### Colorizers
 

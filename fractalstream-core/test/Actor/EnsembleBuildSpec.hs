@@ -2,6 +2,7 @@
 module Actor.EnsembleBuildSpec (spec) where
 
 import Test.Hspec
+import Data.Maybe (isNothing)
 
 import Actor.Ensemble
 import Actor.Viewer (SomeViewerWithContext(..))
@@ -1244,6 +1245,44 @@ pass
 @viewer "V" lattice="nope"
 pass
 |] `shouldFailWith` "lattice="
+
+  describe "a viewer's tiled=" $ do
+
+    it "starts a viewer with a lattice or a group showing all of its tiles, or only its domain" $ do
+      shouldBuild [r|
+@viewer "Torus" lattice="i"
+pass
+|] $ \ens -> do
+        [viewer] <- getDynamic (ensembleViewers ens)
+        traverse getDynamic (cvTiledV viewer) >>= (`shouldBe` Just True)
+      shouldBuild [r|
+@viewer "Torus" lattice="i" tiled=false
+pass
+|] $ \ens -> do
+        [viewer] <- getDynamic (ensembleViewers ens)
+        traverse getDynamic (cvTiledV viewer) >>= (`shouldBe` Just False)
+      shouldBuild [r|
+@viewer "Modular" view=halfplane group=modular tiled=false
+pass
+|] $ \ens -> do
+        [viewer] <- getDynamic (ensembleViewers ens)
+        traverse getDynamic (cvTiledV viewer) >>= (`shouldBe` Just False)
+      shouldBuild [r|
+@viewer "Plain"
+pass
+|] $ \ens -> do
+        [viewer] <- getDynamic (ensembleViewers ens)
+        isNothing (cvTiledV viewer) `shouldBe` True
+
+    it "is only for a viewer with a lattice or a group, and is true or false" $ do
+      [r|
+@viewer "V" tiled=false
+pass
+|] `shouldFailWith` "needs a `lattice=` or a `group=`"
+      [r|
+@viewer "V" lattice="i" tiled=maybe
+pass
+|] `shouldFailWith` "`true` or `false`"
 
   describe "folding by a lattice" $
     it "folds a point into the parallelogram about its center" $ do
