@@ -826,6 +826,20 @@ x <- d|] `shouldBe` Right 3
       "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\ninc(a) := a + 1\nx <- compose(w -> dbl(w) + 1, 2, 0)" `gives` 3
       "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\nx <- 3\nx <- diff(compose(sq, 2, x), x)" `gives` 108
 
+    it "finds cycles with the standard library's find_cycle, and only real ones" $ do
+      -- (attracting cycles of periods 1 to 4)
+      "C := -0.1\nfound, w, p := find_cycle(z -> z^2 + C, 0, 10000, 100, (a, b) -> |a - b| < 0.000001, a -> |a| < 2.5)\nx <- if found then p else 0" `gives` 1
+      "C := -1\nfound, w, p := find_cycle(z -> z^2 + C, 0, 10000, 100, (a, b) -> |a - b| < 0.000001, a -> |a| < 2.5)\nx <- if found then p else 0" `gives` 2
+      "C := -1.75\nfound, w, p := find_cycle(z -> z^2 + C, 0, 10000, 100, (a, b) -> |a - b| < 0.000001, a -> |a| < 2.5)\nx <- if found then p else 0" `gives` 3
+      "C := -1.3107\nfound, w, p := find_cycle(z -> z^2 + C, 0, 10000, 100, (a, b) -> |a - b| < 0.000001, a -> |a| < 2.5)\nx <- if found then p else 0" `gives` 4
+      -- (chaotic orbits, which never settle into a cycle: not a cycle of
+      -- some made-up period, from loops cut off by the iteration limit)
+      "C := -1.9\nfound, w, p := find_cycle(z -> z^2 + C, 0, 10000, 100, (a, b) -> |a - b| < 0.000001, a -> |a| < 2.5)\nx <- if found then p else 0" `gives` 0
+      "C := -1.8\nfound, w, p := find_cycle(z -> z^2 + C, 0, 10000, 100, (a, b) -> |a - b| < 0.000001, a -> |a| < 2.5)\nx <- if found then p else 0" `gives` 0
+      "C := -1.6\nfound, w, p := find_cycle(z -> z^2 + C, 0, 10000, 100, (a, b) -> |a - b| < 0.000001, a -> |a| < 2.5)\nx <- if found then p else 0" `gives` 0
+      -- (an orbit that escapes)
+      "C := 1\nfound, w, p := find_cycle(z -> z^2 + C, 0, 10000, 100, (a, b) -> |a - b| < 0.000001, a -> |a| < 2.5)\nx <- if found then p else 0" `gives` 0
+
     it "multiply when the argument is a number" $
       "h(g, v) := g(v)\nx <- h(3, 2)" `gives` 6
 

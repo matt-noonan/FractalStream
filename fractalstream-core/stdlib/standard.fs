@@ -160,23 +160,31 @@ function find_cycle(f, z, warmup, max_period, same, χ):
     tortoise := f(z)
     hare := f(tortoise)
 
-    # FIXME: is this "up to" bound correct?
+    # The tortoise and the hare meet after a multiple of the period that
+    # is at least the steps before the cycle starts: so a cycle whose
+    # period and lead-in (after the warmup) both fit in max_period steps
+    # is found, and the two loops after this one need no more steps.
     while χ(tortoise) and χ(hare) and not same(tortoise, hare) up to max_period times:
       tortoise <- f(tortoise)
       hare <- f(f(hare))
 
-    if χ(tortoise) and χ(hare):
+    # (only if they met: if the loop ran out of steps first, there's no
+    # cycle to find)
+    if χ(tortoise) and χ(hare) and same(tortoise, hare):
+      # where the cycle starts
       tortoise <- z
-      while not same(tortoise, hare):
+      while not same(tortoise, hare) up to max_period times:
         tortoise <- f(tortoise)
         hare <- f(hare)
 
+      # its period
       λ := 1
       hare <- f(tortoise)
-      while not same(tortoise, hare):
+      while not same(tortoise, hare) up to max_period times:
         hare, λ <- f(hare), λ + 1
 
-      find_cycle <- true, hare, λ
+      if same(tortoise, hare):
+        find_cycle <- true, hare, λ
 
 # ---------------------------------------------------------------------------
 # Integrals, residue, winding number
