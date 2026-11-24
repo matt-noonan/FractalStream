@@ -36,7 +36,8 @@ run shade
 x := 3.5e-2 + "a\\"b"
 
 @tool "Trace" for="Parameter plane" shortcut=t
-on click-or-drag at w:
+on click:
+  w := click
   draw circle at w with radius 4 pixels
   for each p in [1, 2, ...
     3]:
@@ -127,7 +128,29 @@ def test_defined_statement_word_is_not_a_keyword():
 
 
 def test_handler_event_words():
-    assert [t for v, t in classes("on click-or-drag at w:")][:6] == [Keyword] * 6
+    assert [t for v, t in classes("on drag-finished:")][:4] == [Keyword] * 4
+
+
+def test_handler_points():
+    assert class_of("on click:\n  w := click\n", "click", 1) is Name.Builtin.Pseudo
+    src = "on drag:\n  draw line from drag start to drag end\n"
+    assert class_of(src, "drag", 1) is Name.Builtin.Pseudo
+    assert class_of(src, "start") is Name.Builtin.Pseudo
+    assert class_of(src, "end") is Name.Builtin.Pseudo
+    # (elsewhere, `start` is just a name)
+    assert class_of("start := 1", "start") is Name.Variable
+
+
+def test_tool_does_not_see_its_viewers_coordinate():
+    src = '@viewer "V" var=w\npass\n\n@tool "T"\non click:\n  draw point at click\n  draw point at w\n'
+    assert class_of(src, "w", 1) is Name
+
+
+def test_composition_and_standard_library():
+    src = "x := (sin ∘ sq)(compose(sq, 2, min(1, 2)))"
+    assert class_of(src, "∘") is Operator
+    assert class_of(src, "compose") is Name.Builtin
+    assert class_of(src, "min") is Name.Builtin
 
 
 def test_types_only_in_type_position():
