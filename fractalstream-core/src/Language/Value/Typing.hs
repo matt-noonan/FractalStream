@@ -42,6 +42,7 @@ import FractalStream.Prelude
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Data.List (isInfixOf, stripPrefix, findIndex, tails)
+import Data.Char (isAlphaNum)
 import Text.Read (readMaybe)
 
 import Language.Type
@@ -880,10 +881,35 @@ refit env ty x x'
       if tyLenient env then pure (Syn (synRange x', ty) (synNode x')) else throwError err
 
 -- | How to refer to a node in an error message.
+-- | What a variable made when calls are expanded holds, in the script's
+-- words: @[internal] f.a #3@ is f's parameter a, and a function written
+-- in place's parameter (@[internal] tag.w \@r:c@, with a tag that may be
+-- an internal name too) is the parameter w.
+internalDescription :: String -> Maybe String
+internalDescription n
+  | Just rest <- stripPrefix "[internal] " n = Just (described (splitOn '.' (unprefixed rest)))
+  | otherwise = Nothing
+  where
+    -- (a function's name has no ` #k` after it: one that does is the tag
+    -- of a function written in place)
+    described parts = case reverse parts of
+      p : f : _ | isName (stripSuffixes p), isName (unstd f) -> unstd f ++ "'s parameter " ++ stripSuffixes p
+      p : _ : _ | isName (stripSuffixes p) -> "the parameter " ++ stripSuffixes p
+      _ -> "this value"
+    unstd f = fromMaybe f (stripPrefix "[std] " f)
+    unprefixed s = maybe s unprefixed (stripPrefix "[internal] " s)
+    -- (` #3`, or ` @1:17`)
+    stripSuffixes = takeWhile (/= ' ')  . dropWhile (== ' ')
+    isName w = not (null w) && all (\c -> isAlphaNum c || c == '_' || c == '\'') w
+    splitOn c s = case break (== c) s of
+      (a, _ : b) -> a : splitOn c b
+      (a, []) -> [a]
+
 describe :: ExprF r -> String
 describe = \case
   ELit d _ -> d
   EVar n | isOwnableBuiltin n -> n ++ " (this script's own variable here, not the built-in)"
+         | Just d <- internalDescription n -> d
          | otherwise -> n
   ECast{} -> "this conversion"
   EITE{} -> "this if/then/else expression"

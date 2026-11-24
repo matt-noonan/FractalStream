@@ -25,6 +25,9 @@ module Language.Code.Infer
 import FractalStream.Prelude
 
 import qualified Data.Map as Map
+import Data.List (find)
+
+import Language.Parser.SourceRange (errorLocation)
 
 import Language.Type
 import Language.Typecheck
@@ -45,7 +48,12 @@ type Scope = Map String TyRef
 -- convert to the type of the n-th inferred declaration.
 data Bound = Bound Int Scope Funs Expr
 
-type Solution = Map Int FSType
+-- | The solved types, and for each declaration whose type couldn't be
+-- solved, the first error in what's assigned to it (see 'whyUnsolved').
+data Solution = Solution
+  { solTypes :: Map Int FSType
+  , solWhy   :: Int -> Maybe Expr
+  }
 
 -- | Fill in the types of all @x := e@ declarations that can be inferred.
 -- Declarations whose type can't be determined are left alone (and will be
@@ -53,7 +61,8 @@ type Solution = Map Int FSType
 inferDeclarations :: TypeEnv -> Funs -> Stmt -> Stmt
 inferDeclarations tenv funs s =
   let (build, (_, cs)) = runState (collect (Map.map Known (tyVars tenv)) funs s) (0, [])
-  in build (solve (reverse cs))
+      sol = solve (reverse cs)
+  in build (Solution sol (whyUnsolved sol (reverse cs)))
 
 ------------------------------------------------------
 -- Collecting constraints
@@ -132,7 +141,15 @@ collectBlock scope funs = \case
     modify (\(i, cs) -> (i + 1, cs))
     constrain k scope funs e
     rest' <- collectBlock (Map.insert n (Meta k) scope) funs rest
-    pure (\sol -> Stmt sr (SDecl n (Map.lookup k sol) e) : rest' sol)
+    pure (\sol -> let t = Map.lookup k (solTypes sol)
+                      -- (a placeholder, such as the result of a call of a
+                      -- function with a body, whose type couldn't be worked
+                      -- out because of an error in what's assigned to it:
+                      -- that error is the one to report)
+                      e' = case (t, e) of
+                        (Nothing, Syn _ EZero) -> fromMaybe e (solWhy sol k)
+                        _ -> e
+                  in Stmt sr (SDecl n t e') : rest' sol)
 
   s@(Stmt _ (SDecl n (Just t) _)) : rest ->
     fmap (s :) <$> collectBlock (Map.insert n (Known t) scope) funs rest
@@ -153,7 +170,7 @@ collectBlock scope funs = \case
 -- Solving
 ------------------------------------------------------
 
-solve :: [Bound] -> Solution
+solve :: [Bound] -> Map Int FSType
 solve cs = go (0 :: Int) Map.empty
   where
     -- Each round can only raise types, and there are only finitely many
@@ -168,10 +185,40 @@ solve cs = go (0 :: Int) Map.empty
       Nothing -> sol
       Just t  -> Map.alter (Just . maybe t (\old -> fromMaybe old (structuralJoin old t))) k sol
 
-synthIn :: Solution -> Scope -> Funs -> Expr -> Maybe FSType
-synthIn sol scope funs e = case expandCalls funs e >>= synth tenv of
-  TC (Right t) -> Just (exprType t)
-  TC (Left _)  -> Nothing
+synthIn :: Map Int FSType -> Scope -> Funs -> Expr -> Maybe FSType
+synthIn sol scope funs e = either (const Nothing) Just (synthOrError sol scope funs e)
+
+-- | Why the n-th declaration's type couldn't be worked out: the first
+-- error (a type error, if there is one) in synthesizing what's assigned
+-- to it, as an expression that reports it. (Its own initializer, a
+-- placeholder, is left out.)
+whyUnsolved :: Map Int FSType -> [Bound] -> Int -> Maybe Expr
+whyUnsolved sol cs = fmap report . go []
+  where
+    go seen k =
+      case [ cause | Bound j scope funs e <- cs, j == k, not (isPlaceholder e)
+                   , Left err <- [synthOrError sol scope funs e]
+                   , let cause = through seen scope err ] of
+        [] -> Nothing
+        errs@(e1 : _) -> Just (fromMaybe e1 (find isTypeError errs))
+
+    -- an error that's only because another declaration's type couldn't
+    -- be worked out either (such as a call's result, used by another
+    -- call) is that declaration's error
+    through seen scope err = case err of
+      MissingName _ n
+        | Just (Meta j) <- Map.lookup n scope
+        , Map.notMember j sol, j `notElem` seen
+        , Just cause <- go (j : seen) j -> cause
+      _ -> err
+
+    report err = Syn (errorLocation err) (EAdvice (ppError err))
+    isPlaceholder = \case { Syn _ EZero -> True; _ -> False }
+
+synthOrError :: Map Int FSType -> Scope -> Funs -> Expr -> Either TCError FSType
+synthOrError sol scope funs e = case expandCalls funs e >>= synth tenv of
+  TC (Right t) -> Right (exprType t)
+  TC (Left err) -> Left err
   where
     tenv = lenientTypeEnv (Map.mapMaybe resolve scope)
     resolve = \case

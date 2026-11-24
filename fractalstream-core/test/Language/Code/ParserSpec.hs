@@ -622,6 +622,19 @@ x <- d|] `shouldBe` Right 3
     it "can be differentiated, by `diff`" $
       "function sq(a):\n  sq <- a a\nx <- 3\nx <- diff(sq(x) + x, x)" `gives` 7
 
+    it "reports a type error in its body, not that its value's type is unknown" $ do
+      failsWith "function bad(v):\n  bad <- v + true\nx <- bad(1)" "`true` is a truth value"
+      failsWith "function bad(v):\n  w := v\n  bad <- w + true\nx <- 1 + bad(1)" "`true` is a truth value"
+      failsWith "function f(v):\n  f <- v\nfunction bad(v):\n  bad <- f(v) + true\nx <- bad(1)" "`true` is a truth value"
+      failsWith "function bad(v):\n  bad <- nope + 1\nx <- bad(1)" "No variable named nope"
+      -- (through a call whose result another call uses)
+      failsWith "function tw(g, v):\n  tw <- g(g(v))\nfunction dbl(a):\n  dbl <- 2 a\nx <- tw(dbl, true)"
+        "dbl's parameter a is a truth value"
+
+    it "names a parameter in errors as the script does" $ do
+      failsWith "sq(a) := a a\nx <- sq(true)" "but sq's parameter a is a truth value"
+      failsWith "twice(g, v) := g(g(v))\nx <- twice(w -> w w, true)" "but the parameter w is a truth value"
+
     it "can't be called where its call can't be lifted out, for now" $ do
       failsWith "function f(a):\n  f <- a\ng(a) := f(a) + 1\nx <- g(1)" "`g` is defined with `:=`"
       failsWith "function f(a):\n  f <- a\nx <- partial(f(x), x)" "`partial` treats everything but its variable"
