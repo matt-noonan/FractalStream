@@ -126,6 +126,9 @@ _BUILTIN_FUNCTIONS = {
     "view_stretch_at", "pixel_size_at",
     "min", "max", "clamp", "compose", "newton_root", "full_newton_root", "S",
     "find_cycle", "riemann_sum", "residue", "winding_number",
+    "theta1", "theta2", "theta3", "theta4", "lattice_basis",
+    "lattice_reduce_by", "lattice_reduce", "wp", "wp_prime", "g2", "g3",
+    "klein_j",
     # the rest
     "mod", "rgb", "hsv", "hsl", "blend", "cycle", "dark", "light", "invert",
     "autocolor", "nearest_autocolor", "get_autocolor",
