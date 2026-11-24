@@ -22,7 +22,8 @@ project = unlines
   , "color <- grey"
   , ""
   , "@tool \"T\" for=\"V\""
-  , "on click at p:"
+  , "on click:"
+  , "  p := click"
   , "  k <- autocolor(0, p)"
   ]
 

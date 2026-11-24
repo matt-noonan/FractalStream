@@ -145,7 +145,8 @@ script: |
     draw circle at c2 with radius 5 pixel_size
 
   @tool "Select c2" for="Mandelbrot set" shortcut=2
-  on click-or-drag at w:
+  on click:
+    w := click
     c2 <- w
 metadata:
   title: Slow mating

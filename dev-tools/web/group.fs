@@ -9,14 +9,16 @@ script: |
            else if fold_count = 0 then red else if fold_count = 1 then blue else grey
 
   @tool "Dot" for="Group" shortcut=d
-  on click at p:
+  on click:
+    p := click
     erase
     use rgb(0, 1, 0) for fill
     use rgb(0, 1, 0) for stroke
     draw filled circle at p with radius 0.05
 
   @tool "Mark" for="Group" shortcut=m
-  on click at p:
+  on click:
+    p := click
     erase
     use rgb(0, 1, 0) for fill
     use rgb(0, 1, 0) for stroke

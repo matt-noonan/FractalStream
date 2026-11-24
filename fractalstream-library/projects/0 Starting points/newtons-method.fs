@@ -20,7 +20,8 @@ script: |
     erase
   on deactivated:
     erase
-  on click-or-drag:
+  on click:
+    z := click
     use white for line
     erase
     repeat:

@@ -133,8 +133,8 @@ spec = describe "translating original-FractalStream scripts" $ do
     s `shouldSatisfy` any ("iterate (x, y) -> (x^2 - y^2 + a, 2 * x * y + b) until (x, y) escapes" `isInfixOf`)
     -- the probe: the clicked point itself, in the dynamical plane, and
     -- the clicked parameters, starting from (0, 0), in the parameter plane
-    s `shouldSatisfy` any ("on click at (x, y):" `isInfixOf`)
-    s `shouldSatisfy` any ("on click at (clicked_a, clicked_b):" `isInfixOf`)
+    s `shouldSatisfy` any ("(x, y) := click" `isInfixOf`)
+    s `shouldSatisfy` any ("(clicked_a, clicked_b) := click" `isInfixOf`)
     loads t
 
   it "compares a real-dynamics script's values as real numbers" $ do
@@ -226,7 +226,7 @@ spec = describe "translating original-FractalStream scripts" $ do
     let s = scriptOf t
     s `shouldSatisfy` any ("@tool \"Trace\" for=\"Dynamical plane\" shortcut=t" `isInfixOf`)
     s `shouldSatisfy` any ("trace_color : Color as \"Trace color\" := white" `isInfixOf`)
-    s `shouldSatisfy` any ("on click-or-drag at z:" `isInfixOf`)
+    s `shouldSatisfy` any ("z := click" `isInfixOf`)
     s `shouldSatisfy` any ("repeat up to 100 times:" `isInfixOf`)
     s `shouldSatisfy` any ("run script(1)" `isInfixOf`)
     s `shouldSatisfy` any ("draw line from previous z to z" `isInfixOf`)
@@ -269,7 +269,7 @@ spec = describe "translating original-FractalStream scripts" $ do
   it "traces (x, y) in a real-dynamics script" $ do
     t <- translated "{real}\niterate (y, -x + a) until (x, y) escapes."
     let s = scriptOf t
-    s `shouldSatisfy` any ("on click-or-drag at (x, y):" `isInfixOf`)
+    s `shouldSatisfy` any ("(x, y) := click" `isInfixOf`)
     s `shouldSatisfy` any ("draw line from (previous x, previous y) to (x, y)" `isInfixOf`)
     s `shouldNotSatisfy` any ("previous_" `isInfixOf`)
     s `shouldSatisfy` any ("until (x, y) escapes" `isInfixOf`)

@@ -29,7 +29,8 @@ project = unlines
   , "color <- if w = 500 and c = 5 then rgb(0, 1, 0) else rgb(1, 0, 0)"
   , ""
   , "@tool \"T\" for=\"V\""
-  , "on click at p:"
+  , "on click:"
+  , "  p := click"
   , "  w <- viewer_width + viewer_height"
   , "  c <- viewer_center"
   ]

@@ -686,6 +686,7 @@ iterate z -> newton(z) until f(z) vanishes
 
 @tool "Trace" for="Newton's method"
 on click:
+  z := click
   erase
   repeat up to 20 times:
     draw point at z
@@ -971,6 +972,17 @@ itself: if it doesn't, a *colorizer* sets it (see below).
 - Event handlers in tool scripts can set any configuration value. This
 is useful for building tools that directly manipulate the configuration,
 such as selecting a parameter value.
+
+A viewer's variable can have the name of a configuration variable, as a
+parameter plane's does (`@viewer "Parameter plane" var=C`, with `C` in an
+`@config` stanza): then, in that viewer's code, `C` is each pixel's own
+value of the parameter. Everywhere else, its tools included, `C` is the
+configuration's value, the one the parameter plane's "Select" tool sets.
+So an `@common` function like `f(z) := z^2 + C` means the pixel's `C` in
+the parameter plane's code, but the selected `C` in its tools and in any
+other viewer. A tool that wants to work with the point clicked uses
+`click` (see "Tool scripts"), and passes it to what it calls:
+`g(click, 0)`, with `g(c, z) := z^2 + c`, say.
 
 ### Viewers over the real plane
 
@@ -1325,7 +1337,8 @@ tools:
       on deactivated:
         erase
 
-      on click-or-drag at z:
+      on click:
+        z := click
         use white for line
         erase
         prevZ : C := z
@@ -1342,30 +1355,36 @@ The available headers are:
 |---|---|
 | `on refresh:` | the viewer redrawing (e.g. after panning or zooming) |
 | `on activated:` / `on deactivated:` | the tool being selected / deselected |
-| `on click [at <coord>]:` | a single click |
-| `on double-click [at <coord>]:` | a double-click |
-| `on click-or-drag [at <coord>]:` | either a click or a drag, sharing one body |
-| `on drag [from <coord> to <coord>]:` | a drag in progress |
-| `on drag-finished [from <coord> to <coord>]:` | a drag ending |
+| `on click:` | a single click; and a drag, if there's no `on drag:` |
+| `on double-click:` | a double-click |
+| `on drag:` | a drag in progress (each time the pointer moves) |
+| `on drag-finished:` | a drag ending |
 | `on button "<label>":` | a configuration button with the given label being pressed |
 | `on timer "<name>" every <N> ms:` | a repeating timer firing |
 
-`<coord>` is a variable name for the point under the mouse, bound (and
-available to use in the block's body) for the duration of that block —
-either a single name for a complex-plane point (`at z`) or a pair
-`(x, y)` for a real-plane point. It doesn't need to already exist as a
-variable anywhere else.
+A handler for a click or a drag is given the point under the mouse, by
+a keyword that means that point only in the handlers it belongs to:
 
-For `drag` and `drag-finished`, the first name is where the drag started
-and the second is its current position: `on drag from start to z:`.
+| Keyword | In | Is |
+|---|---|---|
+| `click` | `on click:`, `on double-click:` | the point clicked (or, in `on click:` handling a drag, where the pointer is now) |
+| `drag start` | `on drag:`, `on drag-finished:` | where the drag started |
+| `drag end` | `on drag:`, `on drag-finished:` | where the pointer is now, or where the drag ended |
 
-When `at`/`from ... to` is omitted, the current-position coordinate
-defaults to the viewer's own coordinate: its `var=` variable, or the pair
-of its `xvar=` and `yvar=` variables in a real viewer. For drags, an
-omitted start position is simply unused. Either form can be used in
-either kind of viewer: `on click at (x, y):` in a complex viewer, or
-`on click at w:` in a real one (with `w = x + y i`). `on click-or-drag` binds one coordinate
-shared between the click and the in-progress drag.
+The point is the kind of point the viewer has: a complex number in a
+complex viewer, a pair of real numbers in a real viewer (`(x, y) :=
+click`), and a point of `Ĉ` in a sphere viewer, ∞ included (see "The
+Riemann sphere: Ĉ and ℙ¹"). To give it a name of your own, declare one:
+`w := click`. A handler doesn't see its viewer's own variable, which is
+the viewer's, for each pixel: not `z`, and in a parameter plane, `C` is
+the configuration's value, not the point clicked. Using a
+keyword outside its handlers is an error that says where it can be
+used; and none of them can be a script's own name.
+
+A tool with `on click:` and no `on drag:` runs `on click:` as the mouse
+is dragged too, with `click` where the pointer is: the right thing for a
+tool that follows the pointer, like Trace above. A tool with neither
+leaves drags to move the view.
 
 A tool script can have at most one block for each of `refresh`,
 `activated`, `deactivated`, `click`, `double-click`, `drag`, and

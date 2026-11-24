@@ -69,7 +69,8 @@ script: |
   iterate z -> f(z) until z escapes
 
   @tool "Trace" for="Dynamical plane" shortcut=t
-  on click-or-drag at w:
+  on click:
+    w := click
     erase
     use yellow for stroke
     use yellow for fill

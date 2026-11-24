@@ -31,7 +31,8 @@ script: |
     color <- if hit then invert(color) else color
 
   @tool "Vertical line" for="Mandelbrot set + logistic map bifurcations" shortcut=v
-  on click-or-drag:
+  on click:
+    C := click
     erase
     use red for line
     draw line from re C + 2 i to re C - 2 i

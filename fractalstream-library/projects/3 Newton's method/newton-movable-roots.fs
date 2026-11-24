@@ -38,7 +38,8 @@ script: |
   on deactivated:
     erase
 
-  on click-or-drag:
+  on click:
+    z := click
     erase
     repeat:
       z <- newton(z)
@@ -57,7 +58,9 @@ script: |
   on deactivated:
     erase
 
-  on drag from z0 to z:
+  on drag:
+    z := drag end
+    z0 := drag start
     if drag_target = 0:
       if |z0 - a| < rad pixel_size:
         drag_target <- 1

@@ -1,11 +1,11 @@
 format: 1
 script: |
   @common
-  f(z) := z^2 + C
+  f(z, c) := z^2 + c
 
   @viewer "Mandelbrot set" var=C
   z := 0
-  iterate z -> f(z) until z escapes
+  iterate z -> f(z, C) until z escapes
 
   if z escaped:
     color <- arenberg (iterations / 20)
@@ -24,13 +24,14 @@ script: |
     erase
 
   on click:
+    C := click
     z := 0
-    iterate z -> f(z) until z escapes up to warmup times
+    iterate z -> f(z, C) until z escapes up to warmup times
 
     if not (z escaped):
       target := z
       repeat up to max_period times:
-        z <- f(z)
+        z <- f(z, C)
       until |z - target| < tol
       if stuck:
         write "?" at C

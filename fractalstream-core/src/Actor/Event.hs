@@ -547,17 +547,39 @@ bindEventCoordinate coord (ComplexIn getA) (ComplexIn getB) env k = withEnvironm
         a' <- getA env'
         bindOrDeclare yp RealType (ImC a') env' k
 
+-- | Bind an event's point @[a : b]@ (see 'Point') to the internal name a
+-- handler reads it by (@click@, @drag start@, @drag end@: see
+-- 'Language.Typecheck.clickPointVar'), as the kind of viewer has its
+-- points: a pair of real numbers in a real viewer; a point of Ĉ in a
+-- sphere viewer; else a complex number.
+bindEventPoint :: forall env
+                . String
+               -> Coordinate
+               -- ^ the viewer's coordinate (only its kind matters)
+               -> ComplexIn
+               -> ComplexIn
+               -> EnvironmentProxy env
+               -> (forall e. KnownEnvironment e => EnvironmentProxy e -> Either (SourceRange, String) (Code e))
+               -> Either (SourceRange, String) (Code env)
+bindEventPoint name viewerCoord getA@(ComplexIn readA) getB env k = case viewerCoord of
+  ComplexCoordinate _ -> bindEventCoordinate (ComplexCoordinate name) getA getB env k
+  RealCoordinates _ _ -> withEnvironment env $ case someSymbolVal name of
+    SomeSymbol np -> do
+      a <- readA env
+      let pairT = PairType RealType RealType
+      bindOrDeclare np pairT (PairV pairT (ReC a) (ImC a)) env k
+
 parseClickScript :: CommonDefs
                  -> Coordinate
-                 -- ^ the viewer's coordinate
-                 -> Coordinate
-                 -- ^ the click's position
+                 -- ^ the viewer's coordinate (only its kind matters)
+                 -> String
+                 -- ^ the name the click's point is bound to
                  -> (ParsedValue, ParsedValue, ParsedValue)
                  -> Maybe String
                  -> ParsedCode
                  -> (forall env. EnvironmentProxy env
                      -> Either (SourceRange, String) (Code (ClickHandlerEnv env)))
-parseClickScript defs0 viewerCoord clickCoord limits mpixel body
+parseClickScript defs0 viewerCoord clickName limits mpixel body
   (env0 :: EnvironmentProxy env) = do
 
   env1 <- (declareE InternalPointA ComplexType
@@ -566,7 +588,7 @@ parseClickScript defs0 viewerCoord clickCoord limits mpixel body
        <=< declareE InternalPy RealType) env0
 
   withBookkeeping env1 defs0 limits $ \env _defs ->
-    bindEventCoordinate clickCoord (internalComplex InternalPointA) (internalComplex InternalPointB) env $ \env' ->
+    bindEventPoint clickName viewerCoord (internalComplex InternalPointA) (internalComplex InternalPointB) env $ \env' ->
       bindFreshReals (toolPixelVars viewerCoord mpixel) env' (handlerBody body)
 
 ------------------------------------------------------------
@@ -653,17 +675,17 @@ bindFreshReals ((name, RealIn getV) : rest) env k = case someSymbolVal name of
 
 parseDragScript :: CommonDefs
                 -> Coordinate
-                -- ^ the viewer's coordinate
-                -> Coordinate
-                -- ^ the drag's current position
-                -> Coordinate
-                -- ^ the drag's starting position
+                -- ^ the viewer's coordinate (only its kind matters)
+                -> String
+                -- ^ the name the drag's current position is bound to
+                -> String
+                -- ^ the name the drag's starting position is bound to
                 -> (ParsedValue, ParsedValue, ParsedValue)
                 -> Maybe String
                 -> ParsedCode
                 -> (forall env. EnvironmentProxy env
                     -> Either (SourceRange, String) (Code (DragHandlerEnv env)))
-parseDragScript _defs viewerCoord curCoord oldCoord (pMaxIters, pMaxRadius, pMinRadius) mpixel body
+parseDragScript _defs viewerCoord curName oldName (pMaxIters, pMaxRadius, pMinRadius) mpixel body
   (env :: EnvironmentProxy env) = do
   withEnvironment env $ do
     -- Bind all of the internal bookkeeping variables
@@ -684,8 +706,8 @@ parseDragScript _defs viewerCoord curCoord oldCoord (pMaxIters, pMaxRadius, pMin
     withEnvironment env' $ do
 
       code :: Code (InternalDragHandlerEnv env) <-
-        bindEventCoordinate curCoord (internalComplex InternalPointA) (internalComplex InternalPointB) env' $ \env1 ->
-          bindEventCoordinate oldCoord (internalComplex InternalOldA) (internalComplex InternalOldB) env1 $ \env2 ->
+        bindEventPoint curName viewerCoord (internalComplex InternalPointA) (internalComplex InternalPointB) env' $ \env1 ->
+          bindEventPoint oldName viewerCoord (internalComplex InternalOldA) (internalComplex InternalOldB) env1 $ \env2 ->
             bindFreshReals (toolPixelVars viewerCoord mpixel) env2 (handlerBody body)
 
       -- Now bind all of the bookkeeping variables
@@ -818,9 +840,18 @@ mergeToolBlocks :: [ParsedToolBlock]
                 -> (ParsedValue, ParsedValue, ParsedValue)
                 -> Maybe String
                 -> ParsedToolScript
-mergeToolBlocks blocks defaultCoord limits mpixel = ParsedToolScript $ \env ->
+mergeToolBlocks blocks0 defaultCoord limits mpixel = ParsedToolScript $ \env ->
   foldl' combineEventHandlers (Right noHandlers)
     [ f defaultCoord limits mpixel env | ParsedToolBlock _ _ f <- blocks ]
+  where
+    -- (`on click:` handles drags only if there's no `on drag:`)
+    hasDrag = any ((== "on drag") . toolBlockEvent) blocks0
+    blocks = [ b | b <- blocks0, not (hasDrag && toolBlockEvent b == clickWhileDragging) ]
+
+-- | The event of the block an @on click:@ makes to handle drags too, used
+-- only when the tool has no @on drag:@ block.
+clickWhileDragging :: String
+clickWhileDragging = "on click (while dragging)"
 
 -- | A tool script with no event handlers at all (e.g. a tool whose
 -- @script:@ field is absent or empty).
@@ -866,19 +897,8 @@ toolBlocksGrammar defs = mdo
   colon <- rule (token Colon <?> ":")
   nl    <- rule (token Newline <?> "end of line")
 
-  coordSpec <- rule $
-        (ComplexCoordinate <$> ident)
-    <|> (RealCoordinates
-          <$> (token OpenParen *> ident <* token Comma)
-          <*> (ident <* token CloseParen))
-
-  fromTo <- rule $
-    (,) <$> (tok "from" *> coordSpec) <*> (token ToKeyword *> coordSpec)
-
   quoted <- rule (tokenMatch (\case { Quoted s -> Just s; _ -> Nothing }))
   intLit <- rule (tokenMatch (\case { NumberI n -> Just (fromIntegral n); _ -> Nothing }))
-
-  let dummyStart = ComplexCoordinate "[unused] start"
 
   onRefresh' <- rule $
     (\body -> ParsedToolBlock "on refresh" [] $ \defaultCoord limits mpixel env ->
@@ -913,53 +933,45 @@ toolBlocksGrammar defs = mdo
     <*> (tok "every" *> intLit <* tok "ms" <* colon <* nl)
     <*> codeBlock
 
+  -- A click's point is `click`. With no `on drag:`, the tool's
+  -- `on click:` also handles drags, with `click` where the pointer is
+  -- now (see 'clickWhileDragging' and 'mergeToolBlocks').
   onClick' <- rule $
-    (\mc body -> ParsedToolBlock "on click" [] $ \defaultCoord limits mpixel env ->
-        second (\c -> noHandlers { onClick = Just c })
-          (parseClickScript defs defaultCoord (fromMaybe defaultCoord mc) limits mpixel body env))
-    <$> (tok "on" *> tok "click" *> optional (tok "at" *> coordSpec) <* colon <* nl)
-    <*> codeBlock
+    (\body ->
+      [ ParsedToolBlock "on click" [] $ \viewerCoord limits mpixel env ->
+          second (\c -> noHandlers { onClick = Just c })
+            (parseClickScript defs viewerCoord clickPointVar limits mpixel body env)
+      , ParsedToolBlock clickWhileDragging [] $ \viewerCoord limits mpixel env ->
+          second (\d -> noHandlers { onDrag = Just d })
+            (parseDragScript defs viewerCoord clickPointVar "[unused] drag start" limits mpixel body env) ])
+    <$> (tok "on" *> tok "click" *> colon *> nl *> codeBlock)
 
   onDoubleClick' <- rule $
-    (\mc body -> ParsedToolBlock "on double-click" [] $ \defaultCoord limits mpixel env ->
+    (\body -> [ ParsedToolBlock "on double-click" [] $ \viewerCoord limits mpixel env ->
         second (\c -> noHandlers { onDoubleClick = Just c })
-          (parseClickScript defs defaultCoord (fromMaybe defaultCoord mc) limits mpixel body env))
-    <$> (tok "on" *> tok "double" *> token Minus *> tok "click"
-          *> optional (tok "at" *> coordSpec) <* colon <* nl)
-    <*> codeBlock
+          (parseClickScript defs viewerCoord clickPointVar limits mpixel body env) ])
+    <$> (tok "on" *> tok "double" *> token Minus *> tok "click" *> colon *> nl *> codeBlock)
 
-  onClickOrDrag' <- rule $
-    (\mc body -> ParsedToolBlock "on click-or-drag" [] $ \defaultCoord limits mpixel env ->
-        let c = fromMaybe defaultCoord mc
-        in second (\(ch, dh) -> noHandlers { onClick = Just ch, onDrag = Just dh })
-             ((,) <$> parseClickScript defs defaultCoord c limits mpixel body env
-                  <*> parseDragScript  defs defaultCoord c dummyStart limits mpixel body env))
-    <$> (tok "on" *> tok "click" *> token Minus *> token Or_ *> token Minus *> tok "drag"
-          *> optional (tok "at" *> coordSpec) <* colon <* nl)
-    <*> codeBlock
-
+  -- A drag's points are `drag start` and `drag end` (where the pointer
+  -- is now, during the drag).
   onDrag' <- rule $
-    (\mft body -> ParsedToolBlock "on drag" [] $ \defaultCoord limits mpixel env ->
-        let (startC, curC) = fromMaybe (dummyStart, defaultCoord) mft
-        in second (\d -> noHandlers { onDrag = Just d })
-             (parseDragScript defs defaultCoord curC startC limits mpixel body env))
-    <$> (tok "on" *> tok "drag" *> optional fromTo <* colon <* nl)
-    <*> codeBlock
+    (\body -> [ ParsedToolBlock "on drag" [] $ \viewerCoord limits mpixel env ->
+        second (\d -> noHandlers { onDrag = Just d })
+          (parseDragScript defs viewerCoord dragEndVar dragStartVar limits mpixel body env) ])
+    <$> (tok "on" *> tok "drag" *> colon *> nl *> codeBlock)
 
   onDragFinished' <- rule $
-    (\mft body -> ParsedToolBlock "on drag-finished" [] $ \defaultCoord limits mpixel env ->
-        let (startC, curC) = fromMaybe (dummyStart, defaultCoord) mft
-        in second (\d -> noHandlers { onDragDone = Just d })
-             (parseDragScript defs defaultCoord curC startC limits mpixel body env))
-    <$> (tok "on" *> tok "drag" *> token Minus *> tok "finished" *> optional fromTo <* colon <* nl)
-    <*> codeBlock
+    (\body -> [ ParsedToolBlock "on drag-finished" [] $ \viewerCoord limits mpixel env ->
+        second (\d -> noHandlers { onDragDone = Just d })
+          (parseDragScript defs viewerCoord dragEndVar dragStartVar limits mpixel body env) ])
+    <$> (tok "on" *> tok "drag" *> token Minus *> tok "finished" *> colon *> nl *> codeBlock)
 
   toolBlock <- ruleChoice
-    [ onClick', onDoubleClick', onClickOrDrag', onDragFinished', onDrag'
-    , onRefresh', onActivated', onDeactivated', onButton', onTimer'
+    [ onClick', onDoubleClick', onDragFinished', onDrag'
+    , (:[]) <$> onRefresh', (:[]) <$> onActivated', (:[]) <$> onDeactivated', (:[]) <$> onButton', (:[]) <$> onTimer'
     ]
 
-  rule (many toolBlock)
+  rule (concat <$> many toolBlock)
 
 ------------------------------------------------------------
 -- Helpers

@@ -65,7 +65,8 @@ script: |
 
   @tool "Circle" for="Surface" shortcut=c
   radius : R as "Radius (hyperbolic)" := 1.5
-  on click-or-drag at p:
+  on click:
+    p := click
     erase
     use white for stroke
     use white for fill
@@ -76,7 +77,9 @@ script: |
     erase
 
   @tool "Geodesic" for="Surface" shortcut=g
-  on drag from s to p:
+  on drag:
+    p := drag end
+    s := drag start
     erase
     use white for stroke
     use white for fill

@@ -204,14 +204,16 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `p` = [internal] point a in:
+          let `[internal] click` = [internal] point a in:
             let `pixel_size` = [internal] px in:
               block:
-                erase
-                use Color 255 255 255 for line
-                use Color 255 255 255 for line
-                draw circle at (p, 1.0 :+ 0.0) with radius radius
-                draw filled circle at (p, 1.0 :+ 0.0) with radius 3:R pixels
+                let `p` = [internal] click in:
+                  block:
+                    erase
+                    use Color 255 255 255 for line
+                    use Color 255 255 255 for line
+                    draw circle at (p, 1.0 :+ 0.0) with radius radius
+                    draw filled circle at (p, 1.0 :+ 0.0) with radius 3:R pixels
 
   -- on drag
 let `[internal] vanishing radius` = vanishing_radius in:
@@ -219,15 +221,17 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `p` = [internal] point a in:
-            let `[unused] start` = [internal] old point a in:
+          let `[internal] click` = [internal] point a in:
+            let `[unused] drag start` = [internal] old point a in:
               let `pixel_size` = [internal] px in:
                 block:
-                  erase
-                  use Color 255 255 255 for line
-                  use Color 255 255 255 for line
-                  draw circle at (p, 1.0 :+ 0.0) with radius radius
-                  draw filled circle at (p, 1.0 :+ 0.0) with radius 3:R pixels
+                  let `p` = [internal] click in:
+                    block:
+                      erase
+                      use Color 255 255 255 for line
+                      use Color 255 255 255 for line
+                      draw circle at (p, 1.0 :+ 0.0) with radius radius
+                      draw filled circle at (p, 1.0 :+ 0.0) with radius 3:R pixels
 
   -- on deactivated
 let `[internal] vanishing radius` = vanishing_radius in:
@@ -247,16 +251,20 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `p` = [internal] point a in:
-            let `s` = [internal] old point a in:
+          let `[internal] drag end` = [internal] point a in:
+            let `[internal] drag start` = [internal] old point a in:
               let `pixel_size` = [internal] px in:
                 block:
-                  erase
-                  use Color 255 255 255 for line
-                  use Color 255 255 255 for line
-                  draw line from (s, 1.0 :+ 0.0) to (p, 1.0 :+ 0.0)
-                  draw filled circle at (s, 1.0 :+ 0.0) with radius 3:R pixels
-                  draw filled circle at (p, 1.0 :+ 0.0) with radius 3:R pixels
+                  let `p` = [internal] drag end in:
+                    block:
+                      let `s` = [internal] drag start in:
+                        block:
+                          erase
+                          use Color 255 255 255 for line
+                          use Color 255 255 255 for line
+                          draw line from (s, 1.0 :+ 0.0) to (p, 1.0 :+ 0.0)
+                          draw filled circle at (s, 1.0 :+ 0.0) with radius 3:R pixels
+                          draw filled circle at (p, 1.0 :+ 0.0) with radius 3:R pixels
 
   -- on deactivated
 let `[internal] vanishing radius` = vanishing_radius in:

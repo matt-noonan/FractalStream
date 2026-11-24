@@ -76,18 +76,20 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `z` = [internal] point a in:
+          let `[internal] click` = [internal] point a in:
             let `pixel_size` = [internal] px in:
               block:
-                erase
-                use color1 for line
-                draw point at (z, 1.0 :+ 0.0)
-                set `pre1` := let [internal] preimage.z #0 = z in sqrt(((-C + [internal] preimage.z #0) / ([internal] preimage.z #0 - 1:R:C)))
-                set `pre2` := -let [internal] preimage.z #0 = z in sqrt(((-C + [internal] preimage.z #0) / ([internal] preimage.z #0 - 1:R:C)))
-                use color2 for line
-                draw point at (pre1, 1.0 :+ 0.0)
-                use color3 for line
-                draw point at (pre2, 1.0 :+ 0.0)
+                let `z` = [internal] click in:
+                  block:
+                    erase
+                    use color1 for line
+                    draw point at (z, 1.0 :+ 0.0)
+                    set `pre1` := let [internal] preimage.z #0 = z in sqrt(((-C + [internal] preimage.z #0) / ([internal] preimage.z #0 - 1:R:C)))
+                    set `pre2` := -let [internal] preimage.z #0 = z in sqrt(((-C + [internal] preimage.z #0) / ([internal] preimage.z #0 - 1:R:C)))
+                    use color2 for line
+                    draw point at (pre1, 1.0 :+ 0.0)
+                    use color3 for line
+                    draw point at (pre2, 1.0 :+ 0.0)
 
   -- on drag
 let `[internal] vanishing radius` = vanishing_radius in:
@@ -95,19 +97,21 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `z` = [internal] point a in:
-            let `[unused] start` = [internal] old point a in:
+          let `[internal] click` = [internal] point a in:
+            let `[unused] drag start` = [internal] old point a in:
               let `pixel_size` = [internal] px in:
                 block:
-                  erase
-                  use color1 for line
-                  draw point at (z, 1.0 :+ 0.0)
-                  set `pre1` := let [internal] preimage.z #0 = z in sqrt(((-C + [internal] preimage.z #0) / ([internal] preimage.z #0 - 1:R:C)))
-                  set `pre2` := -let [internal] preimage.z #0 = z in sqrt(((-C + [internal] preimage.z #0) / ([internal] preimage.z #0 - 1:R:C)))
-                  use color2 for line
-                  draw point at (pre1, 1.0 :+ 0.0)
-                  use color3 for line
-                  draw point at (pre2, 1.0 :+ 0.0)
+                  let `z` = [internal] click in:
+                    block:
+                      erase
+                      use color1 for line
+                      draw point at (z, 1.0 :+ 0.0)
+                      set `pre1` := let [internal] preimage.z #0 = z in sqrt(((-C + [internal] preimage.z #0) / ([internal] preimage.z #0 - 1:R:C)))
+                      set `pre2` := -let [internal] preimage.z #0 = z in sqrt(((-C + [internal] preimage.z #0) / ([internal] preimage.z #0 - 1:R:C)))
+                      use color2 for line
+                      draw point at (pre1, 1.0 :+ 0.0)
+                      use color3 for line
+                      draw point at (pre2, 1.0 :+ 0.0)
 
   -- on deactivated
 let `[internal] vanishing radius` = vanishing_radius in:
@@ -173,45 +177,47 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `z` = [internal] point a in:
-            let `[unused] start` = [internal] old point a in:
+          let `[internal] drag end` = [internal] point a in:
+            let `[internal] drag start` = [internal] old point a in:
               let `pixel_size` = [internal] px in:
                 block:
-                  let `pre1` = let [internal] preimage.z #0 = z in sqrt(((-C + [internal] preimage.z #0) / ([internal] preimage.z #0 - 1:R:C))) in:
+                  let `z` = [internal] drag end in:
                     block:
-                      let `pre2` = -let [internal] preimage.z #0 = z in sqrt(((-C + [internal] preimage.z #0) / ([internal] preimage.z #0 - 1:R:C))) in:
+                      let `pre1` = let [internal] preimage.z #0 = z in sqrt(((-C + [internal] preimage.z #0) / ([internal] preimage.z #0 - 1:R:C))) in:
                         block:
-                          if follow then:
+                          let `pre2` = -let [internal] preimage.z #0 = z in sqrt(((-C + [internal] preimage.z #0) / ([internal] preimage.z #0 - 1:R:C))) in:
                             block:
-                              use color1 for line
-                              draw line from (last_z, 1.0 :+ 0.0) to (z, 1.0 :+ 0.0)
-                              set `last_z` := z
-                              if (|(last_pre1 - pre2)| < |(last_pre1 - pre1)|) then:
+                              if follow then:
                                 block:
-                                  let `tmp` = pre1 in:
+                                  use color1 for line
+                                  draw line from (last_z, 1.0 :+ 0.0) to (z, 1.0 :+ 0.0)
+                                  set `last_z` := z
+                                  if (|(last_pre1 - pre2)| < |(last_pre1 - pre1)|) then:
                                     block:
-                                      set `pre1` := pre2
-                                      set `pre2` := tmp
+                                      let `tmp` = pre1 in:
+                                        block:
+                                          set `pre1` := pre2
+                                          set `pre2` := tmp
+                                  else:
+                                    no-op
+                                  use color2 for line
+                                  draw line from (last_pre1, 1.0 :+ 0.0) to (pre1, 1.0 :+ 0.0)
+                                  set `last_pre1` := pre1
+                                  use color3 for line
+                                  draw line from (last_pre2, 1.0 :+ 0.0) to (pre2, 1.0 :+ 0.0)
+                                  set `last_pre2` := pre2
                               else:
-                                no-op
-                              use color2 for line
-                              draw line from (last_pre1, 1.0 :+ 0.0) to (pre1, 1.0 :+ 0.0)
-                              set `last_pre1` := pre1
-                              use color3 for line
-                              draw line from (last_pre2, 1.0 :+ 0.0) to (pre2, 1.0 :+ 0.0)
-                              set `last_pre2` := pre2
-                          else:
-                            block:
-                              use color1 for line
-                              draw point at (z, 1.0 :+ 0.0)
-                              set `last_z` := z
-                              use color2 for line
-                              draw point at (pre1, 1.0 :+ 0.0)
-                              set `last_pre1` := pre1
-                              use color3 for line
-                              draw point at (pre2, 1.0 :+ 0.0)
-                              set `last_pre2` := pre2
-                              set `follow` := True
+                                block:
+                                  use color1 for line
+                                  draw point at (z, 1.0 :+ 0.0)
+                                  set `last_z` := z
+                                  use color2 for line
+                                  draw point at (pre1, 1.0 :+ 0.0)
+                                  set `last_pre1` := pre1
+                                  use color3 for line
+                                  draw point at (pre2, 1.0 :+ 0.0)
+                                  set `last_pre2` := pre2
+                                  set `follow` := True
 
   -- on drag-done
 let `[internal] vanishing radius` = vanishing_radius in:
@@ -219,8 +225,8 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `z` = [internal] point a in:
-            let `[unused] start` = [internal] old point a in:
+          let `[internal] drag end` = [internal] point a in:
+            let `[internal] drag start` = [internal] old point a in:
               let `pixel_size` = [internal] px in:
                 block:
                   set `follow` := False

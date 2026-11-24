@@ -254,7 +254,7 @@ spec = do
         `shouldSatisfy` either (("declare it `C : Ĉ`" `isInfixOf`) . snd) (const False)
 
     it "gives a sphere viewer's tools points of Ĉ, drawn where they are" $
-      checkScript "@viewer \"V\" var=z view=sphere\ncolor <- red\n\n@tool \"T\" for=\"V\"\non click:\n  w := z^2\n  draw point at w\n  if w = ∞:\n    draw line from z to w\n"
+      checkScript "@viewer \"V\" var=z view=sphere\ncolor <- red\n\n@tool \"T\" for=\"V\"\non click:\n  z := click\n  w := z^2\n  draw point at w\n  if w = ∞:\n    draw line from z to w\n"
         `shouldBe` Right ()
   where
     -- (dragging loses a little precision near the rim)

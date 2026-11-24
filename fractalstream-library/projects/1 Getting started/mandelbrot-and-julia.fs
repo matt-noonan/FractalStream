@@ -16,7 +16,8 @@ script: |
   @tool "Trace" for="Dynamical plane" shortcut=t
   on deactivated:
     erase
-  on click-or-drag:
+  on click:
+    z := click
     erase
     until z escapes:
       draw point at z

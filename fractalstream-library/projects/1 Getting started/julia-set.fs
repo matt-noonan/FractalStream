@@ -10,7 +10,8 @@ script: |
   iterate z -> f(z) until z escapes
 
   @tool "Trace" for="Julia set" shortcut=t
-  on click-or-drag:
+  on click:
+    z := click
     erase
     until z escapes:
       draw point at z

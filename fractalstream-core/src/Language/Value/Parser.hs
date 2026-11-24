@@ -329,6 +329,8 @@ valueAndArithGrammar funs own = mdo
   let -- a built-in name, unless it's the script's own
       free n = not (Set.member n own)
       builtinWord n = tokenMatch (\case { Identifier m | m == n, free m -> Just (); _ -> Nothing })
+      -- (a word that's part of a phrase, whatever the script names)
+      phraseWord n = tokenMatch (\case { Identifier m | m == n -> Just (); _ -> Nothing })
 
   let toplevel = cast
 
@@ -622,6 +624,10 @@ valueAndArithGrammar funs own = mdo
     , node (literal "π" RealType pi <$ token Pi)
     , node (literal "text" TextType <$> quoted)
     , node (EVar internalIterations <$ token Iterations)
+    -- the points a tool's handlers are given (see "Actor.Event")
+    , node (EVar clickPointVar <$ token ClickKeyword)
+    , node (EVar dragStartVar <$ (token DragKeyword *> phraseWord "start"))
+    , node (EVar dragEndVar <$ (token DragKeyword *> phraseWord "end"))
     , node (EVar internalStuck <$ token Stuck)
     , node (
         (\n -> literal (show n) IntegerType (fromIntegral n))

@@ -106,7 +106,8 @@ script: |
   run draw_rays(true)
 
   @tool "Trace" for="Dynamical plane" shortcut=t
-  on click-or-drag:
+  on click:
+    z := click
     start <- z
     run trace(z)
 

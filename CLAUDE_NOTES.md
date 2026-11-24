@@ -255,8 +255,9 @@ shows a modal "Loading ..." window with a spinner and Cancel.
 Real viewers: a viewer's coordinate is an `Actor.Event.Coordinate`,
 `ComplexCoordinate z` (`var=`, default `z`) or `RealCoordinates x y`
 (`xvar=` and `yvar=`, both needed, not with `var=`; validated in
-`Actor.Script.validateViewerHeader`). The same type names a tool event's
-position (`on click at (p, q):`) and a movie path's variables, and is
+`Actor.Script.validateViewerHeader`). The same type names a movie path's
+variables (and decides the type of a tool event's point: `click` is a
+pair in a real viewer), and is
 matched exhaustively everywhere, so another kind (a Riemann sphere
 viewer is planned) gets a compile error at each place that must decide.
 `parseViewerScript` binds the coordinate(s) to `[internal] x`/`y` with
@@ -447,8 +448,9 @@ Tool dispatchers take `PixelDims` (pixel width and height); every
 handler environment binds `[internal] px` and `[internal] py`, and
 `toolPixelVars` decides, from the *viewer's* coordinate kind (not the
 handler's `at` form), whether `pixel_width`/`pixel_height` are bound.
-`bindEventCoordinate` binds an event position either way; drags with
-real coordinates (`on drag from (a, b) to (c, d):`) now work.
+`bindEventPoint` binds an event's point (`click`, `drag start`,
+`drag end`: internal names, see `Language.Typecheck.clickPointVar`) as
+the viewer's kind of point: a pair, a point of Ĉ, or a complex number.
 
 The wx viewer keeps `Model`'s `(px, py)` pixel dimensions and writes
 `vAspect` back from them; real viewers get "Aspect ratio..." in the
@@ -1439,9 +1441,9 @@ script: |
   color <- if stuck then black else rainbow(iterations / 20)
 
   @tool "Trace" for="Julia set" shortcut=t
-  on click-or-drag:
+  on click:
     erase
-    draw point at z
+    draw point at click
 scenarios:
   - name: simple
     commands: |

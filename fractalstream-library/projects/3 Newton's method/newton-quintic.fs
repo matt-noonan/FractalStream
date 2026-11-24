@@ -20,7 +20,8 @@ script: |
   @tool "Trace" for="Roots of f" shortcut=t
   on deactivated:
     erase
-  on click-or-drag:
+  on click:
+    z := click
     erase
     use white for stroke
     repeat:

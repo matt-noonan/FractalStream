@@ -307,7 +307,8 @@ script: |
     draw circle at t5 with radius 3 pixel_size
 
   @tool "Trace orbit" for="Julia set" shortcut=t
-  on click at w0:
+  on click:
+    w0 := click
     erase
     use yellow for stroke
     pa := 0.0

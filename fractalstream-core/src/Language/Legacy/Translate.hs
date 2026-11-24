@@ -572,8 +572,8 @@ translateT isReal title src body = do
                 ++ [ if plane == ParamPlane then "true" else "false" | probeSplit ]
           in [ Line ("@tool " ++ quote title' ++ " for=" ++ quote viewerTitle)
              , Line (field ++ " : " ++ fieldTy ++ " as " ++ quote title' ++ " := " ++ fieldDefault fieldTy)
-             , Line ("on click at " ++ clicked ++ ":")
-             , Nest (start' ++ [Line ("run " ++ withArguments probeFn arguments)]) ]
+             , Line "on click:"
+             , Nest (Line (clicked ++ " := click") : start' ++ [Line ("run " ++ withArguments probeFn arguments)]) ]
     pure (def, map tool planes)
   let probeDefs = map fst probeParts
       probeTools = concatMap snd probeParts
@@ -600,8 +600,9 @@ translateT isReal title src body = do
            , Line "on deactivated:"
            , Nest [Line "erase"]
            , Line ""
-           , Line ("on click-or-drag at " ++ point ++ ":")
-           , Nest ( [ Line "erase"
+           , Line "on click:"
+           , Nest ( [ Line (point ++ " := click")
+                    , Line "erase"
                     , Line ("use " ++ colorVar ++ " for line")
                     , Line "# (the script sets these for coloring, which the tool doesn't use)" ]
                     ++ coloringDecls ++

@@ -201,34 +201,39 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `x` = re([internal] point a) in:
-            let `y` = im([internal] point a) in:
-              let `pixel_size` = [internal] px in:
-                let `pixel_width` = [internal] px in:
-                  let `pixel_height` = [internal] py in:
-                    block:
-                      erase
-                      use Color 255 255 255 for line
-                      draw point at (((1st (x, y)):C + (0.0 :+ 1.0 * (2nd (x, y)):C)), 1.0 :+ 0.0)
-                      use Color 255 255 0 for line
-                      let `[internal] fresh #23` = 0 in:
-                        let `[internal] fresh #24` = orbit_length in:
+          let `[internal] click` = (re([internal] point a), im([internal] point a)) in:
+            let `pixel_size` = [internal] px in:
+              let `pixel_width` = [internal] px in:
+                let `pixel_height` = [internal] py in:
+                  block:
+                    let `[internal] tuple #0` = [internal] click in:
+                      block:
+                        let `x` = (1st [internal] tuple #0) in:
                           block:
-                            do-while (!let #tuple 0 = (x, y) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #23 < [internal] fresh #24)):
+                            let `y` = (2nd [internal] tuple #0) in:
                               block:
-                                block:
-                                  block:
+                                erase
+                                use Color 255 255 255 for line
+                                draw point at (((1st (x, y)):C + (0.0 :+ 1.0 * (2nd (x, y)):C)), 1.0 :+ 0.0)
+                                use Color 255 255 0 for line
+                                let `[internal] fresh #25` = 0 in:
+                                  let `[internal] fresh #26` = orbit_length in:
                                     block:
-                                      let `[internal] tuple #0` = ((1:R - (a * (x ^ 2:R))) + y) in:
+                                      do-while (!let #tuple 0 = (x, y) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #25 < [internal] fresh #26)):
                                         block:
-                                          let `[internal] tuple #1` = (b * x) in:
+                                          block:
                                             block:
-                                              set `x` := [internal] tuple #0
-                                              set `y` := [internal] tuple #1
-                                  draw point at (((1st (x, y)):C + (0.0 :+ 1.0 * (2nd (x, y)):C)), 1.0 :+ 0.0)
-                                set `[internal] fresh #23` := ([internal] fresh #23 + 1)
-                            set `[internal] iteration count` := [internal] fresh #23
-                            set `[internal] stuck` := ([internal] fresh #23 = [internal] fresh #24)
+                                              block:
+                                                let `[internal] tuple #1` = ((1:R - (a * (x ^ 2:R))) + y) in:
+                                                  block:
+                                                    let `[internal] tuple #2` = (b * x) in:
+                                                      block:
+                                                        set `x` := [internal] tuple #1
+                                                        set `y` := [internal] tuple #2
+                                            draw point at (((1st (x, y)):C + (0.0 :+ 1.0 * (2nd (x, y)):C)), 1.0 :+ 0.0)
+                                          set `[internal] fresh #25` := ([internal] fresh #25 + 1)
+                                      set `[internal] iteration count` := [internal] fresh #25
+                                      set `[internal] stuck` := ([internal] fresh #25 = [internal] fresh #26)
 
   -- on drag
 let `[internal] vanishing radius` = vanishing_radius in:
@@ -236,35 +241,40 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `x` = re([internal] point a) in:
-            let `y` = im([internal] point a) in:
-              let `[unused] start` = [internal] old point a in:
-                let `pixel_size` = [internal] px in:
-                  let `pixel_width` = [internal] px in:
-                    let `pixel_height` = [internal] py in:
-                      block:
-                        erase
-                        use Color 255 255 255 for line
-                        draw point at (((1st (x, y)):C + (0.0 :+ 1.0 * (2nd (x, y)):C)), 1.0 :+ 0.0)
-                        use Color 255 255 0 for line
-                        let `[internal] fresh #26` = 0 in:
-                          let `[internal] fresh #27` = orbit_length in:
+          let `[internal] click` = (re([internal] point a), im([internal] point a)) in:
+            let `[unused] drag start` = (re([internal] old point a), im([internal] old point a)) in:
+              let `pixel_size` = [internal] px in:
+                let `pixel_width` = [internal] px in:
+                  let `pixel_height` = [internal] py in:
+                    block:
+                      let `[internal] tuple #0` = [internal] click in:
+                        block:
+                          let `x` = (1st [internal] tuple #0) in:
                             block:
-                              do-while (!let #tuple 0 = (x, y) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #26 < [internal] fresh #27)):
+                              let `y` = (2nd [internal] tuple #0) in:
                                 block:
-                                  block:
-                                    block:
+                                  erase
+                                  use Color 255 255 255 for line
+                                  draw point at (((1st (x, y)):C + (0.0 :+ 1.0 * (2nd (x, y)):C)), 1.0 :+ 0.0)
+                                  use Color 255 255 0 for line
+                                  let `[internal] fresh #28` = 0 in:
+                                    let `[internal] fresh #29` = orbit_length in:
                                       block:
-                                        let `[internal] tuple #0` = ((1:R - (a * (x ^ 2:R))) + y) in:
+                                        do-while (!let #tuple 0 = (x, y) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #28 < [internal] fresh #29)):
                                           block:
-                                            let `[internal] tuple #1` = (b * x) in:
+                                            block:
                                               block:
-                                                set `x` := [internal] tuple #0
-                                                set `y` := [internal] tuple #1
-                                    draw point at (((1st (x, y)):C + (0.0 :+ 1.0 * (2nd (x, y)):C)), 1.0 :+ 0.0)
-                                  set `[internal] fresh #26` := ([internal] fresh #26 + 1)
-                              set `[internal] iteration count` := [internal] fresh #26
-                              set `[internal] stuck` := ([internal] fresh #26 = [internal] fresh #27)
+                                                block:
+                                                  let `[internal] tuple #1` = ((1:R - (a * (x ^ 2:R))) + y) in:
+                                                    block:
+                                                      let `[internal] tuple #2` = (b * x) in:
+                                                        block:
+                                                          set `x` := [internal] tuple #1
+                                                          set `y` := [internal] tuple #2
+                                              draw point at (((1st (x, y)):C + (0.0 :+ 1.0 * (2nd (x, y)):C)), 1.0 :+ 0.0)
+                                            set `[internal] fresh #28` := ([internal] fresh #28 + 1)
+                                        set `[internal] iteration count` := [internal] fresh #28
+                                        set `[internal] stuck` := ([internal] fresh #28 = [internal] fresh #29)
 
   -- on deactivated
 let `[internal] vanishing radius` = vanishing_radius in:

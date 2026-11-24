@@ -80,6 +80,8 @@ data Token
   | Vanishes
   | Stops
   | Iterations
+  | ClickKeyword
+  | DragKeyword
   | TimesKeyword
   | Stuck
   | Quoted String
@@ -264,6 +266,7 @@ wordlikeTokens = Map.fromList
   , ("vanishes", Vanishes), ("vanished", Vanishes)
   , ("stops", Stops), ("stopped", Stops)
   , ("iterations", Iterations), ("times", TimesKeyword)
+  , ("click", ClickKeyword), ("drag", DragKeyword)
   , ("stuck", Stuck)
   , ("text", TextKeyword)
   , ("append", AppendKeyword), ("prepend", PrependKeyword)

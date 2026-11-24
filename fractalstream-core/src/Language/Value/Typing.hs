@@ -909,6 +909,7 @@ describe :: ExprF r -> String
 describe = \case
   ELit d _ -> d
   EVar n | isOwnableBuiltin n -> n ++ " (this script's own variable here, not the built-in)"
+         | Just w <- eventPointWord n -> "`" ++ w ++ "`"
          | Just d <- internalDescription n -> d
          | otherwise -> n
   ECast{} -> "this conversion"

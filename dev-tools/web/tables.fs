@@ -11,7 +11,7 @@ script: |
   color <- if w = 0 then black else rgb(re(T @ point C) / 600, im(T @ point C) / 600, 0.5)
 
   @tool "Fill" for="V"
-  on click at p:
+  on click:
     reset T to (viewer_width, viewer_height)
     for each j in range(1, viewer_width):
       for each k in range(1, viewer_height):

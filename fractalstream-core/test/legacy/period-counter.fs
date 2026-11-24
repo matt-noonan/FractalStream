@@ -42,13 +42,15 @@ script: |
 
   @tool "Period Counter" for="Parameter plane"
   period_counter : Z as "Period Counter" := 0
-  on click at clicked:
+  on click:
+    clicked := click
     z := 0
     run probe_period_counter(clicked)
 
   @tool "Period Counter" for="Dynamical plane"
   period_counter : Z as "Period Counter" := 0
-  on click at clicked:
+  on click:
+    clicked := click
     z := clicked
     run probe_period_counter(C)
 
@@ -58,7 +60,8 @@ script: |
   on deactivated:
     erase
 
-  on click-or-drag at z:
+  on click:
+    z := click
     erase
     use trace_color for line
     # (the script sets these for coloring, which the tool doesn't use)
