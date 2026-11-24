@@ -90,6 +90,45 @@ changes; its tools and its overlay don't run. When it's shown again, its window 
 it was, with the same view, and it's drawn with the configuration as it is then. Whether a viewer
 is shown isn't saved with the project, since it follows from the configuration.
 
+### Lattices: viewers of a torus
+
+A viewer of the plane can have a *lattice* acting on it. The viewer then *folds* each pixel's
+point into the lattice's fundamental parallelogram before its script sees it, so the script works
+on the torus (the plane modulo the lattice), and the picture repeats over the plane, one copy per
+tile. For example, this project draws the Weierstrass ℘ function of the lattice ℤ + τℤ (see
+{ref}`elliptic`), with the tiles' edges in black:
+
+```{code-block} fs
+---
+caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=Jc67CgIxEIXhPk9xSKV4jWKz7IJga6f9ErOzOphNliReEEvfz1cyajcc_g-m9aHTqYAS0QTu8_UUwNp41_IRcqtTYkMyb-8XCmxQVJhPlxhBTRVYfOMr040C5N6HS5Swf1Nl0POd7I4fVKmZWs1zbLz1AeUE3CJyQ3XDMWlnCCUW_76OGSCdyOFgtTmDbCQ0vtPs6p8f3PrBYww1zk8Nh-ID)
+---
+@config "Lattice"
+τ : C := 0.3 + 1.1 i
+
+@viewer "Torus" lattice=τ pixelSize=1/150
+color <- if side_distance < 2 pixel_size then black else domain_color(wp(z, 1, τ))
+```
+
+In a complex viewer, `lattice=τ` is the lattice ℤ + τℤ, and `lattice="(ω1, ω2)"` is the lattice
+ω1ℤ + ω2ℤ. In a real viewer, the lattice is given by a pair of vectors: `lattice="((1, 0), (0, 1))"`
+is ℤ². The periods are worked out from the configuration's values (and the standard library's
+functions), and again whenever one of them changes, so changing a configuration value (by hand or
+from a tool) changes the lattice, and the viewer is drawn again.
+
+The fundamental parallelogram is the one centered at 0: the points `s ω1 + t ω2` with `s` and `t`
+between -1/2 and 1/2. A `latticeCenter=` attribute centers it at another point instead (a complex
+number, or a pair of real numbers in a real viewer).
+
+Besides its folded point, a viewer with a lattice has two more variables:
+
+| Variable | Is |
+| -------- | -- |
+| `cell` | The pair of integers `(m, n)` of the tile the pixel's point was in, the one that was moved back by `m ω1 + n ω2` |
+| `side_distance` | The distance from the folded point to the nearest side of the parallelogram |
+
+The points a tool is given (`click`, `drag start` and `drag end`) are folded too, and a tool's
+drawings are drawn in each tile on the screen, unless the tiles are too small to see.
+
 ## Shared definitions
 
 Shared definitions are grouped into one or more *common* stanzas, delineated by a `@common` header.
