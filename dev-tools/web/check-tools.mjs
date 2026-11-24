@@ -92,11 +92,15 @@ import { start, Checks, kinds } from "./harness.mjs";
 //   issues    a render whose script indexes a list out of range
 //             (dev-tools/web/bad-index.fs): magenta pixels, and the viewer
 //             says why; gone with a render that's fine
+//   viewkind  an edit that changes a viewer's view (dev-tools/web/
+//             view-kind.fs), rebuilt: from the plane to the sphere, it's on
+//             the sphere (not kept on the plane, as its old view was), and
+//             back
 
 const args = process.argv.slice(2);
 let shots = null;
 if (args[0] === "--screenshots") { shots = args[1]; args.splice(0, 2); fs.mkdirSync(shots, { recursive: true }); }
-const all = { welcome, project, fit, links, drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, disk, group, progressive, menu, autocolor, tables, capture, path: pathMovie, panel, preferences, backends, issues };
+const all = { welcome, project, fit, links, drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, disk, group, progressive, menu, autocolor, tables, capture, path: pathMovie, panel, preferences, backends, issues, viewkind };
 const wanted = args.length ? args : Object.keys(all);
 for (const w of wanted) if (!all[w]) { console.error(`no section "${w}" (there are: ${Object.keys(all).join(", ")})`); process.exit(2); }
 
@@ -1063,6 +1067,27 @@ async function density() {
   });
   c.check(Math.abs(r.dark / r.ratio - 4) <= 1,
           `a band 4 pixel_size wide is 4 CSS pixels wide (${r.dark} canvas pixels, at ${r.ratio}x)`);
+}
+
+async function viewkind() {
+  const p = await app.openFile(new URL("view-kind.fs", import.meta.url).pathname);
+  c.check(p.viewers[0].sphere === false, "a plane viewer opens on the plane");
+  const rebuilt = async (header) => {
+    await app.forgetMessages();
+    await app.send({ type: "rebuild", text: `@viewer "V" center=0 pixelSize=1/64${header}\ncolor <- white\n` });
+    await app.waitForMessage("(m) => (m.type === 'project' && m.rebuilt) || m.type === 'rebuildError'", 30000);
+    await page.waitForTimeout(500);
+    return (await app.messages("project")).pop();
+  };
+  // (rebuilding carries a viewer's view over, but not onto another kind)
+  const sphere = await rebuilt(" view=sphere");
+  c.check(sphere?.viewers[0].sphere === true, `rebuilt with view=sphere, it's on the sphere (${sphere?.viewers[0].sphere})`);
+  await app.send({ type: "where", viewer: sphere.viewers[0].id });
+  await app.waitForMessage("(m) => m.type === 'where'", 10000);
+  const w = (await app.messages("where")).pop();
+  c.check(w?.kind === "sphere", `and the engine's view is the sphere's (${w?.kind})`);
+  const plane = await rebuilt("");
+  c.check(plane?.viewers[0].sphere === false, `rebuilt without it, it's back on the plane (${plane?.viewers[0].sphere})`);
 }
 
 /** Drop a file's bytes on the page (any bytes: not only a project's text). */

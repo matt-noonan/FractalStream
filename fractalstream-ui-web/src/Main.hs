@@ -473,6 +473,9 @@ data Carried = Carried
   , cSize :: Dimensions
   , cSmooth :: Bool
   , cHistory :: Maybe History
+  , cOriginalView :: ViewKind
+    -- ^ the view its script gave it: when an edit changes that (the plane
+    -- to the sphere, say), its view and history aren't carried over
   }
 
 data ActiveTool = ActiveTool
@@ -869,11 +872,14 @@ startProject how projectTitle fileName rebuilt carried ensemble = do
     -- (what it had before a rebuild; else, on the sphere or the plane, as
     -- its file saved it)
     let before = Map.lookup title carried
+        sameView = maybe False ((== vOriginalView viewer) . cOriginalView) before
     case before of
-      Just Carried{..} -> setValue (vSize viewer) cSize >> setViewerModel viewer cModel
+      Just Carried{..}
+        | sameView -> setValue (vSize viewer) cSize >> setViewerModel viewer cModel
+        | otherwise -> setValue (vSize viewer) cSize
       Nothing -> applySavedView viewer saved title
     smooth <- newIORef (maybe defaultSmooth cSmooth before)
-    history <- newIORef (cHistory =<< before)
+    history <- newIORef (if sameView then cHistory =<< before else Nothing)
     signal <- newMVar ()   -- (the first frame)
     tool <- newIORef Nothing
     lock <- newMVar ()
@@ -2078,7 +2084,7 @@ rebuildAs new = readIORef sessionRef >>= mapM_ (\Session{..} -> do
     let v = vsViewer vs
     title <- getDynamic (vTitle v)
     c <- Carried <$> (fmap atName <$> readIORef (vsTool vs)) <*> viewerModel v <*> getDynamic (vSize v)
-                 <*> readIORef (vsSmooth vs) <*> readIORef (vsHistory vs)
+                 <*> readIORef (vsSmooth vs) <*> readIORef (vsHistory vs) <*> pure (vOriginalView v)
     pure (title, c)
   carryOverProjectState sEnsemble new
   startProject sOpening sTitle sFileName True carried new)
