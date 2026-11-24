@@ -163,6 +163,17 @@ spec = describe "highlighting scripts" $ do
     classOf src "a" 2 `shouldBe` Just Variable
     classOf src "pixel_width" 0 `shouldBe` Just Parameter
 
+  it "knows what a viewer's group or lattice gives its code" $ do
+    let src = "@viewer \"V\" lattice=i\n(m, n) := cell\ncolor <- if side_distance < m then red else blue\n\n"
+           ++ "@viewer \"G\" view=disk group=modular\ncolor <- if side_distance < fold_count + side_index then red else blue\n\n"
+           ++ "@viewer \"P\"\ncolor <- if side_distance < 1 then red else blue\n"
+    classOf src "cell" 0 `shouldBe` Just Variable
+    classOf src "side_distance" 0 `shouldBe` Just Variable
+    classOf src "side_distance" 1 `shouldBe` Just Variable
+    classOf src "fold_count" 0 `shouldBe` Just Variable
+    classOf src "side_index" 0 `shouldBe` Just Variable
+    classOf src "side_distance" 2 `shouldBe` Just Undefined
+
   it "knows the variables of a tuple declaration" $ do
     let src = "@viewer \"V\"\nu, (v, w) := 1, (2, 3)\ncolor <- if u + v + w > 0 then red else blue\n"
     classOf src "u" 1 `shouldBe` Just Variable
