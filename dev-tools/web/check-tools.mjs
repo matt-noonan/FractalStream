@@ -31,6 +31,10 @@
 //             each pixel folded into the modular group's domain (the fold
 //             compiled to WebAssembly), a tool's dot drawn in every tile,
 //             and a drag of the view
+//   lattice   a viewer with a lattice (lattice=τ, dev-tools/web/lattice.fs):
+//             each pixel folded into the lattice's parallelogram, a tool's
+//             point folded too, its drawings in every tile, and a new τ
+//             followed
 //   disk      a disk viewer (view=disk, dev-tools/web/disk.fs): Navigate's
 //             drag moves the view by a hyperbolic translation (the point
 //             under the pointer stays under it); its menu has no "Show on
@@ -103,7 +107,7 @@ import { start, Checks, kinds } from "./harness.mjs";
 const args = process.argv.slice(2);
 let shots = null;
 if (args[0] === "--screenshots") { shots = args[1]; args.splice(0, 2); fs.mkdirSync(shots, { recursive: true }); }
-const all = { welcome, project, fit, links, drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, disk, group, progressive, menu, autocolor, tables, capture, path: pathMovie, panel, preferences, backends, issues, viewkind, showif };
+const all = { welcome, project, fit, links, drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, disk, group, lattice, progressive, menu, autocolor, tables, capture, path: pathMovie, panel, preferences, backends, issues, viewkind, showif };
 const wanted = args.length ? args : Object.keys(all);
 for (const w of wanted) if (!all[w]) { console.error(`no section "${w}" (there are: ${Object.keys(all).join(", ")})`); process.exit(2); }
 
@@ -1380,6 +1384,50 @@ async function group() {
   await page.waitForFunction((n) => Number(document.querySelector(".viewer").dataset.frames) > n, frames, { timeout: 60000 });
   const sent = await page.evaluate(() => window.__sent.map((m) => m.type));
   c.check(sent.includes("diskDrag"), "the drag moves the view of the hyperbolic plane");
+}
+
+async function lattice() {
+  await app.openFile(new URL("lattice.fs", import.meta.url).pathname);
+  const box = await app.canvas(0).boundingBox();
+  // (1/150 per CSS pixel, 0 in the middle: x + y i is at 150 x right of
+  // the middle, 150 y up from it)
+  const at = (x, y) => [box.x + box.width / 2 + 150 * x, box.y + box.height / 2 - 150 * y];
+  const pixelAt = ([px, py]) => page.evaluate(([fx, fy]) => {
+    const c = document.querySelectorAll(".viewer canvas")[0];
+    const d = c.getContext("2d").getImageData(Math.round(fx * c.width), Math.round(fy * c.height), 1, 1).data;
+    return [d[0], d[1], d[2]];
+  }, [(px - box.x) / box.width, (py - box.y) / box.height]);
+  const isRed = ([r, g, b]) => r > 200 && g < 60 && b < 60;
+  const isBlue = ([r, g, b]) => r < 60 && g < 60 && b > 200;
+  const isBlack = ([r, g, b]) => r < 40 && g < 40 && b < 40;
+  const isGreen = ([r, g, b]) => r < 60 && g > 200 && b < 60;
+  c.check(isRed(await pixelAt(at(0.2, 0.3))), "0.2 + 0.3i is in the parallelogram about 0");
+  c.check(isBlue(await pixelAt(at(1.2, 0.3))), "1.2 + 0.3i is in the tile beside it");
+  c.check(isBlack(await pixelAt(at(0.5, 0.3))), "re z = 1/2 is one of its sides");
+  // a dot, in every tile (its point folded: clicked at 1.2 + 0.3i, it's
+  // drawn at 0.2 + 0.3i too)
+  await app.pressTool("d", "Dot");
+  await page.mouse.click(...at(1.2, 0.3));
+  await page.waitForTimeout(1500);
+  const dots = await app.drawing(0);
+  c.check(dots && dots.filter((s) => s.k === "circle").length >= 4 && dots.filter((s) => s.k === "line").length >= 4,
+          `the dot and its line are drawn in each tile (${kinds(dots)})`);
+  c.check(dots && dots.some((s) => s.k === "circle" && Math.abs(s.c[0] - 0.2) < 1e-6 && Math.abs(s.c[1] - 0.3) < 1e-6),
+          "the click's point was folded into the parallelogram");
+  c.check(isGreen(await pixelAt(at(0.2, 0.3))) && isGreen(await pixelAt(at(-0.8, 1.5))), "the dot is drawn in its tile and others");
+  // a marker (its radius in pixels), in every tile
+  await app.pressTool("m", "Mark");
+  await page.mouse.click(...at(-0.2, 0.1));
+  await page.waitForTimeout(1500);
+  const marks = await app.drawing(0);
+  c.check(marks && marks.filter((s) => s.k === "marker").length >= 4, `the marker is drawn in each tile (${kinds(marks)})`);
+  // a new τ: the tiles follow
+  const frames = await app.frames(0);
+  await page.locator(".panel input[type=text]").first().fill("0.5 + 0.9i");
+  await page.keyboard.press("Enter");
+  await page.waitForFunction((n) => Number(document.querySelector(".viewer").dataset.frames) > n, frames, { timeout: 60000 });
+  await page.waitForTimeout(500);
+  c.check(isBlue(await pixelAt(at(0.6, 0.85))), "with τ = 0.5 + 0.9i, 0.6 + 0.85i is in the tile τ away");
 }
 
 async function progressive() {

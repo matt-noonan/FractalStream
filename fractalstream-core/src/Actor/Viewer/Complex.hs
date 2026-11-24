@@ -13,6 +13,7 @@ import Actor.Event (Coordinate(..), ViewKind(..))
 import Actor.Viewer.Sphere (Globe)
 import Actor.Viewer.Disk (Isometry)
 import Actor.Viewer.Group (FoldData)
+import Actor.Viewer.Lattice (Lattice)
 
 import Data.DynamicValue
 
@@ -57,6 +58,9 @@ data ComplexViewer = ComplexViewer
   , cvGroupProblem :: Dynamic (Maybe String)
     -- ^ What's wrong with its group's table, if anything (the viewer is
     -- paused, saying so, until it's put right).
+  , cvLattice :: Maybe (Dynamic (Maybe Lattice))
+    -- ^ Its lattice (@lattice=@), as the configuration's values give it
+    -- (nothing, while they don't), if it has one.
   , cvVisible :: Dynamic Bool
     -- ^ Whether it's shown: its @show_if=@, over the configuration, or
     -- always, without one.

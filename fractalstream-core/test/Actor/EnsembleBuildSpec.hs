@@ -6,6 +6,7 @@ import Test.Hspec
 import Actor.Ensemble
 import Actor.Viewer (SomeViewerWithContext(..))
 import Actor.Viewer.Complex (ComplexViewer(..))
+import Actor.Viewer.Lattice (Lattice(..), foldLatticePoint)
 import Actor.Tool (Tool(..), ToolInfo(..))
 import Actor.Script (overlayDrawLayer)
 import Actor.Layout (Dimensions(..), Layout(..), Label(..), UIVariable(..), TabItem(..), Field(..), layoutTables)
@@ -1186,6 +1187,69 @@ pass
 @viewer "V" show_if="|z| < 1"
 pass
 |] `shouldFailWith` "show_if="
+
+  describe "a viewer's lattice=" $ do
+
+    it "follows the configuration's values: lattice=τ is ℤ + τℤ" $
+      shouldBuild [r|
+@config "Lattice"
+τ : C := 0.5 + 1.5 i
+
+@viewer "Torus" lattice=τ
+(m, n) := cell
+color <- if side_distance < pixel_size then black else rgb(m / 4, n / 4, 0.5)
+|] $ \ens -> do
+        [viewer] <- getDynamic (ensembleViewers ens)
+        case cvLattice viewer of
+          Nothing -> expectationFailure "expected a lattice"
+          Just ld -> do
+            getDynamic ld >>= (`shouldBe` Just (Lattice 1 (0.5 :+ 1.5) 0))
+            fields <- ensembleFields ens
+            case [ f | (_, f) <- fields, fieldName f == "τ" ] of
+              [tau] -> do
+                setFieldText tau "2 i" >>= (`shouldBe` Right ())
+                getDynamic ld >>= (`shouldBe` Just (Lattice 1 (0 :+ 2) 0))
+              other -> expectationFailure ("expected one τ field, got " ++ show (length other))
+
+    it "takes a pair of periods, and a center" $
+      shouldBuild [r|
+@viewer "Torus" lattice="(2, 1 + i)" latticeCenter="0.5 i"
+pass
+|] $ \ens -> do
+        [viewer] <- getDynamic (ensembleViewers ens)
+        traverse getDynamic (cvLattice viewer) >>= (`shouldBe` Just (Just (Lattice 2 (1 :+ 1) (0 :+ 0.5))))
+
+    it "takes a pair of vectors in a real viewer" $
+      shouldBuild [r|
+@viewer "Square torus" xvar=x yvar=y lattice="((1, 0), (0, 1))"
+color <- if side_distance < pixel_width then black else rgb(x + 0.5, y + 0.5, 0.5)
+|] $ \ens -> do
+        [viewer] <- getDynamic (ensembleViewers ens)
+        traverse getDynamic (cvLattice viewer) >>= (`shouldBe` Just (Just (Lattice 1 (0 :+ 1) 0)))
+
+    it "is only for viewers of the plane, and only uses the configuration's values" $ do
+      [r|
+@viewer "V" view=sphere lattice="i"
+pass
+|] `shouldFailWith` "only a viewer of the plane"
+      [r|
+@viewer "V" xvar=x yvar=y lattice="i"
+pass
+|] `shouldFailWith` "pair of vectors"
+      [r|
+@viewer "V" latticeCenter=0
+pass
+|] `shouldFailWith` "needs a `lattice=` too"
+      [r|
+@viewer "V" lattice="nope"
+pass
+|] `shouldFailWith` "lattice="
+
+  describe "folding by a lattice" $
+    it "folds a point into the parallelogram about its center" $ do
+      let lat = Lattice 1 (0.3 :+ 1.1) 0
+          (x, y) = foldLatticePoint lat (2.1, 0.4)
+      (abs (x - 0.1) < 1e-12, abs (y - 0.4) < 1e-12) `shouldBe` (True, True)
 
   describe "checkScript" $ do
 

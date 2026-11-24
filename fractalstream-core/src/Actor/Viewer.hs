@@ -105,6 +105,7 @@ import Foreign
 import Data.PNG
 import Actor.Viewer.Sphere (sphereViewName, onTheSphere, Globe, Projection(..), ScreenView(..), globeFacingRolled, globeTurn, globeZoom, planeToScreen, trackballGlobe)
 import Actor.Viewer.Group (groupMarkerName, groupFoldCode, groupVariables, FoldData, viewReduction, tileViews)
+import Actor.Viewer.Lattice (Lattice, latticeShifts)
 import Actor.Viewer.Disk (hyperbolicViewName, inTheHyperbolicPlane, Isometry, modelToScreenH, dragOnDisplay, displayScreen, axisAtBottom, viewShowing, HyperbolicDisplay(..))
 import qualified Data.Map as Map
 import Text.Printf (printf)
@@ -282,6 +283,9 @@ data Viewer = Viewer
     --   ('backendPreference'), if it's been told to prefer one (from its
     --   menu): see 'effectiveOrder'.
   , vTools     :: Dynamic [Tool]
+  , vLattice   :: Maybe (Dynamic (Maybe Lattice))
+    -- ^ Its lattice (@lattice=@), if it has one: its tools' drawings are
+    -- repeated in each tile on the screen (see 'overlayProjections').
   , vVisible   :: Dynamic Bool
     -- ^ Whether the viewer is shown (its @show_if=@): a hidden one's
     -- window is hidden, and it isn't drawn (see 'vListen').
@@ -778,6 +782,11 @@ dragView v p@(px, py) q@(qx, qy) = getDynamic (vView v) >>= \kind -> case kind o
 -- the screen's middle, pixel size, and size in pixels.
 overlayProjections :: Viewer -> Projection -> (Double, Double) -> Double -> (Int, Int) -> IO [Projection]
 overlayProjections v proj (cx, cy) px (w, h) = case (proj, vGroup v) of
+  -- (with a lattice, a copy moved to each tile: see 'latticeShifts')
+  (FlatProjection, _) | Just ld <- vLattice v -> getDynamic ld <&> \case
+    Nothing -> [proj]
+    Just lat -> [ if d == (0, 0) then FlatProjection else ShiftedProjection d
+                | d <- latticeShifts lat (cx, cy) (fromIntegral w / 2 * px, fromIntegral h / 2 * px) 2500 ]
   (HyperbolicProjection model display iso, Just d) -> do
     fd <- getDynamic d
     let halfW = fromIntegral w / 2 * px
@@ -1189,6 +1198,7 @@ cloneViewer v = do
     , vOriginalIsometry = vOriginalIsometry v
     , vOriginalHyperbolicPixelSizes = vOriginalHyperbolicPixelSizes v
     , vGroup = vGroup v
+    , vLattice = vLattice v
     , vOriginalPlaneView = vOriginalPlaneView v
     , vSaveView = vSaveView v
 

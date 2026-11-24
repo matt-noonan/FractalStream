@@ -83,6 +83,7 @@ library
                        Actor.Viewer.Sphere
                        Actor.Viewer.Disk
                        Actor.Viewer.Group
+                       Actor.Viewer.Lattice
                        Actor.Viewer.ViewModel
                        Actor.Viewer.Preview
                        Actor.Movie

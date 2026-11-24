@@ -1096,7 +1096,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
         screenToView mdl pt = toViewPoint <$> screenToViewD mdl pt
         -- A grouped viewer's tools' drawings, in each tile on the screen
         -- but the polygon's own (which the usual painting draws).
-        paintTileCopies mdl box dc = when (isJust vGroup) $ do
+        paintTileCopies mdl box dc = when (isJust vGroup || isJust vLattice) $ do
           Size { sizeW = cw, sizeH = ch } <- get f clientSize
           copies <- overlayProjections theViewer (modelProjection mdl) (modelCenter mdl) (fst (modelPixelDim mdl)) (cw, ch)
           forM_ (drop 1 copies) $ \proj ->
@@ -2731,7 +2731,12 @@ paintToolLayer proj screenToView box pxDim getDrawCommands dc = dcEncapsulate dc
     -- was if it stays near the window; one reaching further is first cut
     -- down to the part near the window, since wxWidgets's coordinates are
     -- 32-bit integers, which wrap around (see "Actor.Viewer.Clip").
-    let onGlobe = proj /= FlatProjection
+    let onGlobe = isNothing (flatShift proj)
+        -- (a point of the plane, moved by the copy's lattice translation,
+        -- for a lattice viewer's copies in other tiles)
+        planePt p = let (x, y) = homPlane p
+                        (dx, dy) = fromMaybe (0, 0) (flatShift proj)
+                    in (x + dx, y + dy)
         cut = cutBox box
         -- (a drawing's points are homogeneous: see 'Language.Draw.DrawSink')
         toView p = traverse screenToView (homToScreen proj p)
@@ -2749,8 +2754,8 @@ paintToolLayer proj screenToView box pxDim getDrawCommands dc = dcEncapsulate dc
         nearPoint p = finitePx p && near box [p]
         -- a straight segment of the screen plane
         straightLine pt1 pt2 = do
-          p <- screenToView (homPlane pt1)
-          q <- screenToView (homPlane pt2)
+          p <- screenToView (planePt pt1)
+          q <- screenToView (planePt pt2)
           when (finitePx p && finitePx q) $
             if near box [p, q]
               then line dc (toViewPoint p) (toViewPoint q) [ brush := brushTransparent ]
@@ -2800,7 +2805,7 @@ paintToolLayer proj screenToView box pxDim getDrawCommands dc = dcEncapsulate dc
         DrawCircle _ fil ModelUnits r pt -> do
           -- A circle in model space: an ellipse, when a real viewer's
           -- pixels aren't square.
-          c@(cx, cy) <- screenToView (homPlane pt)
+          c@(cx, cy) <- screenToView (planePt pt)
           let rx = r / fst pxDim
               ry = r / snd pxDim
           when (finitePx c && finitePx (rx, ry)) $
@@ -2822,8 +2827,8 @@ paintToolLayer proj screenToView box pxDim getDrawCommands dc = dcEncapsulate dc
         -- can't draw rectangles)
         DrawRect {} | onGlobe -> pure ()
         DrawRect _ fil hp1 hp3 -> do
-          let pt1 = homPlane hp1
-              pt3 = homPlane hp3
+          let pt1 = planePt hp1
+              pt3 = planePt hp3
               pt2 = (fst pt1, snd pt3)
               pt4 = (fst pt3, snd pt1)
           boxpts <- mapM screenToView [pt1, pt2, pt3, pt4]

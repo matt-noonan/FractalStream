@@ -32,8 +32,9 @@ module Drawing
   ( drawingJSON
   ) where
 
-import Actor.Viewer.Sphere (Projection(..), HPoint, homPlane, homToScreen, lineOnScreen, circleOnScreen)
+import Actor.Viewer.Sphere (Projection(..), HPoint, homPlane, homToScreen, lineOnScreen, circleOnScreen, flatShift)
 import Data.Color (Color, colorToRGB, white)
+import Data.Maybe (fromMaybe)
 import Language.Draw
 
 import Data.Aeson ((.=))
@@ -63,17 +64,17 @@ drawingLayer proj = layer white white
       DrawPoint _ p -> [ obj "point" [ "p" .= q, "s" .= hex stroke ] | Just q <- [at p] ]
       -- (the viewer's geodesic: see 'lineOnScreen')
       DrawLine _ a b -> case proj of
-        FlatProjection -> [ obj "line" [ "a" .= homPlane a, "b" .= homPlane b, "s" .= hex stroke ]
-                          | finite (homPlane a), finite (homPlane b) ]
+        _ | Just _ <- flatShift proj -> [ obj "line" [ "a" .= plane a, "b" .= plane b, "s" .= hex stroke ]
+                          | finite (plane a), finite (plane b) ]
         _ -> runs stroke (lineOnScreen proj a b)
       -- (a marker: a circle on the screen, its radius in pixels)
       DrawCircle _ filled ScreenPixels r c ->
         [ obj "marker" [ "c" .= q, "px" .= r, "f" .= fillOf filled, "s" .= hex stroke ] | Just q <- [at c], finite (r, r) ]
       -- (its radius in the viewer's own metric: see 'circleOnScreen')
       DrawCircle _ filled ModelUnits r c -> case proj of
-        FlatProjection ->
-          [ obj "circle" [ "c" .= homPlane c, "r" .= r, "f" .= fillOf filled, "s" .= hex stroke ]
-          | finite (homPlane c), finite (r, r) ]
+        _ | Just _ <- flatShift proj ->
+          [ obj "circle" [ "c" .= plane c, "r" .= r, "f" .= fillOf filled, "s" .= hex stroke ]
+          | finite (plane c), finite (r, r) ]
         _ -> case circleOnScreen proj c r of
           (rs, True) | filled, [run] <- clean rs ->
             [ obj "polygon" [ "pts" .= run, "f" .= hex fill, "s" .= hex stroke ] ]
@@ -81,14 +82,19 @@ drawingLayer proj = layer white white
       -- (only on the plane: a sphere's or a hyperbolic plane's tool can't
       -- draw rectangles)
       DrawRect _ filled a b -> case proj of
-        FlatProjection ->
-          [ obj "rect" [ "a" .= homPlane a, "b" .= homPlane b, "f" .= fillOf filled, "s" .= hex stroke ]
-          | finite (homPlane a), finite (homPlane b) ]
+        _ | Just _ <- flatShift proj ->
+          [ obj "rect" [ "a" .= plane a, "b" .= plane b, "f" .= fillOf filled, "s" .= hex stroke ]
+          | finite (plane a), finite (plane b) ]
         _ -> []
       Write _ t p -> [ obj "text" [ "p" .= q, "t" .= t, "s" .= hex stroke ] | Just q <- [at p] ]
       _ -> []
       where
         fillOf filled = if filled then Just (hex fill) else Nothing
+        -- (a point of the plane, moved by the copy's lattice translation,
+        -- for a lattice viewer's copies in other tiles)
+        plane p = let (x, y) = homPlane p
+                      (dx, dy) = fromMaybe (0, 0) (flatShift proj)
+                  in (x + dx, y + dy)
 
     -- where a point is on the screen plane (nowhere, behind the globe)
     at :: HPoint -> Maybe (Double, Double)
