@@ -82,6 +82,7 @@ import Language.Value.Typing (strictTypeEnv, surfaceTypeMarker)
 import Language.Code.Projective (lowerValueAt, showFieldValue)
 import Language.Typecheck (TC(..), ppError)
 import Language.Code (Code, letInEnv)
+import Language.Code.Syntax (Stmt(..), StmtF(SBlock))
 import Language.Code.Parser (noCommonDefs, ParsedCode, CommonDefs)
 import Language.Value.Builtins (viewKindName, viewPixelSizeName, viewMobiusNames)
 import Language.Code.Typecheck (hyperbolicToolName, runExpandedCode)
@@ -111,6 +112,7 @@ import Data.Typeable (Typeable)
 
 import Language.Code (usedVarsInCode)
 import Language.Value.Evaluator (evaluate, evaluateInContext, HaskellValue)
+import Actor.Viewer.Lattice (Lattice(..), LatticeSpec(..), latticeSpec, latticeFoldCode, foldLatticePoint)
 
 import Control.Exception (Exception, IOException, SomeException, SomeAsyncException, fromException, displayException, throwIO, try)
 import System.IO (hPutStrLn, stderr)
@@ -833,9 +835,13 @@ checkScriptWithColorizers choices scriptText = do
   checkNoDuplicateNames configEnv
 
   withEnvFromMap (Map.fromList configEnv) $ \env ->
-    forM_ viewers $ \v ->
+    forM_ viewers $ \v -> do
+      -- (with a lattice, its periods are the configuration's values, and
+      -- its fold goes before the viewer's code)
+      mlattice <- viewerLattice v
+      forM_ mlattice $ \spec -> withEnvironment env $ forM_ (latticeProblems spec env) (Left . (NoSourceRange,))
       checkViewer configEnv env
-        [ t | t <- tools, toolTargets viewerTitles (vfTitle v) t ] v
+        [ t | t <- tools, toolTargets viewerTitles (vfTitle v) t ] (withLatticeFold mlattice v)
 
 -- | Parse a script, and add each viewer's colorizer to it
 -- ('applyColorizers').
@@ -1141,10 +1147,11 @@ buildWithValidTargets configGroups viewers tools viewerTitles = do
             Nothing                -> pure (Right (SomeContext EmptyContext))
             Just Configuration{..} -> layoutContext coContents
 
-      eViewers <- forM (zip [0 ..] viewers) $ \(n, v) ->
-        buildComplexViewer contextDyn
+      eViewers <- forM (zip [0 ..] viewers) $ \(n, v) -> case viewerLattice v of
+        Left err -> pure (Left err)
+        Right mlattice -> buildComplexViewer contextDyn mlattice
           [ t | t <- tools, toolTargets viewerTitles (vfTitle v) t ]
-          n v
+          n (withLatticeFold mlattice v)
 
       case sequence eViewers of
         Left err -> pure (Left err)
@@ -1180,6 +1187,8 @@ data ViewerFields = ViewerFields
   , vfVanish    :: Maybe String
   , vfPixelVar  :: Maybe String
   , vfShowIf    :: Maybe String
+  , vfLattice   :: Maybe String
+  , vfLatticeCenter :: Maybe String
   , vfCode      :: ParsedCode
   }
 
@@ -1192,6 +1201,7 @@ viewerFields = \case
     , vfIterLimit = vsIterLimit, vfEscape = vsEscape, vfVanish = vsVanish
     , vfPixelVar = vsPixelVar
     , vfShowIf = vsShowIf
+    , vfLattice = vsLattice, vfLatticeCenter = vsLatticeCenter
     , vfCode = vsCode
     }
   _ -> Nothing
@@ -1569,11 +1579,12 @@ checkHoistedCode env parsedCode = do
 -- @100x100@, the next at @130x130@, and so on -- so that several
 -- viewers don't all open stacked exactly on top of one another.
 buildComplexViewer :: Dynamic (Either String (SomeContext DynamicValue))
+                    -> Maybe LatticeSpec
                     -> [ToolFields]
                     -> Int
                     -> ViewerFields
                     -> IO (Either (SourceRange, String) ComplexViewer)
-buildComplexViewer contextDyn myTools n ViewerFields{..} =
+buildComplexViewer contextDyn mlattice myTools n ViewerFields{..} =
   parseViewGeometry ViewerFields{..} >>=? \(centerVal, pixelVal, aspectVal) ->
   viewerGroupSource ViewerFields{..} >>=? \groupSource ->
   parseMaybeAttrValue vfIterLimit >>=? \mIterPV ->
@@ -1582,7 +1593,9 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
   parseMaybeAttrValue vfShowIf >>=? \mShowIfPV ->
   -- (`show_if=` must be a truth value over the configuration, as
   -- 'checkViewer' checks too)
-  showIfProblem contextDyn mShowIfPV >>= \problem -> (\k -> maybe k (pure . Left . (NoSourceRange,)) problem) $ do
+  showIfProblem contextDyn mShowIfPV >>= \problem -> (\k -> maybe k (pure . Left . (NoSourceRange,)) problem) $
+  -- (and a lattice's periods are the configuration's values)
+  latticeProblem contextDyn mlattice >>= \lproblem -> (\k -> maybe k (pure . Left . (NoSourceRange,)) lproblem) $ do
 
     cvTitleP     <- constParsed vfTitle (Right vfTitle)
     -- The view: a complex viewer can show the plane or the sphere, each
@@ -1771,6 +1784,7 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
               , cvGroup = groupDyn
               , cvGroupProblem = groupProblem
               , cvVisible = maybe (pure True) (`showIfDynamic` contextDyn) mShowIfPV
+              , cvLattice = (`latticeDynamic` contextDyn) <$> mlattice
               }
 
 ------------------------------------------------------------
@@ -1937,6 +1951,7 @@ prepareComplexViewer backend autocolorState someContext configArgs ComplexViewer
         vOriginalIsometry = cvOriginalIsometry
         vOriginalHyperbolicPixelSizes = cvHyperbolicPixelSizes
         vGroup = cvGroup
+        vLattice = cvLattice
     -- (the same variable the viewer's code and tools read the
     -- center from, starting over from the original view when it's
     -- shown: see 'shown')
@@ -1963,7 +1978,7 @@ prepareComplexViewer backend autocolorState someContext configArgs ComplexViewer
               SomeContext' (Right args') ->
                 -- (a grouped viewer's tools get points folded into the
                 -- group's polygon, as its code does)
-                fmap (maybe id foldingDispatcher vGroup)
+                fmap (maybe id foldingDispatcher vGroup . maybe id latticeFoldingDispatcher vLattice)
                   <$> runTool (bToolRunner backend) lookupAutocolor vDrawSink layer args' script
 
     -- The overlay's dispatcher is built the first time it's needed (and
@@ -2260,6 +2275,97 @@ showIfValue pv _ = case expandStdlibCalls pv >>= \e -> atType e BooleanType of
   TC (Left err) -> Left ("A viewer's `show_if=` says whether it's shown, from the configuration's \
                          \values, so it must be a truth value that only uses them: " ++ ppError err)
   TC (Right v) -> Right v
+
+-- | A viewer's lattice (@lattice=@, and @latticeCenter=@), if it has one;
+-- only a viewer of the plane can.
+viewerLattice :: ViewerFields -> Either (SourceRange, String) (Maybe LatticeSpec)
+viewerLattice ViewerFields{..} = case vfLattice of
+  Nothing
+    | isJust vfLatticeCenter -> Left (NoSourceRange, "A viewer's `latticeCenter=` is the center of its \
+                                                     \`lattice=`'s parallelogram, so it needs a `lattice=` too.")
+    | otherwise -> Right Nothing
+  Just src
+    | vfView /= PlaneView -> Left (NoSourceRange, "A viewer's `lattice=` folds the plane, so only a viewer \
+                                                  \of the plane can have one (not `view=" ++ viewName ++ "`).")
+    | otherwise -> do
+        mpv <- parseMaybeAttrValue (Just src)
+        mcenter <- parseMaybeAttrValue vfLatticeCenter
+        case mpv of
+          Nothing -> Right Nothing
+          Just pv -> left (NoSourceRange,) (Just <$> latticeSpec vfCoord pv mcenter)
+  where viewName = case vfView of
+          SphereView -> "sphere"
+          DiskView -> "disk"
+          HalfPlaneView -> "halfplane"
+          PlaneView -> "plane"
+
+-- | A viewer, with its lattice's fold (if it has one) before its code
+-- (see 'Actor.Viewer.Lattice.latticeFoldCode').
+withLatticeFold :: Maybe LatticeSpec -> ViewerFields -> ViewerFields
+withLatticeFold Nothing vf = vf
+withLatticeFold (Just spec) vf = vf { vfCode = case vfCode vf of
+    Stmt sr (SBlock ss) -> Stmt sr (SBlock (fold ++ ss))
+    c@(Stmt sr _) -> Stmt sr (SBlock (fold ++ [c])) }
+  where fold = latticeFoldCode (vfCoord vf) spec
+
+-- | What's wrong with a lattice's periods and center, as values of the
+-- configuration (in its environment), if anything.
+latticeProblems :: forall env. KnownEnvironment env => LatticeSpec -> EnvironmentProxy env -> [String]
+latticeProblems LatticeSpec{..} env = [ err | pv <- [lsA, lsB, lsCenter], Left err <- [check pv] ]
+  where
+    check pv = case lsType of
+      ComplexT -> () <$ latticeValue pv ComplexType env
+      _ -> () <$ latticeValue pv (PairType RealType RealType) env
+
+-- | A lattice's period (or center), typed as a value of the configuration.
+latticeValue :: forall env t. KnownEnvironment env => ParsedValue -> TypeProxy t -> EnvironmentProxy env
+             -> Either String (Language.Value.Value '(env, t))
+latticeValue pv ty _ = withKnownType ty $ case expandStdlibCalls pv >>= \e -> atType e ty of
+  TC (Left err) -> Left ("A viewer's `lattice=` (and `latticeCenter=`) are worked out from the configuration's \
+                         \values, each " ++ (case ty of { ComplexType -> "a complex number"; _ -> "a pair of real numbers" })
+                         ++ ": " ++ ppError err)
+  TC (Right v) -> Right v
+
+-- | What's wrong with a viewer's lattice, as the configuration is now.
+latticeProblem :: Dynamic (Either String (SomeContext DynamicValue)) -> Maybe LatticeSpec -> IO (Maybe String)
+latticeProblem contextDyn = \case
+  Nothing -> pure Nothing
+  Just spec -> getDynamic contextDyn <&> \case
+    Right (SomeContext ctx) -> let env = contextToEnv ctx in
+      withEnvironment env (listToMaybe (latticeProblems spec env))
+    Left _ -> Nothing
+
+-- | A viewer's lattice, as the configuration's values change (nothing,
+-- while they can't be worked out).
+latticeDynamic :: LatticeSpec -> Dynamic (Either String (SomeContext DynamicValue)) -> Dynamic (Maybe Lattice)
+latticeDynamic LatticeSpec{..} contextDyn = contextDyn >>= \case
+  Left _ -> pure Nothing
+  Right (SomeContext ctx) -> let env = contextToEnv ctx in withEnvironment env $
+    let point pv = case lsType of
+          ComplexT -> evaluate <$> latticeValue pv ComplexType env
+          _ -> (\v c -> let (x, y) = evaluate v c in x :+ y) <$> latticeValue pv (PairType RealType RealType) env
+    in case (,,) <$> point lsA <*> point lsB <*> point lsCenter of
+         Left _ -> pure Nothing
+         Right (fa, fb, fc) -> (\c -> Just (Lattice (fa c) (fb c) (fc c)))
+                                 <$> mapContextM @DynamicValue @HaskellValue (\_ _ x -> x) ctx
+
+-- | A tool's dispatcher, its events' points folded into a lattice's
+-- parallelogram (by the lattice's value when the event's handler runs).
+latticeFoldingDispatcher :: Dynamic (Maybe Lattice) -> ToolDispatcher -> ToolDispatcher
+latticeFoldingDispatcher latD dispatch dims event = folded <$ dispatch dims event
+  where
+    folded = HandlerRun $ \flag -> do
+      mlat <- getDynamic latD
+      let f p = maybe p (\lat -> planePoint (foldLatticePoint lat (homPlane p))) mlat
+          event' = case event of
+            Click p -> Click (f p)
+            DoubleClick p -> DoubleClick (f p)
+            Drag p q -> Drag (f p) (f q)
+            DragDone p q -> DragDone (f p) (f q)
+            other -> other
+      case dispatch dims event' of
+        Just r -> startHandlerRun r flag
+        Nothing -> pure (pure ())
 
 -- | What's wrong with a viewer's @show_if=@, as the configuration is now,
 -- if anything (see 'showIfValue').

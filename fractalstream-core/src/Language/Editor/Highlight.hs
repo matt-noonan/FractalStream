@@ -29,7 +29,7 @@ import qualified Data.Map as Map
 import Data.Map (Map)
 import qualified Data.Set as Set
 import Data.Set (Set)
-import Data.Maybe (listToMaybe, maybeToList)
+import Data.Maybe (fromMaybe, listToMaybe, maybeToList)
 
 import Language.Parser.Tokenizer (Token(..), functionDefinitionBody)
 import Language.Editor.Lines
@@ -133,7 +133,9 @@ parseHeader l =
       title = listToMaybe [ s | Quoted s <- toks ]
       attrs = Map.fromList (go toks)
       go = \case
-        Identifier k : Equal : v : rest | Just v' <- value v -> (k, v') : go rest
+        -- (an attribute whose value is some other token, like @lattice=i@,
+        -- is still there, its value unknown)
+        Identifier k : Equal : v : rest -> (k, fromMaybe "" (value v)) : go rest
         _ : rest -> go rest
         [] -> []
       value = \case
@@ -178,10 +180,17 @@ stanzaDefinitions viewerVars s = definitions s <> implicit
     implicit = Map.fromList $ case stKind s of
       "viewer" -> viewerNames s
                   ++ [(Map.findWithDefault "pixel_size" "pixelVar" (stAttrs s), Parameter)]
+                  ++ foldingNames
       "tool" -> [ nh | nh@(_, Parameter) <- concat (maybeToList toolViewerNames) ] ++ [("pixel_size", Parameter)]
       "colorizer" -> [("pixel_size", Parameter)]
       "" -> [("z", Variable), ("pixel_size", Parameter)]
       _ -> []
+    -- (what a viewer's fold gives its code: see "Actor.Viewer.Group"
+    -- and "Actor.Viewer.Lattice")
+    foldingNames
+      | Map.member "group" (stAttrs s) = [ (n, Variable) | n <- ["side_distance", "side_index", "fold_count"] ]
+      | Map.member "lattice" (stAttrs s) = [ (n, Variable) | n <- ["side_distance", "cell"] ]
+      | otherwise = []
     toolViewerNames = case Map.lookup "for" (stAttrs s) of
       Just title -> Map.lookup title viewerVars
       Nothing -> case Map.elems viewerVars of

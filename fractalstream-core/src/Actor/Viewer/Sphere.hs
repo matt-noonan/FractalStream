@@ -69,6 +69,7 @@ module Actor.Viewer.Sphere
   , planeToScreen
     -- * How model points reach the screen
   , Projection(..)
+  , flatShift
   , ScreenView(..)
   , projectToScreen
   , visibleRuns
@@ -523,7 +524,20 @@ globeScreenPixelSize (w, h) = 2 / (0.92 * fromIntegral (max 1 (min w h)))
 -- (see "Actor.Viewer.Disk").
 data Projection = FlatProjection | GlobeProjection Globe
                 | HyperbolicProjection HyperbolicModel HyperbolicDisplay Isometry
+                | ShiftedProjection (Double, Double)
+                  -- ^ the plane, each point moved by this much: a copy of
+                  -- a lattice viewer's drawings in another tile (see
+                  -- 'Actor.Viewer.overlayProjections')
   deriving (Eq, Show)
+
+-- | How far a projection of the plane moves its points: none for the
+-- plane, a lattice translation for a copy in another tile; nothing for
+-- the sphere or the hyperbolic plane.
+flatShift :: Projection -> Maybe (Double, Double)
+flatShift = \case
+  FlatProjection -> Just (0, 0)
+  ShiftedProjection d -> Just d
+  _ -> Nothing
 
 -- | Where a viewer's screen plane is: the point at the image's center,
 -- the width and height of a pixel, and how model points get onto it.
@@ -543,6 +557,7 @@ data ScreenView = ScreenView
 projectToScreen :: Projection -> (Double, Double) -> Maybe (Double, Double)
 projectToScreen = \case
   FlatProjection -> Just
+  ShiftedProjection (dx, dy) -> \(x, y) -> Just (x + dx, y + dy)
   GlobeProjection g -> planeToScreen g
   HyperbolicProjection model display v -> modelToScreenH model display v
 
@@ -654,6 +669,7 @@ hyperbolicCircle model n c r =
 lineOnScreen :: Projection -> HPoint -> HPoint -> [[(Double, Double)]]
 lineOnScreen proj p q = case proj of
   FlatProjection -> visibleRuns proj [homPlane p, homPlane q]
+  ShiftedProjection _ -> visibleRuns proj [homPlane p, homPlane q]
   GlobeProjection _ -> visibleRunsH proj (greatArc 64 p q)
   HyperbolicProjection model _ _ -> visibleRuns proj (geodesicPoints model 64 (homPlane p) (homPlane q))
 
@@ -665,6 +681,7 @@ circleOnScreen :: Projection -> HPoint -> Double -> ([[(Double, Double)]], Bool)
 circleOnScreen proj c r =
   let pts = case proj of
         FlatProjection -> map Just (sampleCircle 96 (homPlane c) r)
+        ShiftedProjection _ -> map (projectToScreen proj) (sampleCircle 96 (homPlane c) r)
         GlobeProjection _ -> map (homToScreen proj) (sphereCircle 96 c r)
         HyperbolicProjection model _ _ -> map (projectToScreen proj) (hyperbolicCircle model 96 (homPlane c) r)
   in (splitRuns pts, all (maybe False (const True)) pts)

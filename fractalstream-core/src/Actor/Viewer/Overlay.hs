@@ -25,7 +25,7 @@ import qualified Data.Planar as Planar
 
 import Actor.Viewer.Overlay.Font (overlayFont)
 import Actor.Viewer.Clip
-import Actor.Viewer.Sphere (Projection(..), ScreenView(..), homPlane, homToScreen, lineOnScreen, circleOnScreen)
+import Actor.Viewer.Sphere (Projection(..), ScreenView(..), homPlane, homToScreen, lineOnScreen, circleOnScreen, flatShift)
 import Graphics.Text.TrueType (Font, BoundingBox(..), stringBoundingBox)
 
 import Codec.Picture (Image(..), PixelRGBA8(..), writePng, generateImage, pixelAt)
@@ -69,13 +69,21 @@ compositeDrawLayers ScreenView{ svCenter = center, svPixelSize = pixelSize, svPr
   -- base image is the result, and Rasterific isn't needed at all.
   pure $ if all null layers then baseImage
     else overImage (renderDrawing w h (PixelRGBA8 0 0 0 0) $ case proj of
-           FlatProjection -> drawLayers image toPx pixelSize layers
+           -- (with a lattice, in each tile on the screen: each copy is
+           -- the plane moved by a lattice translation)
+           FlatProjection -> sequence_ [ drawLayers image (toPx . shiftBy d) pixelSize layers
+                                       | d <- mapMaybe flatShift copies ]
+           ShiftedProjection d -> drawLayers image (toPx . shiftBy d) pixelSize layers
            -- (the globe and the disk: drawings are sampled, and each
            -- point projected)
            GlobeProjection _ -> mapM_ (drawGlobeLayer image proj toPx) layers
            -- (with a group, in each tile on the screen)
            HyperbolicProjection {} -> sequence_ [ drawGlobeLayer image p toPx layer | layer <- layers, p <- copies ])
                    baseImage
+
+-- | A model point moved by a lattice translation (see 'ShiftedProjection').
+shiftBy :: (Double, Double) -> (Double, Double) -> (Double, Double)
+shiftBy (dx, dy) (x, y) = (x + dx, y + dy)
 
 -- | Lay a (non-premultiplied, as Rasterific makes them) RGBA image over
 -- an opaque one of the same size, with Rasterific's own arithmetic for

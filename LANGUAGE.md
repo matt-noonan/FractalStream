@@ -1085,6 +1085,47 @@ saved with the project, since it follows from the configuration. A
 scenario's `capture viewer` or `assert viewer` of a hidden viewer is an
 error that says it's hidden.
 
+### Lattices: viewers of a torus
+
+A viewer of the plane can have a *lattice* acting on it. The viewer then
+*folds* each pixel's point into the lattice's fundamental parallelogram
+before its code sees it, so the code works on the torus (the plane modulo
+the lattice), and the picture is repeated over the plane, one copy per
+tile:
+
+```
+@config "Lattice"
+τ : C := 0.3 + 1.1 i
+
+@viewer "Torus" lattice=τ
+color <- if side_distance < 2 pixel_size then black else domain_color(wp(z, 1, τ))
+```
+
+In a complex viewer, `lattice=τ` is the lattice ℤ + τℤ, and
+`lattice="(ω1, ω2)"` is the lattice ω1ℤ + ω2ℤ. In a real viewer, it's a
+pair of vectors: `lattice="((1, 0), (0, 1))"` is ℤ². The periods are worked
+out from the configuration's values (and the standard library's
+functions), and again whenever one of them changes, so a configuration
+value (or a tool) can change the lattice, and the viewer redraws.
+
+The fundamental parallelogram is the one centered at 0: the points
+`s ω1 + t ω2` with `s` and `t` between -1/2 and 1/2. `latticeCenter=`
+moves it, to be centered at another point (of the viewer's kind: a complex
+number, or a pair of real numbers).
+
+Besides its folded point, a viewer with a lattice has:
+
+- `cell`: the pair of integers `(m, n)` of the tile the pixel's point was
+  in, the one moved back by `m ω1 + n ω2`. (This one depends on where the
+  view is, not just on the point of the torus.)
+- `side_distance`: the distance from the folded point to the nearest side
+  of the parallelogram, so `side_distance < 1.5 pixel_size` draws the tiles'
+  edges 3 pixels wide.
+
+Its tools' points are folded too, and their drawings are drawn in each tile
+on the screen, except when the tiles are too small to see (more than a few
+thousand of them on the screen).
+
 ### Viewers on the Riemann sphere
 
 A complex viewer can show the Riemann sphere instead of the plane: as a
