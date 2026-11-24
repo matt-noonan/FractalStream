@@ -8,7 +8,8 @@ script: |
   color <- if |z| < 1 then blue else red
 
   @tool "Clicky"
-  on click-or-drag:
+  on click:
+    z := click
     clicked <- z
 
   on activated:

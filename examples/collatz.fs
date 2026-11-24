@@ -28,7 +28,8 @@ script: |
     color <- cycle(iterations/20, dark color, light color)
 
   @tool "Trace" for="Collatz sequence" shortcut=t
-  on click-or-drag:
+  on click:
+    z := click
     prevZ := z
     erase
     until z vanishes:

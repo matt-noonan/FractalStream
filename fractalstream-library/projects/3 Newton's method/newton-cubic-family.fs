@@ -46,7 +46,8 @@ script: |
   on deactivated:
     erase
 
-  on click-or-drag:
+  on click:
+    z := click
     erase
     until z stops:
       z <- newton(z)

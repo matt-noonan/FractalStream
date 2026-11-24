@@ -21,7 +21,8 @@ script: |
   @tool "Trace" for="Newton's method on the sphere" shortcut=t
   on deactivated:
     erase
-  on click-or-drag:
+  on click:
+    z := click
     erase
     repeat up to 60 times:
       z <- newton(z)

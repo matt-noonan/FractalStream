@@ -43,7 +43,8 @@ script: |
   @tool "Trace" for="Twisted dynamical plane" shortcut=t
   on deactivated:
     erase
-  on click-or-drag:
+  on click:
+    z := click
     prevZ ≔ z
     erase
     until z escapes up to 100 times:
@@ -59,7 +60,9 @@ script: |
     erase
   on drag-finished:
     drag_target ⭠ 0
-  on drag from z0 to z:
+  on drag:
+    z := drag end
+    z0 := drag start
     eps ≔ 5 pixel_size
     if drag_target = 0:
       if |z0 - twist_center| < eps:

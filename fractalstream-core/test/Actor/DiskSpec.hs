@@ -191,7 +191,7 @@ spec = do
  describe "drawing" $ do
 
   let project view tool = concat
-        [ "@viewer \"V\" ", view, "\ncolor <- grey\n\n@tool \"T\" for=\"V\"\non click at p:\n", tool ]
+        [ "@viewer \"V\" ", view, "\ncolor <- grey\n\n@tool \"T\" for=\"V\"\non click:\n  p := click\n", tool ]
 
   it "draws lines and circles in every kind of viewer, rectangles only on the plane" $ do
     checkScript (project "view=disk" "  draw line from 0 to p\n  draw circle at p with radius 1\n") `shouldBe` Right ()

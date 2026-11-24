@@ -17,7 +17,8 @@ script: |
   color <- if stuck then black else cycle(iterations / 10, white, dark blue)
 
   @tool "Orbit" for="Hénon map" shortcut=o
-  on click at (px, py):
+  on click:
+    (px, py) := click
     erase
     use orange for stroke
     use orange for fill

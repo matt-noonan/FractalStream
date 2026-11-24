@@ -1,5 +1,5 @@
 -- | A scenario's @drag from A to B@ reaches a tool's drag handlers as the
--- live app's drags do: @on drag from p to q:@ gets where the drag
+-- live app's drags do: @on drag:@ gets where the drag
 -- started as @p@, and where the pointer is as @q@.
 --
 -- (Plain strings, not a quasiquote; see "OverlaySpec".)
@@ -30,10 +30,14 @@ project = unlines
   , "color <- if start2 = 1 and now2 = 2 + i then rgb(0, 1, 0) else rgb(1, 0, 0)"
   , ""
   , "@tool \"T\" for=\"V\""
-  , "on drag from p to q:"
+  , "on drag:"
+  , "  p := drag start"
+  , "  q := drag end"
   , "  start <- p"
   , "  now <- q"
-  , "on drag-finished from p to q:"
+  , "on drag-finished:"
+  , "  p := drag start"
+  , "  q := drag end"
   , "  start2 <- p"
   , "  now2 <- q"
   ]

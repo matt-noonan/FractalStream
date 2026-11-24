@@ -207,7 +207,7 @@ isOwnableBuiltin n = case builtin (Identifier n) of
 -- | The names a script defines, with what they name, where they're
 -- defined: a function's (@f(x) ≔@) or @define@'s name and parameters,
 -- @x ≔@, a statement's @x ⟵@ and @x : T@, @x ⟼@, @for each x@, @with
--- first x@, and the points of a handler's @on ... at x:@.
+-- first x@.
 scriptBindings :: [SRToken] -> [(String, (Token, SourceRange))]
 scriptBindings = go True . map (\(SRToken t sr) -> (t, sr))
   where
@@ -220,7 +220,6 @@ scriptBindings = go True . map (\(SRToken t sr) -> (t, sr))
       (Identifier "function", _) : n : rest | atStart -> named "function" n ++ params rest
       (Identifier "each", _) : n : _ -> named "variable" n
       (Identifier "first", _) : n : _ -> named "variable" n
-      (Identifier "on", _) : rest | atStart -> handlerPoints rest
       n : (ColonEquals, _) : _ -> named "variable" n
       n : (RightArrow, _) : _ -> named "variable" n
       n : (LeftArrow, _) : _ | atStart -> named "variable" n
@@ -239,13 +238,6 @@ scriptBindings = go True . map (\(SRToken t sr) -> (t, sr))
            (Comma, _) : more -> slots more
            _ -> []
 
-    -- the points of a handler's first line, up to its colon
-    handlerPoints toks =
-      let line = takeWhile ((/= Colon) . fst) toks
-      in concat [ named "variable" n
-                | ((before, _), n) <- zip line (drop 1 line)
-                , before `elem` [Identifier "at", Identifier "from", ToKeyword, OpenParen, Comma] ]
-
 -- | A built-in name, what it is, and whether a script can take it for its
 -- own (all but the tokenizer's keywords), if this token is one.
 builtin :: Token -> Maybe (String, String, Bool)
@@ -255,6 +247,9 @@ builtin = \case
   Pi -> Just ("pi", "π", False)
   Iterations -> Just ("iterations", "a built-in value (the last loop's iteration count)", False)
   Stuck -> Just ("stuck", "a built-in value (whether the last loop gave up)", False)
+  ClickKeyword -> Just ("click", "a built-in value (the point a tool's `on click:` is given)", False)
+  DragKeyword -> Just ("drag", "a built-in value (with `drag start` and `drag end`, the points a tool's \
+                               \`on drag:` is given)", False)
   Identifier n
     | Just what <- lookup n described -> Just (n, "a built-in function (" ++ what ++ ")", True)
     | n `Map.member` B.realFunctions || n `Map.member` B.commonFunctions

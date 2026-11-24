@@ -2164,8 +2164,11 @@ makeSelectTool coord = do
   tool <- deserializeWith (dep1, dep2, dep3, dep4) (selectToolJson (showCoordinate coord))
   either (error . ("Internal error: " ++)) pure tool
 
+-- (it sets the viewer's variable, a configuration value, to the point
+-- clicked, or where the pointer is during a drag)
 selectToolJson :: String -> ByteString
-selectToolJson n = "{ \"name\": \"Select " <> UTF8.fromString n <> "\", \"shortcut\": \"S\", \"script\": \"on click-or-drag:\\n  pass\\n\" }"
+selectToolJson n = "{ \"name\": \"Select " <> UTF8.fromString n <> "\", \"shortcut\": \"S\", \"script\": \"on click:\\n  "
+                   <> UTF8.fromString n <> " <- click\\n\" }"
 
 -- | Run an action, catching any exception it throws except an
 -- asynchronous one (a cancellation, say), which is rethrown.

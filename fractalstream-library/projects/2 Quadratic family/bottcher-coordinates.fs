@@ -151,7 +151,8 @@ script: |
   text "Click in the dynamical plane to update these values"
   saved_angle : R as "θ =" := 0
   saved_G : R as "G =" := 0
-  on click-or-drag at w:
+  on click:
+    w := click
     erase
     phi : C := 0
     grad : R := 1
@@ -175,7 +176,8 @@ script: |
     erase
 
   @tool "Trace orbit" for="Dynamical plane" shortcut=t
-  on click-or-drag at w:
+  on click:
+    w := click
     erase
     use yellow for stroke
     use yellow for fill

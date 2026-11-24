@@ -54,33 +54,35 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `z` = [internal] point a in:
+          let `[internal] click` = [internal] point a in:
             let `pixel_size` = [internal] px in:
               block:
-                use Color 255 255 255 for line
-                erase
-                block:
-                  let `[internal] previous.z #0` = z in:
+                let `z` = [internal] click in:
+                  block:
+                    use Color 255 255 255 for line
+                    erase
                     block:
-                      block:
-                        let `[internal] stops.prev #1` = z in:
+                      let `[internal] previous.z #0` = z in:
+                        block:
                           block:
-                            let `[internal] fresh #18` = 0 in:
-                              let `[internal] fresh #19` = [internal] iteration limit in:
-                                block:
-                                  do-while (!(|(z - [internal] stops.prev #1)| < [internal] vanishing radius) and ([internal] fresh #18 < [internal] fresh #19)):
+                            let `[internal] stops.prev #1` = z in:
+                              block:
+                                let `[internal] fresh #19` = 0 in:
+                                  let `[internal] fresh #20` = [internal] iteration limit in:
                                     block:
-                                      block:
-                                        set `[internal] stops.prev #1` := z
+                                      do-while (!(|(z - [internal] stops.prev #1)| < [internal] vanishing radius) and ([internal] fresh #19 < [internal] fresh #20)):
                                         block:
-                                          set `[internal] previous.z #0` := z
                                           block:
-                                            draw point at (z, 1.0 :+ 0.0)
-                                            set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] f.z #1 = [internal] newton.z #0 in (([internal] f.z #1 ^ 3:R:C) - 1:R:C) / let [internal] f'.z #2 = [internal] newton.z #0 in (3:R:C * ([internal] f'.z #2 ^ 2:R:C))))
-                                            draw line from (z, 1.0 :+ 0.0) to ([internal] previous.z #0, 1.0 :+ 0.0)
-                                      set `[internal] fresh #18` := ([internal] fresh #18 + 1)
-                                  set `[internal] iteration count` := [internal] fresh #18
-                                  set `[internal] stuck` := ([internal] fresh #18 = [internal] fresh #19)
+                                            set `[internal] stops.prev #1` := z
+                                            block:
+                                              set `[internal] previous.z #0` := z
+                                              block:
+                                                draw point at (z, 1.0 :+ 0.0)
+                                                set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] f.z #1 = [internal] newton.z #0 in (([internal] f.z #1 ^ 3:R:C) - 1:R:C) / let [internal] f'.z #2 = [internal] newton.z #0 in (3:R:C * ([internal] f'.z #2 ^ 2:R:C))))
+                                                draw line from (z, 1.0 :+ 0.0) to ([internal] previous.z #0, 1.0 :+ 0.0)
+                                          set `[internal] fresh #19` := ([internal] fresh #19 + 1)
+                                      set `[internal] iteration count` := [internal] fresh #19
+                                      set `[internal] stuck` := ([internal] fresh #19 = [internal] fresh #20)
 
   -- on drag
 let `[internal] vanishing radius` = vanishing_radius in:
@@ -88,34 +90,36 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `z` = [internal] point a in:
-            let `[unused] start` = [internal] old point a in:
+          let `[internal] click` = [internal] point a in:
+            let `[unused] drag start` = [internal] old point a in:
               let `pixel_size` = [internal] px in:
                 block:
-                  use Color 255 255 255 for line
-                  erase
-                  block:
-                    let `[internal] previous.z #0` = z in:
+                  let `z` = [internal] click in:
+                    block:
+                      use Color 255 255 255 for line
+                      erase
                       block:
-                        block:
-                          let `[internal] stops.prev #1` = z in:
+                        let `[internal] previous.z #0` = z in:
+                          block:
                             block:
-                              let `[internal] fresh #21` = 0 in:
-                                let `[internal] fresh #22` = [internal] iteration limit in:
-                                  block:
-                                    do-while (!(|(z - [internal] stops.prev #1)| < [internal] vanishing radius) and ([internal] fresh #21 < [internal] fresh #22)):
+                              let `[internal] stops.prev #1` = z in:
+                                block:
+                                  let `[internal] fresh #22` = 0 in:
+                                    let `[internal] fresh #23` = [internal] iteration limit in:
                                       block:
-                                        block:
-                                          set `[internal] stops.prev #1` := z
+                                        do-while (!(|(z - [internal] stops.prev #1)| < [internal] vanishing radius) and ([internal] fresh #22 < [internal] fresh #23)):
                                           block:
-                                            set `[internal] previous.z #0` := z
                                             block:
-                                              draw point at (z, 1.0 :+ 0.0)
-                                              set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] f.z #1 = [internal] newton.z #0 in (([internal] f.z #1 ^ 3:R:C) - 1:R:C) / let [internal] f'.z #2 = [internal] newton.z #0 in (3:R:C * ([internal] f'.z #2 ^ 2:R:C))))
-                                              draw line from (z, 1.0 :+ 0.0) to ([internal] previous.z #0, 1.0 :+ 0.0)
-                                        set `[internal] fresh #21` := ([internal] fresh #21 + 1)
-                                    set `[internal] iteration count` := [internal] fresh #21
-                                    set `[internal] stuck` := ([internal] fresh #21 = [internal] fresh #22)
+                                              set `[internal] stops.prev #1` := z
+                                              block:
+                                                set `[internal] previous.z #0` := z
+                                                block:
+                                                  draw point at (z, 1.0 :+ 0.0)
+                                                  set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] f.z #1 = [internal] newton.z #0 in (([internal] f.z #1 ^ 3:R:C) - 1:R:C) / let [internal] f'.z #2 = [internal] newton.z #0 in (3:R:C * ([internal] f'.z #2 ^ 2:R:C))))
+                                                  draw line from (z, 1.0 :+ 0.0) to ([internal] previous.z #0, 1.0 :+ 0.0)
+                                            set `[internal] fresh #22` := ([internal] fresh #22 + 1)
+                                        set `[internal] iteration count` := [internal] fresh #22
+                                        set `[internal] stuck` := ([internal] fresh #22 = [internal] fresh #23)
 
   -- on refresh
 let `[internal] vanishing radius` = vanishing_radius in:

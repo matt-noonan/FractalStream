@@ -27,7 +27,8 @@ script: |
 
   @tool "Magnitude" for="Dynamical plane"
   magnitude : R as "Magnitude" := 0
-  on click at clicked:
+  on click:
+    clicked := click
     z := clicked
     run probe_magnitude
 
@@ -37,7 +38,8 @@ script: |
   on deactivated:
     erase
 
-  on click-or-drag at z:
+  on click:
+    z := click
     erase
     use trace_color for line
     # (the script sets these for coloring, which the tool doesn't use)

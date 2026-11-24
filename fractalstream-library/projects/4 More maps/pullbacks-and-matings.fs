@@ -23,7 +23,8 @@ script: |
   color3 : Color as "Color" := yellow
   on deactivated:
     erase
-  on click-or-drag:
+  on click:
+    z := click
     erase
     use color1 for line
     draw point at z
@@ -70,6 +71,7 @@ script: |
   on drag-finished:
     follow <- false
   on drag:
+    z := drag end
     pre1 := preimage(z)
     pre2 := -preimage(z)
 

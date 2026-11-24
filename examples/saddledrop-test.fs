@@ -40,5 +40,5 @@ script: |
   run draw_henon(z, true)
 
   @tool "Select saddle" for="Hénon dynamics" shortcut=s
-  on click-or-drag:
+  on click:
     pass

@@ -116,7 +116,7 @@ pass
     it "needs a positive aspect" $
       failsWith "@viewer \"Plane\" xvar=x yvar=y aspect=-1\npass\n" "must be positive"
 
-    it "lets its tools name events by real or complex coordinates" $
+    it "gives its tools' events points as pairs" $
       ok [r|
 @viewer "Plane" xvar=x yvar=y
 
@@ -124,12 +124,13 @@ pass
 
 @tool "Lines"
 on click:
-  draw point at (x, y)
-on drag from (p, q) to (u, v):
-  draw line from (p, q) to (u, v)
+  draw point at click
+on drag:
+  (u, v) := drag end
+  draw line from drag start to drag end
   write text(pixel_width, " by ", pixel_height) at (u, v)
-on drag-finished from w0 to w1:
-  draw line from w0 to w1
+on drag-finished:
+  draw line from drag start to drag end
 on refresh:
   draw circle at (0, 0) with radius pixel_height
 |]
@@ -153,21 +154,22 @@ pass
 
   describe "a real viewer's tools" $ do
 
-    it "bind a click's position, and the pixel height" $ do
+    it "give a click's point as a pair, and the pixel height" $ do
       (a, b, h) <- runRealTool (RealCoordinates "x" "y")
-        "on click:\n  a <- x\n  b <- y\n  h <- pixel_height\n" (Click (planePoint (3, 4)))
+        "on click:\n  (a, b) <- click\n  h <- pixel_height\n" (Click (planePoint (3, 4)))
       (a, b, h) `shouldBe` (3, 4, 2)
 
-    it "bind a drag's start and current positions, as real pairs" $ do
+    it "give a drag's start and current positions, as pairs" $ do
       (a, b, h) <- runRealTool (RealCoordinates "x" "y")
-        "on drag from (p, q) to (u, v):\n  a <- u - p\n  b <- v - q\n  h <- pixel_width\n"
+        "on drag:\n  (p, q) := drag start\n  (u, v) := drag end\n  a <- u - p\n  b <- v - q\n  h <- pixel_width\n"
         (Drag (planePoint (10, 20)) (planePoint (1, 2)))
       (a, b, h) `shouldBe` (9, 18, 0.5)
 
-    it "set the viewer's coordinates, when they're configuration variables" $ do
+    it "handle drags with `on click:`, when there's no `on drag:`" $ do
       (a, b, h) <- runRealTool (RealCoordinates "a" "b")
-        "on click-or-drag:\n  h <- pixel_height\n" (Click (planePoint (3, 4)))
-      (a, b, h) `shouldBe` (3, 4, 2)
+        "on click:\n  (a, b) <- click\n  h <- pixel_height\n"
+        (Drag (planePoint (10, 20)) (planePoint (1, 2)))
+      (a, b, h) `shouldBe` (10, 20, 2)
 
 -- | Run a tool's script in a real viewer with coordinate @coord@ and
 -- pixels 0.5 wide and 2 high, with real variables @a@, @b@, and @h@

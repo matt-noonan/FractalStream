@@ -8,6 +8,10 @@ module Language.Typecheck
   , advise
   , blockFunctionCallAdvice
   , ppError
+  , clickPointVar
+  , dragStartVar
+  , dragEndVar
+  , eventPointWord
 
   -- * Utility functions and types
   , declareVar
@@ -81,12 +85,36 @@ instance PrettyPrint TCError where
 
 -- (a standard library function is named as scripts write it: see
 -- "Language.Stdlib")
+-- | The points a tool's handlers are given, by the keywords that name
+-- them: @click@ (in @on click:@ and @on double-click:@), and @drag start@
+-- and @drag end@ (in @on drag:@ and @on drag-finished:@; during a drag,
+-- @drag end@ is where the pointer is now). See "Actor.Event".
+clickPointVar, dragStartVar, dragEndVar :: String
+clickPointVar = "[internal] click"
+dragStartVar = "[internal] drag start"
+dragEndVar = "[internal] drag end"
+
+-- | The keyword a script writes for one of those points, if this is one.
+eventPointWord :: String -> Maybe String
+eventPointWord n
+  | n == clickPointVar = Just "click"
+  | n == dragStartVar = Just "drag start"
+  | n == dragEndVar = Just "drag end"
+  | otherwise = Nothing
+
 ppError :: TCError -> String
 ppError = withoutStdlibPrefix . concat .  \case
   Surprise _ thing got (Expected wanted) ->
     ["I expected ", wanted, " here, but ", thing, " is ", got, "."]
-  MissingName _ name ->
-    ["No variable named ", name, " is defined here."]
+  MissingName _ name
+    | Just "click" <- eventPointWord name ->
+        ["`click` is the point that was clicked, so it's only defined in a tool's \
+         \`on click:` (which also handles drags, if the tool has no `on drag:`) \
+         \and `on double-click:`."]
+    | Just w <- eventPointWord name ->
+        ["`", w, "` is where a drag ", if w == "drag start" then "started" else "is now, or ended",
+         ", so it's only defined in a tool's `on drag:` and `on drag-finished:`."]
+    | otherwise -> ["No variable named ", name, " is defined here."]
   MissingFunction _ name ->
     ["No function named ", name, " is defined here."]
   MissingCode _ name ->

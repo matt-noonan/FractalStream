@@ -39,7 +39,8 @@ script: |
   on deactivated:
     erase
 
-  on click-or-drag at z:
+  on click:
+    z := click
     erase
     use trace_color for line
     # (the script sets these for coloring, which the tool doesn't use)

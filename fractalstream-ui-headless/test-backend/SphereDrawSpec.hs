@@ -22,7 +22,8 @@ project tool = unlines $
   , "color <- grey"
   , ""
   , "@tool \"T\" for=\"S\""
-  , "on click at p:"
+  , "on click:"
+  , "  p := click"
   , "  erase"
   ] ++ map ("  " ++) (lines tool)
 

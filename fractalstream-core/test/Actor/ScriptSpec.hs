@@ -299,7 +299,7 @@ q : Cinf x R := (∞, 2.0)
 @tool "Trace" for="Mandelbrot Set" shortcut="T" drawLayer="5" refreshOnActivate="false" refreshCanUpdate="true"
 on refresh:
   erase
-on click-or-drag:
+on click:
   pass
 |] $ \case
         [ToolStanza{..}] -> do
@@ -310,7 +310,8 @@ on click-or-drag:
           tsDrawLayer `shouldBe` 5
           tsRefreshOnActivate `shouldBe` False
           tsRefreshCanUpdate `shouldBe` True
-          length tsBlocks `shouldBe` 2
+          -- (refresh, click, and click handling drags: see 'Actor.Event.mergeToolBlocks')
+          length tsBlocks `shouldBe` 3
         other -> expectationFailure ("expected a single tool stanza, got " ++ show (length other) ++ " stanzas")
 
     it "accepts declarations before a tool's event blocks as its own config" $
@@ -416,9 +417,9 @@ on refresh:
 @tool overlay
 on refresh:
   pass
-on click-or-drag:
+on click:
   pass
-|] `shouldFailWith` "it can't have an `on click-or-drag:` block"
+|] `shouldFailWith` "it can't have an `on click:` block"
 
     it "rejects an overlay without an `on refresh:` block" $
       [r|
@@ -443,7 +444,7 @@ iterate z -> f(z) until z escapes
 @tool "Trace" for="Mandelbrot Set" shortcut="T"
 on refresh:
   erase
-on click-or-drag:
+on click:
   pass
 |] $ \stanzas -> length stanzas `shouldBe` 4
 

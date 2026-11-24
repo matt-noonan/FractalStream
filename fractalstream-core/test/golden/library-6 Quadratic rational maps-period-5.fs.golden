@@ -831,7 +831,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `w0` = [internal] point a in:
+          let `[internal] click` = [internal] point a in:
             let `pixel_size` = [internal] px in:
               block:
                 let `per5_omega1` = 1.5470797535511203 in:
@@ -840,94 +840,203 @@ let `[internal] vanishing radius` = vanishing_radius in:
                       block:
                         let `per5_q` = [0.4980983388024148; 1.8872778374306454e-3; 2.7094262443660302e-8; 1.4738034644543212e-15] in:
                           block:
-                            erase
-                            use Color 255 255 0 for line
-                            let `pa` = 0.0:C in:
+                            let `w0` = [internal] click in:
                               block:
-                                let `pb` = 0.0:C in:
+                                erase
+                                use Color 255 255 0 for line
+                                let `pa` = 0.0:C in:
                                   block:
-                                    block:
-                                      let `[internal] per5_param.t #0` = t5 in:
-                                        block:
-                                          block:
-                                            let `v` = ([internal] per5_param.t #0 / (2:R * per5_omega1):C) in:
-                                              block:
-                                                let `s1` = 0.0:C in:
-                                                  block:
-                                                    let `s2` = 0.0:C in:
-                                                      block:
-                                                        let `s3` = 0.0:C in:
-                                                          block:
-                                                            let `s4` = 0.0:C in:
-                                                              block:
-                                                                let `n` = 0 in:
-                                                                  block:
-                                                                    let `[internal] fresh #32` = 0 in:
-                                                                      let `[internal] fresh #33` = 4 in:
-                                                                        block:
-                                                                          if (True and ([internal] fresh #32 < [internal] fresh #33)) then:
-                                                                            do-while (True and ([internal] fresh #32 < [internal] fresh #33)):
-                                                                              block:
-                                                                                block:
-                                                                                  let `ang` = ((((2 * n) + 1):R * 3.141592653589793):C * v) in:
-                                                                                    block:
-                                                                                      let `sign` = if ((n mod 2) = 0) then 1.0 else -1.0 in:
-                                                                                        block:
-                                                                                          let `coef` = (sign * (per5_q@(n + 1))) in:
-                                                                                            block:
-                                                                                              set `s1` := (s1 + (coef:C * sin(ang)))
-                                                                                              set `s2` := (s2 + (((coef * ((2 * n) + 1):R) * 3.141592653589793):C * cos(ang)))
-                                                                                              set `s3` := (s3 - ((coef * ((((2 * n) + 1):R * 3.141592653589793) ^ 2:R)):C * sin(ang)))
-                                                                                              set `s4` := (s4 - ((coef * ((((2 * n) + 1):R * 3.141592653589793) ^ 3:R)):C * cos(ang)))
-                                                                                              set `n` := (n + 1)
-                                                                                set `[internal] fresh #32` := ([internal] fresh #32 + 1)
-                                                                          else:
-                                                                            no-op
-                                                                          set `[internal] iteration count` := [internal] fresh #32
-                                                                          set `[internal] stuck` := ([internal] fresh #32 = [internal] fresh #33)
-                                                                    let `l2` = ((s3 / s1) - ((s2 / s1) ^ 2:R:C)) in:
-                                                                      block:
-                                                                        let `l3` = (((s4 / s1) - ((3:R:C * (s3 * s2)) / (s1 ^ 2:R:C))) + (2:R:C * ((s2 / s1) ^ 3:R:C))) in:
-                                                                          block:
-                                                                            let `wp` = (per5_pconst:C - (l2 / (4:R * (per5_omega1 ^ 2:R)):C)) in:
-                                                                              block:
-                                                                                let `wdp` = (-l3 / (8:R * (per5_omega1 ^ 3:R)):C) in:
-                                                                                  block:
-                                                                                    let `wx` = (-wp - 0.25:C) in:
-                                                                                      block:
-                                                                                        let `wy` = ((wdp + wx) + 1:R:C) in:
-                                                                                          block:
-                                                                                            set `wy` := (wy / (2:R:C * wx))
-                                                                                            let `tmp` = ((wy - wx) - 1:R:C) in:
-                                                                                              block:
-                                                                                                set `wx` := (wx / tmp)
-                                                                                                set `wy` := (wx - (1:R:C / tmp))
-                                                                                                set `tmp` := ((wx + 1:R:C) * wy)
-                                                                                                set `pb` := (wx / tmp)
-                                                                                                set `pa` := ((wx * pb) - 1:R:C)
-                                    let `w` = (w0, 1.0 :+ 0.0) in:
+                                    let `pb` = 0.0:C in:
                                       block:
                                         block:
-                                          let `[internal] previous.w #0` = ((1st w), (2nd w)) in:
+                                          let `[internal] per5_param.t #0` = t5 in:
                                             block:
-                                              let `[internal] fresh #27` = 0 in:
-                                                let `[internal] fresh #28` = 200 in:
+                                              block:
+                                                let `v` = ([internal] per5_param.t #0 / (2:R * per5_omega1):C) in:
                                                   block:
-                                                    do-while (!let [internal] captured5.u #0 = ((1st w), (2nd w)) in (|let [internal] sphere.point #0 = ((1st [internal] captured5.u #0), (2nd [internal] captured5.u #0)) in ((2nd [internal] sphere.point #0) / (1st [internal] sphere.point #0))| < (10:R ^ -20:R)) and ([internal] fresh #27 < [internal] fresh #28)):
+                                                    let `s1` = 0.0:C in:
                                                       block:
-                                                        block:
-                                                          set `[internal] previous.w #0` := ((1st w), (2nd w))
+                                                        let `s2` = 0.0:C in:
                                                           block:
-                                                            draw point at (let [internal] sphere.point #1 = ((1st w), (2nd w)) in ((1st [internal] sphere.point #1) / (2nd [internal] sphere.point #1)), 1.0 :+ 0.0)
-                                                            set `w` := let [internal] sphere.scaled #2 = (((1:R:C * ((1st w) ^ 2:R:C)) + (((pa * (1st w)) + (pb * (2nd w))) * (2nd w))), ((1st w) ^ 2:R:C)) in if (((re((2nd [internal] sphere.scaled #2)) * re((2nd [internal] sphere.scaled #2))) + (im((2nd [internal] sphere.scaled #2)) * im((2nd [internal] sphere.scaled #2)))) < ((re((1st [internal] sphere.scaled #2)) * re((1st [internal] sphere.scaled #2))) + (im((1st [internal] sphere.scaled #2)) * im((1st [internal] sphere.scaled #2))))) then (1.0 :+ 0.0, ((2nd [internal] sphere.scaled #2) / (1st [internal] sphere.scaled #2))) else (((1st [internal] sphere.scaled #2) / (2nd [internal] sphere.scaled #2)), 1.0 :+ 0.0)
-                                                            if !(let [internal] sphere.point #3 = ((1st w), (2nd w)) in let [internal] sphere.point #4 = (1.0 :+ 0.0, 0.0 :+ 0.0) in ((((1st [internal] sphere.point #3) * (2nd [internal] sphere.point #4)) - ((2nd [internal] sphere.point #3) * (1st [internal] sphere.point #4))) = 0.0 :+ 0.0) or let [internal] sphere.point #5 = ((1st [internal] previous.w #0), (2nd [internal] previous.w #0)) in let [internal] sphere.point #6 = (1.0 :+ 0.0, 0.0 :+ 0.0) in ((((1st [internal] sphere.point #5) * (2nd [internal] sphere.point #6)) - ((2nd [internal] sphere.point #5) * (1st [internal] sphere.point #6))) = 0.0 :+ 0.0)) then:
+                                                            let `s3` = 0.0:C in:
                                                               block:
-                                                                draw line from (let [internal] sphere.point #7 = ((1st [internal] previous.w #0), (2nd [internal] previous.w #0)) in ((1st [internal] sphere.point #7) / (2nd [internal] sphere.point #7)), 1.0 :+ 0.0) to (let [internal] sphere.point #8 = ((1st w), (2nd w)) in ((1st [internal] sphere.point #8) / (2nd [internal] sphere.point #8)), 1.0 :+ 0.0)
-                                                            else:
-                                                              no-op
-                                                        set `[internal] fresh #27` := ([internal] fresh #27 + 1)
-                                                    set `[internal] iteration count` := [internal] fresh #27
-                                                    set `[internal] stuck` := ([internal] fresh #27 = [internal] fresh #28)
+                                                                let `s4` = 0.0:C in:
+                                                                  block:
+                                                                    let `n` = 0 in:
+                                                                      block:
+                                                                        let `[internal] fresh #33` = 0 in:
+                                                                          let `[internal] fresh #34` = 4 in:
+                                                                            block:
+                                                                              if (True and ([internal] fresh #33 < [internal] fresh #34)) then:
+                                                                                do-while (True and ([internal] fresh #33 < [internal] fresh #34)):
+                                                                                  block:
+                                                                                    block:
+                                                                                      let `ang` = ((((2 * n) + 1):R * 3.141592653589793):C * v) in:
+                                                                                        block:
+                                                                                          let `sign` = if ((n mod 2) = 0) then 1.0 else -1.0 in:
+                                                                                            block:
+                                                                                              let `coef` = (sign * (per5_q@(n + 1))) in:
+                                                                                                block:
+                                                                                                  set `s1` := (s1 + (coef:C * sin(ang)))
+                                                                                                  set `s2` := (s2 + (((coef * ((2 * n) + 1):R) * 3.141592653589793):C * cos(ang)))
+                                                                                                  set `s3` := (s3 - ((coef * ((((2 * n) + 1):R * 3.141592653589793) ^ 2:R)):C * sin(ang)))
+                                                                                                  set `s4` := (s4 - ((coef * ((((2 * n) + 1):R * 3.141592653589793) ^ 3:R)):C * cos(ang)))
+                                                                                                  set `n` := (n + 1)
+                                                                                    set `[internal] fresh #33` := ([internal] fresh #33 + 1)
+                                                                              else:
+                                                                                no-op
+                                                                              set `[internal] iteration count` := [internal] fresh #33
+                                                                              set `[internal] stuck` := ([internal] fresh #33 = [internal] fresh #34)
+                                                                        let `l2` = ((s3 / s1) - ((s2 / s1) ^ 2:R:C)) in:
+                                                                          block:
+                                                                            let `l3` = (((s4 / s1) - ((3:R:C * (s3 * s2)) / (s1 ^ 2:R:C))) + (2:R:C * ((s2 / s1) ^ 3:R:C))) in:
+                                                                              block:
+                                                                                let `wp` = (per5_pconst:C - (l2 / (4:R * (per5_omega1 ^ 2:R)):C)) in:
+                                                                                  block:
+                                                                                    let `wdp` = (-l3 / (8:R * (per5_omega1 ^ 3:R)):C) in:
+                                                                                      block:
+                                                                                        let `wx` = (-wp - 0.25:C) in:
+                                                                                          block:
+                                                                                            let `wy` = ((wdp + wx) + 1:R:C) in:
+                                                                                              block:
+                                                                                                set `wy` := (wy / (2:R:C * wx))
+                                                                                                let `tmp` = ((wy - wx) - 1:R:C) in:
+                                                                                                  block:
+                                                                                                    set `wx` := (wx / tmp)
+                                                                                                    set `wy` := (wx - (1:R:C / tmp))
+                                                                                                    set `tmp` := ((wx + 1:R:C) * wy)
+                                                                                                    set `pb` := (wx / tmp)
+                                                                                                    set `pa` := ((wx * pb) - 1:R:C)
+                                        let `w` = (w0, 1.0 :+ 0.0) in:
+                                          block:
+                                            block:
+                                              let `[internal] previous.w #0` = ((1st w), (2nd w)) in:
+                                                block:
+                                                  let `[internal] fresh #28` = 0 in:
+                                                    let `[internal] fresh #29` = 200 in:
+                                                      block:
+                                                        do-while (!let [internal] captured5.u #0 = ((1st w), (2nd w)) in (|let [internal] sphere.point #0 = ((1st [internal] captured5.u #0), (2nd [internal] captured5.u #0)) in ((2nd [internal] sphere.point #0) / (1st [internal] sphere.point #0))| < (10:R ^ -20:R)) and ([internal] fresh #28 < [internal] fresh #29)):
+                                                          block:
+                                                            block:
+                                                              set `[internal] previous.w #0` := ((1st w), (2nd w))
+                                                              block:
+                                                                draw point at (let [internal] sphere.point #1 = ((1st w), (2nd w)) in ((1st [internal] sphere.point #1) / (2nd [internal] sphere.point #1)), 1.0 :+ 0.0)
+                                                                set `w` := let [internal] sphere.scaled #2 = (((1:R:C * ((1st w) ^ 2:R:C)) + (((pa * (1st w)) + (pb * (2nd w))) * (2nd w))), ((1st w) ^ 2:R:C)) in if (((re((2nd [internal] sphere.scaled #2)) * re((2nd [internal] sphere.scaled #2))) + (im((2nd [internal] sphere.scaled #2)) * im((2nd [internal] sphere.scaled #2)))) < ((re((1st [internal] sphere.scaled #2)) * re((1st [internal] sphere.scaled #2))) + (im((1st [internal] sphere.scaled #2)) * im((1st [internal] sphere.scaled #2))))) then (1.0 :+ 0.0, ((2nd [internal] sphere.scaled #2) / (1st [internal] sphere.scaled #2))) else (((1st [internal] sphere.scaled #2) / (2nd [internal] sphere.scaled #2)), 1.0 :+ 0.0)
+                                                                if !(let [internal] sphere.point #3 = ((1st w), (2nd w)) in let [internal] sphere.point #4 = (1.0 :+ 0.0, 0.0 :+ 0.0) in ((((1st [internal] sphere.point #3) * (2nd [internal] sphere.point #4)) - ((2nd [internal] sphere.point #3) * (1st [internal] sphere.point #4))) = 0.0 :+ 0.0) or let [internal] sphere.point #5 = ((1st [internal] previous.w #0), (2nd [internal] previous.w #0)) in let [internal] sphere.point #6 = (1.0 :+ 0.0, 0.0 :+ 0.0) in ((((1st [internal] sphere.point #5) * (2nd [internal] sphere.point #6)) - ((2nd [internal] sphere.point #5) * (1st [internal] sphere.point #6))) = 0.0 :+ 0.0)) then:
+                                                                  block:
+                                                                    draw line from (let [internal] sphere.point #7 = ((1st [internal] previous.w #0), (2nd [internal] previous.w #0)) in ((1st [internal] sphere.point #7) / (2nd [internal] sphere.point #7)), 1.0 :+ 0.0) to (let [internal] sphere.point #8 = ((1st w), (2nd w)) in ((1st [internal] sphere.point #8) / (2nd [internal] sphere.point #8)), 1.0 :+ 0.0)
+                                                                else:
+                                                                  no-op
+                                                            set `[internal] fresh #28` := ([internal] fresh #28 + 1)
+                                                        set `[internal] iteration count` := [internal] fresh #28
+                                                        set `[internal] stuck` := ([internal] fresh #28 = [internal] fresh #29)
+
+  -- on drag
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `[internal] click` = [internal] point a in:
+            let `[unused] drag start` = [internal] old point a in:
+              let `pixel_size` = [internal] px in:
+                block:
+                  let `per5_omega1` = 1.5470797535511203 in:
+                    block:
+                      let `per5_pconst` = -0.312026392806344 in:
+                        block:
+                          let `per5_q` = [0.4980983388024148; 1.8872778374306454e-3; 2.7094262443660302e-8; 1.4738034644543212e-15] in:
+                            block:
+                              let `w0` = [internal] click in:
+                                block:
+                                  erase
+                                  use Color 255 255 0 for line
+                                  let `pa` = 0.0:C in:
+                                    block:
+                                      let `pb` = 0.0:C in:
+                                        block:
+                                          block:
+                                            let `[internal] per5_param.t #0` = t5 in:
+                                              block:
+                                                block:
+                                                  let `v` = ([internal] per5_param.t #0 / (2:R * per5_omega1):C) in:
+                                                    block:
+                                                      let `s1` = 0.0:C in:
+                                                        block:
+                                                          let `s2` = 0.0:C in:
+                                                            block:
+                                                              let `s3` = 0.0:C in:
+                                                                block:
+                                                                  let `s4` = 0.0:C in:
+                                                                    block:
+                                                                      let `n` = 0 in:
+                                                                        block:
+                                                                          let `[internal] fresh #36` = 0 in:
+                                                                            let `[internal] fresh #37` = 4 in:
+                                                                              block:
+                                                                                if (True and ([internal] fresh #36 < [internal] fresh #37)) then:
+                                                                                  do-while (True and ([internal] fresh #36 < [internal] fresh #37)):
+                                                                                    block:
+                                                                                      block:
+                                                                                        let `ang` = ((((2 * n) + 1):R * 3.141592653589793):C * v) in:
+                                                                                          block:
+                                                                                            let `sign` = if ((n mod 2) = 0) then 1.0 else -1.0 in:
+                                                                                              block:
+                                                                                                let `coef` = (sign * (per5_q@(n + 1))) in:
+                                                                                                  block:
+                                                                                                    set `s1` := (s1 + (coef:C * sin(ang)))
+                                                                                                    set `s2` := (s2 + (((coef * ((2 * n) + 1):R) * 3.141592653589793):C * cos(ang)))
+                                                                                                    set `s3` := (s3 - ((coef * ((((2 * n) + 1):R * 3.141592653589793) ^ 2:R)):C * sin(ang)))
+                                                                                                    set `s4` := (s4 - ((coef * ((((2 * n) + 1):R * 3.141592653589793) ^ 3:R)):C * cos(ang)))
+                                                                                                    set `n` := (n + 1)
+                                                                                      set `[internal] fresh #36` := ([internal] fresh #36 + 1)
+                                                                                else:
+                                                                                  no-op
+                                                                                set `[internal] iteration count` := [internal] fresh #36
+                                                                                set `[internal] stuck` := ([internal] fresh #36 = [internal] fresh #37)
+                                                                          let `l2` = ((s3 / s1) - ((s2 / s1) ^ 2:R:C)) in:
+                                                                            block:
+                                                                              let `l3` = (((s4 / s1) - ((3:R:C * (s3 * s2)) / (s1 ^ 2:R:C))) + (2:R:C * ((s2 / s1) ^ 3:R:C))) in:
+                                                                                block:
+                                                                                  let `wp` = (per5_pconst:C - (l2 / (4:R * (per5_omega1 ^ 2:R)):C)) in:
+                                                                                    block:
+                                                                                      let `wdp` = (-l3 / (8:R * (per5_omega1 ^ 3:R)):C) in:
+                                                                                        block:
+                                                                                          let `wx` = (-wp - 0.25:C) in:
+                                                                                            block:
+                                                                                              let `wy` = ((wdp + wx) + 1:R:C) in:
+                                                                                                block:
+                                                                                                  set `wy` := (wy / (2:R:C * wx))
+                                                                                                  let `tmp` = ((wy - wx) - 1:R:C) in:
+                                                                                                    block:
+                                                                                                      set `wx` := (wx / tmp)
+                                                                                                      set `wy` := (wx - (1:R:C / tmp))
+                                                                                                      set `tmp` := ((wx + 1:R:C) * wy)
+                                                                                                      set `pb` := (wx / tmp)
+                                                                                                      set `pa` := ((wx * pb) - 1:R:C)
+                                          let `w` = (w0, 1.0 :+ 0.0) in:
+                                            block:
+                                              block:
+                                                let `[internal] previous.w #0` = ((1st w), (2nd w)) in:
+                                                  block:
+                                                    let `[internal] fresh #31` = 0 in:
+                                                      let `[internal] fresh #32` = 200 in:
+                                                        block:
+                                                          do-while (!let [internal] captured5.u #0 = ((1st w), (2nd w)) in (|let [internal] sphere.point #0 = ((1st [internal] captured5.u #0), (2nd [internal] captured5.u #0)) in ((2nd [internal] sphere.point #0) / (1st [internal] sphere.point #0))| < (10:R ^ -20:R)) and ([internal] fresh #31 < [internal] fresh #32)):
+                                                            block:
+                                                              block:
+                                                                set `[internal] previous.w #0` := ((1st w), (2nd w))
+                                                                block:
+                                                                  draw point at (let [internal] sphere.point #1 = ((1st w), (2nd w)) in ((1st [internal] sphere.point #1) / (2nd [internal] sphere.point #1)), 1.0 :+ 0.0)
+                                                                  set `w` := let [internal] sphere.scaled #2 = (((1:R:C * ((1st w) ^ 2:R:C)) + (((pa * (1st w)) + (pb * (2nd w))) * (2nd w))), ((1st w) ^ 2:R:C)) in if (((re((2nd [internal] sphere.scaled #2)) * re((2nd [internal] sphere.scaled #2))) + (im((2nd [internal] sphere.scaled #2)) * im((2nd [internal] sphere.scaled #2)))) < ((re((1st [internal] sphere.scaled #2)) * re((1st [internal] sphere.scaled #2))) + (im((1st [internal] sphere.scaled #2)) * im((1st [internal] sphere.scaled #2))))) then (1.0 :+ 0.0, ((2nd [internal] sphere.scaled #2) / (1st [internal] sphere.scaled #2))) else (((1st [internal] sphere.scaled #2) / (2nd [internal] sphere.scaled #2)), 1.0 :+ 0.0)
+                                                                  if !(let [internal] sphere.point #3 = ((1st w), (2nd w)) in let [internal] sphere.point #4 = (1.0 :+ 0.0, 0.0 :+ 0.0) in ((((1st [internal] sphere.point #3) * (2nd [internal] sphere.point #4)) - ((2nd [internal] sphere.point #3) * (1st [internal] sphere.point #4))) = 0.0 :+ 0.0) or let [internal] sphere.point #5 = ((1st [internal] previous.w #0), (2nd [internal] previous.w #0)) in let [internal] sphere.point #6 = (1.0 :+ 0.0, 0.0 :+ 0.0) in ((((1st [internal] sphere.point #5) * (2nd [internal] sphere.point #6)) - ((2nd [internal] sphere.point #5) * (1st [internal] sphere.point #6))) = 0.0 :+ 0.0)) then:
+                                                                    block:
+                                                                      draw line from (let [internal] sphere.point #7 = ((1st [internal] previous.w #0), (2nd [internal] previous.w #0)) in ((1st [internal] sphere.point #7) / (2nd [internal] sphere.point #7)), 1.0 :+ 0.0) to (let [internal] sphere.point #8 = ((1st w), (2nd w)) in ((1st [internal] sphere.point #8) / (2nd [internal] sphere.point #8)), 1.0 :+ 0.0)
+                                                                  else:
+                                                                    no-op
+                                                              set `[internal] fresh #31` := ([internal] fresh #31 + 1)
+                                                          set `[internal] iteration count` := [internal] fresh #31
+                                                          set `[internal] stuck` := ([internal] fresh #31 = [internal] fresh #32)
 
   -- on deactivated
 let `[internal] vanishing radius` = vanishing_radius in:

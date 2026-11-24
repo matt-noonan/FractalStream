@@ -256,55 +256,57 @@ let `[internal] vanishing radius` = minRadius in:
     let `[internal] iteration limit` = maxIters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `z` = [internal] point a in:
+          let `[internal] click` = [internal] point a in:
             let `pixel_size` = [internal] px in:
               block:
-                set `start` := z
-                block:
-                  let `[internal] trace.initial_last #0` = z in:
+                let `z` = [internal] click in:
+                  block:
+                    set `start` := z
                     block:
-                      block:
-                        let `w` = z in:
+                      let `[internal] trace.initial_last #0` = z in:
+                        block:
                           block:
-                            erase
-                            let `[internal] fresh #24` = 0 in:
-                              let `[internal] fresh #25` = [internal] iteration limit in:
-                                block:
-                                  do-while (!((||(z - w)|| < [internal] vanishing radius) or ([internal] escape radius < |z|)) and ([internal] fresh #24 < [internal] fresh #25)):
-                                    block:
-                                      block:
-                                        set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + c)
-                                        set `w` := let [internal] f2.w #0 = w in (((([internal] f2.w #0 ^ 2:R:C) + c) ^ 2:R:C) + c)
-                                      set `[internal] fresh #24` := ([internal] fresh #24 + 1)
-                                  set `[internal] iteration count` := [internal] fresh #24
-                                  set `[internal] stuck` := ([internal] fresh #24 = [internal] fresh #25)
-                            if (||(z - w)|| < [internal] vanishing radius) then:
+                            let `w` = z in:
                               block:
-                                set `z` := [internal] trace.initial_last #0
-                                block:
-                                  let `[internal] previous.z #0` = z in:
+                                erase
+                                let `[internal] fresh #25` = 0 in:
+                                  let `[internal] fresh #26` = [internal] iteration limit in:
                                     block:
-                                      let `[internal] fresh #25` = 0 in:
-                                        let `[internal] fresh #26` = [internal] iteration limit in:
+                                      do-while (!((||(z - w)|| < [internal] vanishing radius) or ([internal] escape radius < |z|)) and ([internal] fresh #25 < [internal] fresh #26)):
+                                        block:
                                           block:
-                                            if (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #25 < [internal] fresh #26)) then:
-                                              do-while (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #25 < [internal] fresh #26)):
-                                                block:
-                                                  block:
-                                                    set `[internal] previous.z #0` := z
+                                            set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + c)
+                                            set `w` := let [internal] f2.w #0 = w in (((([internal] f2.w #0 ^ 2:R:C) + c) ^ 2:R:C) + c)
+                                          set `[internal] fresh #25` := ([internal] fresh #25 + 1)
+                                      set `[internal] iteration count` := [internal] fresh #25
+                                      set `[internal] stuck` := ([internal] fresh #25 = [internal] fresh #26)
+                                if (||(z - w)|| < [internal] vanishing radius) then:
+                                  block:
+                                    set `z` := [internal] trace.initial_last #0
+                                    block:
+                                      let `[internal] previous.z #0` = z in:
+                                        block:
+                                          let `[internal] fresh #26` = 0 in:
+                                            let `[internal] fresh #27` = [internal] iteration limit in:
+                                              block:
+                                                if (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #26 < [internal] fresh #27)) then:
+                                                  do-while (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #26 < [internal] fresh #27)):
                                                     block:
-                                                      set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + c)
-                                                      draw point at ([internal] previous.z #0, 1.0 :+ 0.0)
-                                                      draw line from ([internal] previous.z #0, 1.0 :+ 0.0) to (z, 1.0 :+ 0.0)
-                                                  set `[internal] fresh #25` := ([internal] fresh #25 + 1)
-                                            else:
-                                              no-op
-                                            set `[internal] iteration count` := [internal] fresh #25
-                                            set `[internal] stuck` := ([internal] fresh #25 = [internal] fresh #26)
-                            else:
-                              no-op
-                            use Color 0 180 0 for line
-                            draw circle at (w, 1.0 :+ 0.0) with radius minRadius
+                                                      block:
+                                                        set `[internal] previous.z #0` := z
+                                                        block:
+                                                          set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + c)
+                                                          draw point at ([internal] previous.z #0, 1.0 :+ 0.0)
+                                                          draw line from ([internal] previous.z #0, 1.0 :+ 0.0) to (z, 1.0 :+ 0.0)
+                                                      set `[internal] fresh #26` := ([internal] fresh #26 + 1)
+                                                else:
+                                                  no-op
+                                                set `[internal] iteration count` := [internal] fresh #26
+                                                set `[internal] stuck` := ([internal] fresh #26 = [internal] fresh #27)
+                                else:
+                                  no-op
+                                use Color 0 180 0 for line
+                                draw circle at (w, 1.0 :+ 0.0) with radius minRadius
 
   -- on drag
 let `[internal] vanishing radius` = minRadius in:
@@ -312,56 +314,58 @@ let `[internal] vanishing radius` = minRadius in:
     let `[internal] iteration limit` = maxIters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `z` = [internal] point a in:
-            let `[unused] start` = [internal] old point a in:
+          let `[internal] click` = [internal] point a in:
+            let `[unused] drag start` = [internal] old point a in:
               let `pixel_size` = [internal] px in:
                 block:
-                  set `start` := z
-                  block:
-                    let `[internal] trace.initial_last #0` = z in:
+                  let `z` = [internal] click in:
+                    block:
+                      set `start` := z
                       block:
-                        block:
-                          let `w` = z in:
+                        let `[internal] trace.initial_last #0` = z in:
+                          block:
                             block:
-                              erase
-                              let `[internal] fresh #27` = 0 in:
-                                let `[internal] fresh #28` = [internal] iteration limit in:
-                                  block:
-                                    do-while (!((||(z - w)|| < [internal] vanishing radius) or ([internal] escape radius < |z|)) and ([internal] fresh #27 < [internal] fresh #28)):
-                                      block:
-                                        block:
-                                          set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + c)
-                                          set `w` := let [internal] f2.w #0 = w in (((([internal] f2.w #0 ^ 2:R:C) + c) ^ 2:R:C) + c)
-                                        set `[internal] fresh #27` := ([internal] fresh #27 + 1)
-                                    set `[internal] iteration count` := [internal] fresh #27
-                                    set `[internal] stuck` := ([internal] fresh #27 = [internal] fresh #28)
-                              if (||(z - w)|| < [internal] vanishing radius) then:
+                              let `w` = z in:
                                 block:
-                                  set `z` := [internal] trace.initial_last #0
-                                  block:
-                                    let `[internal] previous.z #0` = z in:
+                                  erase
+                                  let `[internal] fresh #28` = 0 in:
+                                    let `[internal] fresh #29` = [internal] iteration limit in:
                                       block:
-                                        let `[internal] fresh #28` = 0 in:
-                                          let `[internal] fresh #29` = [internal] iteration limit in:
+                                        do-while (!((||(z - w)|| < [internal] vanishing radius) or ([internal] escape radius < |z|)) and ([internal] fresh #28 < [internal] fresh #29)):
+                                          block:
                                             block:
-                                              if (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #28 < [internal] fresh #29)) then:
-                                                do-while (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #28 < [internal] fresh #29)):
-                                                  block:
-                                                    block:
-                                                      set `[internal] previous.z #0` := z
+                                              set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + c)
+                                              set `w` := let [internal] f2.w #0 = w in (((([internal] f2.w #0 ^ 2:R:C) + c) ^ 2:R:C) + c)
+                                            set `[internal] fresh #28` := ([internal] fresh #28 + 1)
+                                        set `[internal] iteration count` := [internal] fresh #28
+                                        set `[internal] stuck` := ([internal] fresh #28 = [internal] fresh #29)
+                                  if (||(z - w)|| < [internal] vanishing radius) then:
+                                    block:
+                                      set `z` := [internal] trace.initial_last #0
+                                      block:
+                                        let `[internal] previous.z #0` = z in:
+                                          block:
+                                            let `[internal] fresh #29` = 0 in:
+                                              let `[internal] fresh #30` = [internal] iteration limit in:
+                                                block:
+                                                  if (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #29 < [internal] fresh #30)) then:
+                                                    do-while (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #29 < [internal] fresh #30)):
                                                       block:
-                                                        set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + c)
-                                                        draw point at ([internal] previous.z #0, 1.0 :+ 0.0)
-                                                        draw line from ([internal] previous.z #0, 1.0 :+ 0.0) to (z, 1.0 :+ 0.0)
-                                                    set `[internal] fresh #28` := ([internal] fresh #28 + 1)
-                                              else:
-                                                no-op
-                                              set `[internal] iteration count` := [internal] fresh #28
-                                              set `[internal] stuck` := ([internal] fresh #28 = [internal] fresh #29)
-                              else:
-                                no-op
-                              use Color 0 180 0 for line
-                              draw circle at (w, 1.0 :+ 0.0) with radius minRadius
+                                                        block:
+                                                          set `[internal] previous.z #0` := z
+                                                          block:
+                                                            set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + c)
+                                                            draw point at ([internal] previous.z #0, 1.0 :+ 0.0)
+                                                            draw line from ([internal] previous.z #0, 1.0 :+ 0.0) to (z, 1.0 :+ 0.0)
+                                                        set `[internal] fresh #29` := ([internal] fresh #29 + 1)
+                                                  else:
+                                                    no-op
+                                                  set `[internal] iteration count` := [internal] fresh #29
+                                                  set `[internal] stuck` := ([internal] fresh #29 = [internal] fresh #30)
+                                  else:
+                                    no-op
+                                  use Color 0 180 0 for line
+                                  draw circle at (w, 1.0 :+ 0.0) with radius minRadius
 
   -- on refresh
 let `[internal] vanishing radius` = minRadius in:

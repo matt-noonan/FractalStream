@@ -255,10 +255,12 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `w` = [internal] point a in:
+          let `[internal] click` = [internal] point a in:
             let `pixel_size` = [internal] px in:
               block:
-                set `c2` := w
+                let `w` = [internal] click in:
+                  block:
+                    set `c2` := w
 
   -- on drag
 let `[internal] vanishing radius` = vanishing_radius in:
@@ -266,11 +268,13 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `w` = [internal] point a in:
-            let `[unused] start` = [internal] old point a in:
+          let `[internal] click` = [internal] point a in:
+            let `[unused] drag start` = [internal] old point a in:
               let `pixel_size` = [internal] px in:
                 block:
-                  set `c2` := w
+                  let `w` = [internal] click in:
+                    block:
+                      set `c2` := w
 
 
 --- tool overlay

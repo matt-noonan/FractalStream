@@ -145,8 +145,9 @@ draws. Tools always run on the CPU.
 | `trigger timer "<name>"` | `Timer` |
 
 `drag from A to B` reaches a tool as the live app's drags do: its `on
-drag from p to q:` (and `on drag-finished from p to q:`) handler gets
-`p` = A and `q` = B.
+drag:` (and `on drag-finished:`) handler gets `drag start` = A and
+`drag end` = B; a tool with only `on click:` gets them in that, with
+`click` where the pointer is.
 
 On a sphere viewer (`view=sphere`), a click's or a drag's point can be any
 point of `Ĉ`, ∞ included (`click at ∞`), which the tool is given exactly,

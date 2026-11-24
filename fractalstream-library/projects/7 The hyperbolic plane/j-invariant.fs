@@ -55,7 +55,8 @@ script: |
 
   @tool "Mark" for="j-invariant" shortcut=m
   j_here : C as "j =" := 0
-  on click-or-drag at p:
+  on click:
+    p := click
     erase
     j_here <- j_invariant(p)
     use white for fill

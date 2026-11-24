@@ -169,14 +169,16 @@ commonDefinitions stanzas =
   <> Map.fromList [ (n, Parameter) | n <- ["max_iters", "escape_radius", "vanishing_radius"] ]
 
 -- | A stanza's own definitions, and those it sees because of what it is:
--- a viewer's coordinate and pixel size, a tool's viewer's coordinate.
+-- a viewer's coordinate and pixel size; a tool sees its viewer's
+-- geometry and pixel sizes, but not its coordinate (a handler names the
+-- point it's given `click`, `drag start` or `drag end`).
 stanzaDefinitions :: Map.Map String [(String, Highlight)] -> Stanza -> Defs
 stanzaDefinitions viewerVars s = definitions s <> implicit
   where
     implicit = Map.fromList $ case stKind s of
       "viewer" -> viewerNames s
                   ++ [(Map.findWithDefault "pixel_size" "pixelVar" (stAttrs s), Parameter)]
-      "tool" -> concat (maybeToList toolViewerNames) ++ [("pixel_size", Parameter)]
+      "tool" -> [ nh | nh@(_, Parameter) <- concat (maybeToList toolViewerNames) ] ++ [("pixel_size", Parameter)]
       "colorizer" -> [("pixel_size", Parameter)]
       "" -> [("z", Variable), ("pixel_size", Parameter)]
       _ -> []
@@ -225,7 +227,6 @@ codeDefs toks = case toks of
   Identifier "define" : Identifier f : OpenParen : rest -> (f, CodeBlock) : params rest
   Identifier "function" : Identifier f : OpenParen : rest -> (f, Function) : params rest
   Identifier "define" : Identifier f : _ -> [(f, CodeBlock)]
-  Identifier "on" : rest -> handlerPoints rest
   -- homogeneous coordinates, `[a : b] := p`
   OpenBracket : rest | (lhs, CloseBracket : ColonEquals : _) <- break (== CloseBracket) rest
                      , all (\t -> t == Colon || isIdentifier t) lhs ->
@@ -250,9 +251,6 @@ codeDefs toks = case toks of
       [] -> []
     params ts = [ (n, Variable) | (before, Identifier n) <- zip (OpenParen : ts) ts
                                 , before `elem` [OpenParen, Comma] ]
-    -- `on click at w:`, `at (x, y)`, `on drag from s to w:`
-    handlerPoints ts = [ (n, Variable) | (before, Identifier n) <- zip ts (drop 1 ts)
-                                       , before `elem` [Identifier "at", Identifier "from", ToKeyword, OpenParen, Comma] ]
 
 -- | A tool handler's first line, @on ...:@.
 isHandler :: Line -> Bool
@@ -273,10 +271,10 @@ lineSpans s defs l
     codeEnd = maybe lineEnd id (lnComment l)
     comment = [ (c, lineEnd, Comment) | Just c <- [lnComment l] ]
     toks = lnTokens l
-    -- the event words of a handler's first line: up to its point, or ':'
+    -- the event words of a handler's first line, up to its ':'
     eventWords
       | isHandler l = Set.fromList
-          [ from | (from, _, t) <- takeWhile (\(_, _, t) -> t `notElem` [Identifier "at", Identifier "from", Colon]) toks
+          [ from | (from, _, t) <- takeWhile (\(_, _, t) -> t /= Colon) toks
                  , t /= Identifier "on" ]
       | otherwise = Set.empty
     tokenSpans =
@@ -293,6 +291,8 @@ lineSpans s defs l
           _ -> tokenClass t
 
     identifier n before before2
+      -- (`drag start` and `drag end`, a handler's points)
+      | n `elem` ["start", "end"], before == Just DragKeyword = BuiltinValue
       | n `Set.member` typeNames || n == "List" || n == "Table", maybe False inTypePosition before = TypeName
       | n `Set.member` typeNames, before == Just OpenParen, maybe False inTypePosition before2 = TypeName
       | n == "of", before == Just (Identifier "List") = TypeName
@@ -323,7 +323,7 @@ tokenClass = \case
   ScientificNotation _ -> Just NumberLiteral
   Quoted _ -> Just StringLiteral
   t | t `elem` [If, Then, Else, Or_, And_, Not_, Escapes, Vanishes, Stops, PreviousKeyword, TimesKeyword, ToKeyword] -> Just Keyword
-    | t `elem` [Euler, Pi, I, True_, False_, Iterations, Stuck, Infinity] -> Just BuiltinValue
+    | t `elem` [Euler, Pi, I, True_, False_, Iterations, Stuck, Infinity, ClickKeyword, DragKeyword] -> Just BuiltinValue
     | t `elem` [TextKeyword, AppendKeyword, PrependKeyword, JoinKeyword, RemoveKeyword, FindKeyword
                , TransformKeyword, RangeKeyword, LengthKeyword, DiffKeyword
                , PartialSign, DiffSign ] -> Just BuiltinFunction

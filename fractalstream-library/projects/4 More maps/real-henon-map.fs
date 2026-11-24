@@ -58,7 +58,8 @@ script: |
 
   @tool "Orbit" for="Dynamical plane" shortcut=o
   orbit_length : Z as "Orbit length" := 1000
-  on click-or-drag at (x, y):
+  on click:
+    (x, y) := click
     erase
     use white for stroke
     draw point at (x, y)

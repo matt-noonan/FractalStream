@@ -22,7 +22,8 @@ script: |
   @tool "Trace" for="Roots of f" shortcut=t
   on deactivated:
     erase
-  on click-or-drag:
+  on click:
+    z := click
     erase
     until z stops:
       z <- newton(z)

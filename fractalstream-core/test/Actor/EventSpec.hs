@@ -73,47 +73,65 @@ on refresh:
   pass
 |] `shouldFailWith` "Duplicate definitions of the refresh event handler"
 
-    it "parses a click block with an explicit coordinate" $
-      shouldParse [r|
-on click at w:
-  pass
-|]
-
-    it "parses a click block with the default coordinate" $
+    it "gives `on click:` the point clicked, as `click`" $
       shouldParse [r|
 on click:
-  draw point at z
+  draw point at click
 |]
 
-    it "parses a double-click block" $
+    it "gives `on double-click:` the point clicked, as `click`" $
       shouldParse [r|
 on double-click:
-  pass
+  w := click
+  draw point at w
 |]
 
-    it "parses a click-or-drag block, building both handlers" $
+    it "handles drags with `on click:` when there's no `on drag:`" $
+      case runScript "on click:\n  draw point at click\n" of
+        Left (_, err) -> expectationFailure err
+        Right h -> (isJust (onClick h), isJust (onDrag h)) `shouldBe` (True, True)
+
+    it "keeps `on click:` and `on drag:` apart when there are both" $
       shouldParse [r|
-on click-or-drag at z:
-  draw point at z
+on click:
+  draw point at click
+on drag:
+  draw line from drag start to drag end
 |]
 
-    it "parses a drag block with explicit start/current coordinates" $
-      shouldParse [r|
-on drag from a to b:
-  draw line from a to b
-|]
-
-    it "parses a drag block with the default coordinate" $
+    it "gives `on drag:` its start and where the pointer is now" $
       shouldParse [r|
 on drag:
-  pass
+  draw line from drag start to drag end
 |]
 
-    it "parses a drag-finished block" $
+    it "gives `on drag-finished:` its start and end" $
       shouldParse [r|
-on drag-finished from a to b:
-  draw line from a to b
+on drag-finished:
+  draw line from drag start to drag end
 |]
+
+    it "says where `click`, `drag start` and `drag end` can be used" $ do
+      [r|
+on drag:
+  draw point at click
+|] `shouldFailWith` "only defined in a tool's `on click:`"
+      [r|
+on click:
+  draw point at drag start
+|] `shouldFailWith` "only defined in a tool's `on drag:` and `on drag-finished:`"
+      [r|
+on refresh:
+  draw point at drag end
+|] `shouldFailWith` "`drag end` is where a drag is now, or ended"
+
+    it "doesn't take a name for an event's point, or `on click-or-drag:`" $ do
+      isLeft (runScript "on click at w:\n  pass\n") `shouldBe` True
+      isLeft (runScript "on drag from a to b:\n  pass\n") `shouldBe` True
+      isLeft (runScript "on click-or-drag:\n  pass\n") `shouldBe` True
+
+    it "doesn't let a script name a variable `click`" $
+      isLeft (runScript "on refresh:\n  click := 1\n") `shouldBe` True
 
     it "parses a button block" $
       shouldParse [r|
@@ -143,15 +161,15 @@ on refresh:
 on deactivated:
   erase
 
-on click-or-drag at z:
+on click:
   use white for line
   erase
-  draw point at z
+  draw point at click
 |]
 
     it "reports a parse error for a malformed header" $
       case parseToolScript noCommonDefs (ComplexCoordinate "z") limits Nothing [r|
-on clickety at z:
+on clickety:
   pass
 |] of
         Left _  -> pure ()

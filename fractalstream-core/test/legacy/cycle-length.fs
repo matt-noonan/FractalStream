@@ -41,13 +41,15 @@ script: |
 
   @tool "Cycle Length" for="Parameter plane"
   cycle_length : Z as "Cycle Length" := 0
-  on click at clicked:
+  on click:
+    clicked := click
     z := 0
     run probe_cycle_length(clicked)
 
   @tool "Cycle Length" for="Dynamical plane"
   cycle_length : Z as "Cycle Length" := 0
-  on click at clicked:
+  on click:
+    clicked := click
     z := clicked
     run probe_cycle_length(C)
 
@@ -57,7 +59,8 @@ script: |
   on deactivated:
     erase
 
-  on click-or-drag at z:
+  on click:
+    z := click
     erase
     use trace_color for line
     # (the script sets these for coloring, which the tool doesn't use)

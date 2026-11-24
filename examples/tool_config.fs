@@ -27,7 +27,8 @@ script: |
     erase
 
   @tool "Trace" for="Julia set" shortcut=t
-  on click-or-drag:
+  on click:
+    z := click
     prevZ := z
     erase
     while |z| < 10 escape_radius up to 100 times:

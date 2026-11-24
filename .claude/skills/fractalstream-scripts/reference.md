@@ -266,11 +266,10 @@ changed by the handlers), then event blocks:
 
 | Header | Fires |
 |---|---|
-| `on click:` / `on click at w:` / `on click at (x, y):` | single click |
-| `on double-click [at ...]:` | double click |
-| `on drag [from s to w]:` | repeatedly while dragging |
-| `on drag-finished [from s to w]:` | when a drag ends |
-| `on click-or-drag [at ...]:` | one body for click and drag |
+| `on click:` | single click; also each step of a drag, if the tool has no `on drag:` |
+| `on double-click:` | double click |
+| `on drag:` | repeatedly while dragging |
+| `on drag-finished:` | when a drag ends |
 | `on refresh:` | after activation (see `refreshOnActivate`), every time the viewer re-renders (pan, zoom, resize, or a change to a config variable the viewer uses), and when the tool's own fields change, whether edited in its panel or by another handler (see `refreshCanUpdate`). |
 | `on activated:` / `on deactivated:` | tool selected / deselected (use `on deactivated: erase` to clean up) |
 | `on button "Label":` | a `button "Label"` in this tool's own declarations was pressed |
@@ -278,18 +277,20 @@ changed by the handlers), then event blocks:
 
 At most one block per event kind, except `button` (one per label).
 
-Coordinates: `at w` binds the point as a complex `w`; `at (x, y)` binds two
-reals (in either kind of viewer). Without `at`, the point is bound to the
-viewer's own coordinate name(s): `var=`, or a real viewer's `xvar=`/`yvar=`. **Caution**: if the viewer's coordinate is a `@config` variable
-(`var=C`), a handler using the default coordinate writes the clicked point
-into that config variable even if the body never assigns it, a nasty
-surprise; use `on click at w:` when you don't want it. Such a viewer (a
-`var=` that's a config variable, or a real viewer whose `xvar=` and
-`yvar=` both are) already gets a built-in "Select ..." tool (shortcut
-`S`) that sets the parameter by clicking or dragging, so don't write a
-"pick" tool.
+Points: a handler's point is a keyword, defined only in its handlers:
+`click` in `on click:` and `on double-click:` (in `on click:` handling a
+drag, where the pointer is now), and `drag start` / `drag end` in
+`on drag:` and `on drag-finished:`. It's the viewer's kind of point: a
+complex number, a pair of reals in a real viewer (`(x, y) := click`), or a
+point of Ĉ in a sphere viewer. Name it with a declaration (`w := click`).
+Handlers never see the viewer's own coordinate: with `var=C` and an
+`@config C`, `C` in a tool is the configuration's value (and `C <- click`
+sets it). Such a viewer (a `var=` that's a config variable, or a real
+viewer whose `xvar=` and `yvar=` both are) already gets a built-in
+"Select ..." tool (shortcut `S`) that sets the parameter by clicking or
+dragging, so don't write a "pick" tool.
 `on refresh`, `activated`, `deactivated`, `button` and `timer` have no
-point and can't see the viewer coordinate.
+point.
 
 In scope in a handler: all config variables (ensemble and the tool's own;
 assigning them updates the UI and re-renders viewers that use them), the

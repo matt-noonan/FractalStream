@@ -49,7 +49,8 @@ color <- if stuck then black else white
 
 @tool "Trace" for="Julia set"
 radius : R := 0.1
-on click-or-drag at w:
+on click:
+  w := click
   erase
   use yellow for stroke
   line := w
@@ -86,7 +87,7 @@ spec = describe "highlighting scripts" $ do
     let src = unlines
           [ "@config \"P\"", "T : Table 3 of R", ""
           , "@viewer \"V\"", "color <- red", ""
-          , "@tool \"Fill\" for=\"V\"", "on click at p:"
+          , "@tool \"Fill\" for=\"V\"", "on click:", "  p := click"
           , "  reset T to (viewer_width, viewer_height, 2) filled with 1"
           , "  resize T to (viewer_width, viewer_height, 3)"
           , "  T @ (point p, *) <- [1, 2, 3]" ]
@@ -131,8 +132,8 @@ spec = describe "highlighting scripts" $ do
   it "classifies handlers, tool fields, and their variables" $ do
     let c = classOf project
     c "on" 0 `shouldBe` Just Keyword
-    c "click" 0 `shouldBe` Just Keyword
-    c "drag" 0 `shouldBe` Just Keyword
+    c "click" 0 `shouldBe` Just Keyword        -- `on click:`
+    c "click" 1 `shouldBe` Just BuiltinValue   -- `w := click`
     c "w" 0 `shouldBe` Just Variable
     c "erase" 0 `shouldBe` Just Keyword
     c "use" 0 `shouldBe` Just Keyword
@@ -141,19 +142,21 @@ spec = describe "highlighting scripts" $ do
     c "radius" 2 `shouldBe` Just Parameter   -- `with radius radius`: the field
     c "p" 0 `shouldBe` Just Variable
 
-  it "lets a tool see its viewer's coordinate" $ do
-    let src = "@viewer \"V\" var=w\npass\n\n@tool \"T\"\non click:\n  draw point at w\n"
-    classOf src "w" 1 `shouldBe` Just Variable
+  it "gives a tool its handlers' points, not its viewer's coordinate" $ do
+    let src = "@viewer \"V\" var=w\npass\n\n@tool \"T\"\non click:\n  draw point at click\n  draw point at w\n"
+    classOf src "click" 1 `shouldBe` Just BuiltinValue
+    classOf src "w" 1 `shouldBe` Just Undefined
 
-  it "knows the points of a drag handler, after `from` and after `to`" $ do
-    let src = "@viewer \"V\"\npass\n\n@tool \"T\"\non drag from p1 to q1:\n  draw line from p1 to q1\n"
-    classOf src "p1" 0 `shouldBe` Just Variable
-    classOf src "q1" 0 `shouldBe` Just Variable
-    classOf src "q1" 1 `shouldBe` Just Variable
+  it "knows a drag handler's `drag start` and `drag end`" $ do
+    let src = "@viewer \"V\"\npass\n\n@tool \"T\"\non drag:\n  draw line from drag start to drag end\n"
+    classOf src "drag" 0 `shouldBe` Just Keyword        -- `on drag:`
+    classOf src "drag" 1 `shouldBe` Just BuiltinValue
+    classOf src "start" 0 `shouldBe` Just BuiltinValue
+    classOf src "end" 0 `shouldBe` Just BuiltinValue
 
   it "knows a real viewer's coordinates and pixel dimensions, in it and its tools" $ do
     let src = "@viewer \"V\" xvar=a yvar=b\ncolor <- if a < b and pixel_height > 0 then red else blue\n\n"
-           ++ "@tool \"T\"\non click:\n  draw point at (a, b)\n  write text(pixel_width) at (a, b)\n"
+           ++ "@tool \"T\"\non click:\n  (a, b) := click\n  write text(pixel_width) at (a, b)\n"
     classOf src "a" 1 `shouldBe` Just Variable
     classOf src "b" 1 `shouldBe` Just Variable
     classOf src "pixel_height" 0 `shouldBe` Just Parameter

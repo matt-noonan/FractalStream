@@ -40,7 +40,8 @@ script: |
   on refresh:
     erase
 
-  on click-or-drag:
+  on click:
+    z := click
     prevZ := z
     erase
     until z vanishes:

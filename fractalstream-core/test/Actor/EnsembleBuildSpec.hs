@@ -91,7 +91,7 @@ iterate z -> z^2 + C until z escapes
 @tool "Trace" for="Mandelbrot Set" shortcut="T"
 on refresh:
   erase
-on click-or-drag:
+on click:
   pass
 |] $ \ens -> do
         [viewer] <- getDynamic (ensembleViewers ens)
@@ -1409,6 +1409,7 @@ iterate z -> z - step * f(z) / f'(z) until f(z) vanishes
 
 @tool "T" for="V"
 on click:
+  z := click
   z <- z - step * f(z) / f'(z)
 |]
       accepts src
@@ -1442,8 +1443,9 @@ on click:
 |] "The variable k is already defined"
 
     it "only includes the definitions a script uses" $ do
-      -- `g` mentions the viewer's `z`, which the refresh handler can't
-      -- see; it doesn't use `g`.
+      -- `g` mentions the viewer's `z`, which a tool's handlers can't
+      -- see (a handler names the point it's given `click`); they don't
+      -- use `g`.
       accepts [r|
 @common
 g(w) := w + z
@@ -1456,7 +1458,7 @@ color <- if |g(z)| < c then black else white
 on refresh:
   erase
 on click:
-  draw point at g(z)
+  draw point at click
 |]
       -- ...but a script that does use it still gets the error
       rejects [r|
@@ -1532,6 +1534,7 @@ run shade(blue)
 
 @tool "T" for="V"
 on click:
+  z := click
   run trace
 |]
       accepts src

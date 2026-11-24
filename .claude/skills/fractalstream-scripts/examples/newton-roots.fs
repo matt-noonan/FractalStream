@@ -45,9 +45,11 @@ script: |
     use white for stroke
     for each r in roots:
       draw circle at r with radius 4 pixel_size
-  on click at w:
+  on click:
+    w := click
     roots <- append(roots, w)
-  on double-click at w:
+  on double-click:
+    w := click
     if length(roots) > 1:
       best := roots @ 1
       for each r in roots:
