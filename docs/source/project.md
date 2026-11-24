@@ -129,6 +129,17 @@ Besides its folded point, a viewer with a lattice has two more variables:
 The points a tool is given (`click`, `drag start` and `drag end`) are folded too, and a tool's
 drawings are drawn in each tile on the screen, unless the tiles are too small to see.
 
+#### Showing only the fundamental domain
+
+Instead of all of its tiles, a viewer with a lattice can show only its fundamental domain, with the
+rest of the plane greyed out: the picture outside the domain is still drawn, but faded toward
+grey. Adding `tiled=false` to its header starts it that way, and its menu's "Show fundamental
+domain" switches between the two. Which one it shows is saved with the project. While it shows
+only its domain, a tool's drawings are only drawn in the domain, not copied into the other tiles.
+
+The same works for a viewer of the hyperbolic plane with a group (`group=`), whose fundamental
+domain is a polygon.
+
 ## Shared definitions
 
 Shared definitions are grouped into one or more *common* stanzas, delineated by a `@common` header.
