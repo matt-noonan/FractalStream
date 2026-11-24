@@ -638,6 +638,21 @@ x <- d|] `shouldBe` Right 3
           runWithX (Scalar RealType 0) input `shouldSatisfy` either (needle `isInfixOf`) (const False)
         loop3 = "c := 0.5\nz := 0\nk := 0\nwhile k < 3:\n  z <- z^2 + c\n  k <- k + 1\n"
 
+    it "differentiate a quotient by an integer power without overflow" $ do
+      -- (2^k divides, so it's a real power: its square, as an integer,
+      -- would wrap to 0 past k = 31)
+      "k := 40\nx <- 3\nx <- diff(x / 2^k, x) * 2.0^40" `gives` 1
+      "k := 70\nx <- 3\nx <- diff(x / 2^k, x) * 2.0^70" `gives` 1
+      "k := 70\nx <- 3\nx <- diff(log(x) / 2^k, x) * 2.0^70 * 3" `gives` 1
+
+    it "differentiate quotients, and differentiate them again" $ do
+      "x <- 2\nx <- diff(1 / x, x)" `gives` (-0.25)
+      "x <- 1\nx <- diff(x / (x + 1), x)" `gives` 0.25
+      "x <- 2\nx <- diff(1 / x, x, 2)" `gives` 0.25
+      "x <- 2\nx <- diff(1 / x, x, 3)" `gives` (-0.375)
+      "x <- 2\nx <- diff((1 / x) / x, x, 2)" `gives` 0.375
+      "x <- 1\nx <- diff(x / (x + 1), x, 2)" `gives` (-0.25)
+
     it "follow a variable back through a loop" $
       -- z_3 = (c^2 + c)^2 + c, so dz_3/dc = 2 (c^2 + c) (2 c + 1) + 1 = 4 at c = 0.5
       (loop3 ++ "x <- diff(z, c)") `gives` 4
