@@ -8,9 +8,8 @@
 #
 # Definitions here are functions, either `f(x) := ...` on one line, or
 # `function f(x):` with a body. As in a script, a definition can only use
-# the ones before it, and a function with a body can only be called as the
-# whole right-hand side of an assignment (`c := f(x)`); configuration
-# values can't call one at all.
+# the ones before it, and a function with a body can't be called from a
+# one-line function, or from a configuration value.
 #
 # Be cautious about changing what a definition here does: projects that
 # already use it would change too. Adding new definitions is safe. Never
@@ -203,6 +202,113 @@ function residue(f, z, r, N):
 
 function winding_number(γ, z0, N):
   winding_number <- round (im riemann_sum(γ, z -> 1 / (z - z0), N) / (2 π))
+
+# ---------------------------------------------------------------------------
+# Elliptic functions
+
+# The Jacobi theta functions θ1 .. θ4 of z, with the nome q = e^{iπτ}
+# (Im τ > 0), as DLMF §20 has them: θ1(z + π) = -θ1(z), and so on. Each
+# sums its series until the terms can't change the sum any more, bounding
+# each term by its size with the trigonometric factor's largest possible
+# value (so that a term that happens to vanish, at z = π/3 say, doesn't
+# stop the sum early). They converge fastest for Im τ large and Im z
+# small: `wp` and the others below reduce their lattice and their point
+# first, so that they do.
+function theta1(z, τ):
+  theta1 <- 0
+  n, sign, bound := 0, 1, 1.0
+  repeat up to 60 times:
+    a := e^{π i τ (n + 1/2)^2}
+    theta1 <- theta1 + sign a sin((2 n + 1) z)
+    bound <- |a| e^{(2 n + 1) |im z|}
+    n, sign <- n + 1, -sign
+  until bound < 10^(-17) (1 + |theta1|)
+  theta1 <- 2 theta1
+
+function theta2(z, τ):
+  theta2 <- 0
+  n, bound := 0, 1.0
+  repeat up to 60 times:
+    a := e^{π i τ (n + 1/2)^2}
+    theta2 <- theta2 + a cos((2 n + 1) z)
+    bound <- |a| e^{(2 n + 1) |im z|}
+    n <- n + 1
+  until bound < 10^(-17) (1 + |theta2|)
+  theta2 <- 2 theta2
+
+function theta3(z, τ):
+  theta3 <- 1
+  n, bound := 1, 1.0
+  repeat up to 60 times:
+    a := e^{π i τ n^2}
+    theta3 <- theta3 + 2 a cos(2 n z)
+    bound <- 2 |a| e^{2 n |im z|}
+    n <- n + 1
+  until bound < 10^(-17) |theta3|
+  theta3 <- theta3
+
+function theta4(z, τ):
+  theta4 <- 1
+  n, sign, bound := 1, -1, 1.0
+  repeat up to 60 times:
+    a := e^{π i τ n^2}
+    theta4 <- theta4 + 2 sign a cos(2 n z)
+    bound <- 2 |a| e^{2 n |im z|}
+    n, sign <- n + 1, -sign
+  until bound < 10^(-17) |theta4|
+  theta4 <- theta4
+
+# A reduced basis (a, b) of the lattice ω1 ℤ + ω2 ℤ: τ = b / a has
+# Im τ > 0, |re τ| ≤ 1/2 and |τ| ≥ 1, so that Im τ ≥ √3/2 (Gauss's
+# reduction).
+function lattice_basis(ω1, ω2):
+  a := ω1
+  b := if im(ω2 / ω1) < 0 then -ω2 else ω2
+  repeat up to 100 times:
+    b <- b - round(re(b / a)) * a
+    if |b| < |a|:
+      a, b <- b, -a
+  until |b| >= |a| and |re(b / a)| <= 0.5
+  lattice_basis <- a, b
+
+# The point of the centered parallelogram of the reduced basis (a, b) that
+# z is equal to, modulo the lattice.
+lattice_reduce_by(z, a, b, n) := z - n * b - round(re(z / a - n * b / a)) * a
+lattice_reduce(z, a, b) := lattice_reduce_by(z, a, b, round(im(z / a) / im(b / a)))
+
+# The Weierstrass ℘ function of the lattice ω1 ℤ + ω2 ℤ, and its
+# derivative, from theta functions (DLMF §23.6) on a reduced basis.
+function wp(z, ω1, ω2):
+  (a, b) := lattice_basis(ω1, ω2)
+  τ := b / a
+  v := π lattice_reduce(z, a, b) / a
+  t3, t4 := theta3(0, τ), theta4(0, τ)
+  wp <- (π / a)^2 * ((t3^4 + t4^4) / 3 + (t3 * t4 * theta2(v, τ) / theta1(v, τ))^2)
+
+function wp_prime(z, ω1, ω2):
+  (a, b) := lattice_basis(ω1, ω2)
+  τ := b / a
+  v := π lattice_reduce(z, a, b) / a
+  t2, t3, t4 := theta2(0, τ), theta3(0, τ), theta4(0, τ)
+  wp_prime <- -2 * (π / a)^3 * (t2 t3 t4)^2 * theta2(v, τ) * theta3(v, τ) * theta4(v, τ) / theta1(v, τ)^3
+
+# The invariants of the lattice ω1 ℤ + ω2 ℤ: ℘'² = 4℘³ - g2 ℘ - g3.
+function g2(ω1, ω2):
+  (a, b) := lattice_basis(ω1, ω2)
+  τ := b / a
+  t2, t3, t4 := theta2(0, τ), theta3(0, τ), theta4(0, τ)
+  g2 <- (2/3) * (π / a)^4 * (t2^8 + t3^8 + t4^8)
+
+function g3(ω1, ω2):
+  (a, b) := lattice_basis(ω1, ω2)
+  τ := b / a
+  t2, t3, t4 := theta2(0, τ), theta3(0, τ), theta4(0, τ)
+  g3 <- (4/27) * (π / a)^6 * (t2^4 + t3^4) * (t3^4 + t4^4) * (t4^4 - t2^4)
+
+# Klein's j-invariant of τ (Im τ > 0), with j(i) = 1728.
+function klein_j(τ):
+  G2, G3 := g2(1, τ), g3(1, τ)
+  klein_j <- 1728 * G2^3 / (G2^3 - 27 * G3^2)
 
 # ---------------------------------------------------------------------------
 # Coloring the plane

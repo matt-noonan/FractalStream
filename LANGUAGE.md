@@ -718,6 +718,27 @@ standard library never changes what an existing project means. The standard
 library's definitions always use each other, never a project's: a project
 that defines its own `wheel8` still gets the standard `rainbow`.
 
+#### Elliptic functions
+
+The standard library has the Jacobi theta functions and the Weierstrass
+℘ function:
+
+| Function | Is |
+|---|---|
+| `theta1(z, τ)` .. `theta4(z, τ)` | The Jacobi theta functions θ1 .. θ4 of `z`, with the nome `q = e^(iπτ)` (`Im τ > 0`), as in DLMF §20 (and Mathematica's `EllipticTheta`): θ1(z + π) = -θ1(z), and θ3(0)⁴ = θ2(0)⁴ + θ4(0)⁴ |
+| `wp(z, ω1, ω2)` | The Weierstrass ℘ function of the lattice `ω1 ℤ + ω2 ℤ` |
+| `wp_prime(z, ω1, ω2)` | Its derivative, ℘′ |
+| `g2(ω1, ω2)`, `g3(ω1, ω2)` | The lattice's invariants, with ℘′² = 4℘³ - g2 ℘ - g3 |
+| `klein_j(τ)` | Klein's j-invariant, with `klein_j(i)` = 1728 |
+
+`wp` and the others take any basis of the lattice: they reduce it first
+(so that `τ = ω2 / ω1` has `Im τ ≥ √3/2`), and move `z` into the
+parallelogram around 0, so their series converge in a few terms. The
+theta functions themselves sum their series as they're given, which is
+fastest for large `Im τ` and small `Im z`. Because `wp` moves `z` with
+`round`, `diff` can't follow it through `wp`: use `wp_prime` for its
+derivative.
+
 ### Line continuations
 
 If you have a very long command, it might be convenient to split it across

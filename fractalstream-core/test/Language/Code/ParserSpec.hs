@@ -868,6 +868,27 @@ x <- d|] `shouldBe` Right 3
       -- (an orbit that escapes)
       "C := 1\nfound, w, p := find_cycle(z -> z^2 + C, 0, 10000, 100, (a, b) -> |a - b| < 0.000001, a -> |a| < 2.5)\nx <- if found then p else 0" `gives` 0
 
+    describe "the standard library's elliptic functions" $ do
+      it "give the theta functions (Jacobi's identity, and θ1's period)" $ do
+        "err := |theta3(0, i)^4 - theta2(0, i)^4 - theta4(0, i)^4|\nx <- if err < 10^(-14) then 1 else 0" `gives` 1
+        "z := 0.3 + 0.2 i\nerr := |theta1(z + π, 0.4 + 0.9 i) + theta1(z, 0.4 + 0.9 i)|\nx <- if err < 10^(-14) then 1 else 0" `gives` 1
+
+      it "give ℘, ℘', g2 and g3 that agree: ℘'² = 4℘³ - g2 ℘ - g3" $
+        "z := 0.31 + 0.17 i\np := wp(z, 1, 0.3 + 1.1 i)\nq := wp_prime(z, 1, 0.3 + 1.1 i)\nG2 := g2(1, 0.3 + 1.1 i)\nG3 := g3(1, 0.3 + 1.1 i)\nerr := |q^2 - (4 * p^3 - G2 * p - G3)| / |q^2|\nx <- if err < 10^(-12) then 1 else 0" `gives` 1
+
+      it "give ℘'s Laurent series at 0: 1/z² + g2 z²/20 + g3 z⁴/28 + ..." $
+        -- (what's left at z = 0.05 is the next term, g2² z⁶/1200, about 2·10⁻⁷)
+        "z := 0.05 + 0 i\nG2 := g2(1, 0.3 + 1.1 i)\nG3 := g3(1, 0.3 + 1.1 i)\nerr := |wp(z, 1, 0.3 + 1.1 i) - 1 / z^2 - G2 * z^2 / 20 - G3 * z^4 / 28|\nx <- if err < 10^(-6) then 1 else 0" `gives` 1
+
+      it "give ℘ of the lattice, whatever its basis, and periodic in it" $ do
+        "z := 0.31 + 0.17 i\nerr := |wp(z, 1, 0.3 + 1.1 i + 5) - wp(z, 1, 0.3 + 1.1 i)|\nx <- if err < 10^(-12) then 1 else 0" `gives` 1
+        "z := 0.31 + 0.17 i\nerr := |wp(z + 1 + 3 (0.3 + 1.1 i), 1, 0.3 + 1.1 i) - wp(z, 1, 0.3 + 1.1 i)|\nx <- if err < 10^(-12) then 1 else 0" `gives` 1
+
+      it "give the j-invariant: j(i) = 1728, j(e^(2πi/3)) = 0, and g3 = 0 for the square lattice" $ do
+        "err := |klein_j(i) - 1728|\nx <- if err < 10^(-9) then 1 else 0" `gives` 1
+        "err := |klein_j(e^{2 π i / 3})|\nx <- if err < 10^(-9) then 1 else 0" `gives` 1
+        "err := |g3(1, i)|\nx <- if err < 10^(-10) then 1 else 0" `gives` 1
+
     it "multiply when the argument is a number" $
       "h(g, v) := g(v)\nx <- h(3, 2)" `gives` 6
 
