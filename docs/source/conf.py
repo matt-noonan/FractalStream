@@ -20,7 +20,7 @@ author = 'Matt Noonan'
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
-extensions = ["fractalstream_lexer", "myst_parser", "sphinx_design", "sphinx_typst_math"]
+extensions = ["fractalstream_lexer", "myst_parser", "sphinx_design"]
 myst_enable_extensions = ["colon_fence", "dollarmath"]
 templates_path = ['_templates']
 exclude_patterns = []
@@ -32,4 +32,3 @@ html_theme = 'lumina'
 html_static_path = ['_static']
 html_baseurl = 'https://fractalstream.readthedocs.io/'
 html_logo = '_static/FS.jpg'
-html_math_renderer = "typst"

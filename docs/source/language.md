@@ -86,8 +86,8 @@ the {ref}`Colors and gradients <colors-and-gradients>` section below.
 | Name  | Meaning | Configured by... |
 | ----- | ------- | ---------------- |
 | `max_iters` | Maximum number of iterations through any loop | `Configuration > Iteration settings > Iteration limit` |
-| `max_radius` | Escape radius | `Configuration > Iteration settings > Escape radius` |
-| `min_radius` | Vanishing radius / tolerance for `=` comparison | `Configuration > Iteration settings > Vanishing radius` |
+| `escape_radius` | Escape radius | `Configuration > Iteration settings > Escape radius` |
+| `vanishing_radius` | Vanishing radius / tolerance for `=` comparison | `Configuration > Iteration settings > Vanishing radius` |
 | `iterations` | Number of iterations performed by the most recent loop | *automatic* |
 | `stuck`      | `true` when the last loop exceeded `max_iters` | *automatic* |
 | `pixel_size` / `pixel_width` | The width of a pixel in the current view | *automatic* |
@@ -97,10 +97,10 @@ the {ref}`Colors and gradients <colors-and-gradients>` section below.
 
 | Name | Meaning |
 | ---- | ------- |
-| `z escapes` / `z escaped` | Equivalent to `\|z\| > max_radius` |
-| `z vanishes` / `z vanished` | Equivalent to `\|z\| < min_radius` |
-| `z stops` / `z stopped` | Test if `z` changed by less than `min_radius` over the last loop iteration |
-| `x = y` | Equivalent to `\|x - y\| < min_radius` |
+| `z escapes` / `z escaped` | Equivalent to `\|z\| > escape_radius` |
+| `z vanishes` / `z vanished` | Equivalent to `\|z\| < vanishing_radius` |
+| `z stops` / `z stopped` | Test if `z` changed by less than `vanishing_radius` over the last loop iteration |
+| `x = y` | Equivalent to `\|x - y\| < vanishing_radius` |
 
 
 ### Arithmetic operations
@@ -138,7 +138,7 @@ Integers and real numbers may be compared for order with `<`, `>`, `<=` / `≤`,
 Integers, real numbers, and complex numbers can be tested for equality using `=` / `==`, but
 the meaning is slightly subtle:
 - For integers, `X = Y` tests if `X` and `Y` are equal
-- For real numbers and complex numbers, `X = Y` tests if `|X - Y|` is less than `min_radius`. This is because making exact comparisons between floating point numbers is rarely the correct thing to do, so we use "equal up to `min_radius` tolerance" as the semantics of `=`.
+- For real numbers and complex numbers, `X = Y` tests if `|X - Y|` is less than `vanishing_radius`. This is because making exact comparisons between floating point numbers is rarely the correct thing to do, so we use "equal up to `vanishing_radius` tolerance" as the semantics of `=`.
 - If you really need *exact* equality checks for real or complex numbers, use the `===` / `≡` operator.
 
 Inequality can be tested with the `!=` /  `=/=` / `≠` operator.
@@ -156,11 +156,11 @@ Inequality can be tested with the `!=` /  `=/=` / `≠` operator.
 (derivatives)=
 ### Derivatives
 
-You can take the derivative of an expression using the `diff(VARIABLE, EXPRESSION)` operation.
+You can take the derivative of an expression using the `diff(EXPRESSION, VARIABLE)` operation.
 For example:
 
 ``` fractalstream
-dz := diff(z, z^2 + C)
+dz := diff(z^2 + C, z)
 ```
 
 will set `dz` to `2 z`. Derivatives are worked out symbolically, so they are exact.
@@ -202,8 +202,8 @@ f(z) := z^2 + C
 
 # ...later...
 
-dz := diff(z, f(z))
-dC := diff(C, f(z))
+dz := diff(f, z)
+dC := diff(f, C)
 # dz is now equal to 2 z, and dC is equal to 1
 ```
 
@@ -277,6 +277,47 @@ way. To convert between the two types, use a type annotation: `(p : Ĉ)` or `(w 
 Configuration values can be points of the sphere too, as in `c : Ĉ := ∞` or `p : ℙ¹ := [1 : 0]`,
 as can lists and tuples of them. In a configuration text box, a point is written as `∞`, as a
 complex number, or (for `ℙ¹`) as `[a : b]`.
+=======
+The Schwarzian derivative $S_f(x)$ is can be computed by the built-in function
+`S(f, x)`. For example, `S(z -> z^3, z)` is equal to `-4 / z^2`.
+
+**TODO derivatives across statements**
+
+**TODO partial derivatives**
+
+### Integration
+
+FractalStream can approximate line integrals using Riemann sums, via the built-in function
+`riemann_sum`. In the real or complex domain, use `riemann_sum(γ, f, N)` to denote the
+Riemann sum that approximates the integral $\int_0^1 f(\gamma(t)) \gamma'(t) \mathrm{d} t$ using
+$N$ equally-spaced subdivisions of the $[0,1]$ interval.
+
+**TODO example**
+
+**TODO residue**
+
+**TODO winding number**
+
+### Newton's method
+
+**TODO**
+
+### Cycle detection
+
+FractalStream can detect approximate cycles in a dynamical system using a variation of
+[Floyd's cycle detection algorithm](https://en.wikipedia.org/wiki/Cycle_detection#Floyd's_tortoise_and_hare),
+with the built-in function `find_cycle(f, z, warmup, max_period, same, χ)`. The semantics
+of these parameters are:
+- `f`: the function to iterate
+- `z`: the initial value to iterate from
+- `warmup`: how many iterations to perform before we start the cycle detection, used to get
+closer to an attracting cycle
+- `max_period`: the longest cycle length we are willing to search for
+- `same`: a function that determines when two points in the approximate cycle should be considered "the same point". For example, `(x,y) -> x = y` will check if two points are within `vanishing_radius` of
+each other; `(x,y) -> x === y` would check if `x` and `y` are literally the same value.
+- `χ`: the characteristic function of a region that includes the cycle. For the dynamics of
+$z^2 + C$, this could be something like `z -> |z| < 2` or `z -> not (z escapes)`. If you don't
+want to restrict where to look for the cycle, use the constant characteristic function `z -> true`.
 
 (colors-and-gradients)=
 ### Colors and gradients
@@ -750,239 +791,3 @@ on click:
     for each k in range(1, viewer_height):
       data @ (j, k) <- ...  # the value for pixel (j - 1, k - 1)
 ```
-
-## Project structure
-
-A FractalStream project's script is made up of several *stanzas* that name and define the components
-making up a FractalStream project. Each stanza starts with a *stanza definition*, indicated by
-a `@` at the start of the line. The different kinds of stanzas are described in the subsections here.
-
-### Viewers
-
-A *viewer* is defined by a stanza of the form `@viewer "VIEWER NAME"`, where `VIEWER NAME` is the
-quoted title of the viewer window. The job of the viewer's script is to run once for each pixel in the view, and tell FractalStream how to color that pixel. This communication back and forth between FractalStream and the script works as follows:
-- FractalStream tells the script which pixel it is drawing by setting a variable. For complex viewers, this variable is called `z` by default.
-- The script tells FractalStream what color to use for this pixel by setting a variable called `color`, of `Color` type. If the script does not set `color`, FractalStream will fall back to a default colorizer (**TODO** link for more info)
-
-For example, the viewer script
-
-```{code-block} fs
----
-caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=bY9NTsMwFIT3OcWoe1v9Se00K9bcIg0DsbASy3YJVNyFOyCx66pH6Un6RJWUBbv53nszmpfa6EKu8akK4OHNcWTE4vHgXYPEvJCpy4xNJo64fJ1wPH9DYaXttqystcbg0GfnZcvUNoFJHO3ghyjXP3DP8-IJuWOPsZM80Cdi75v2tRi5VyEOgTE7plrstxa_Epir3FDC32ssJ_1x10HSOB0pWL2j2sxotCmp1jMv9WZnqj9o19WEkS9u6O9RpTaV3f6PqZPXaqyKKw)
----
-@viewer "Julia set"
-iterate z -> z^2 - 1.754877766 until z escapes
-color <- if z escaped then white else black
-```
-
-draws the "airplane" Julia set in black, with white for the rest of the plane.
-
-If a viewer's script does not explicitly set the `color` variable, FractalStream will implicitly insert some "colorizer" code at the of the script. For example, the default "Rainbow" colorizer is roughly equivalent to this script fragment:
-
-``` fractalstream
-if stuck:
-  color <- black
-else:
-  color <- rainbow(iterations / 20)
-```
-
-FractalStream currently supports four different kinds of viewers:
-
-| Kind | Default variables | Viewer modes |
-| ---- | ----------------- | ------------ |
-| Complex line | `z : C` | Plane |
-| Riemann sphere (`view=sphere`) | `z : Ĉ` | Globe; see {ref}`sphere-viewers` |
-| Real plane | `x : R`, `y : R` | Plane |
-| Hyperbolic plane | `z : C` | Disk, upper halfplane; coordinate is bounded in norm by 1 |
-
-To use a different variable name for your viewer, add a `var=NAME` attribute to the end of your
-`@viewer` line. For example, here is a Mandelbrot viewer script that uses `C` instead of `z` for
-the variable name:
-
-```{code-block} fs
----
-caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=bY9NCsIwEIX3PcWjW2mptvYnIAiuPURaBw2UNiSx_uAF3Lv3Dq5deRRPYmyxVXD3fY-ZeYwulJCG4eQA80bQjhTcJa9WVOaqNtBkXDRczRZ24Ijn-YLAkjCkuKF3cr3j-LhhhAW2lRGlzUgXXJJ2dpR7UtWSlBGkmd3rGloEfmu6DCj2rK1o-TCwLHlBnyEPiZ-RF_Ya-3FE3qT3wA-zOP3SZJJ-VNFa1NVwKvLjNJn-V72xnzCMnRc)
----
-@viewer "Mandelbrot set" var=C
-z := 0
-iterate z -> z^2 + C until z escapes
-```
-
-For real plane viewers, use `xvar=` and `yvar=` instead of `var=` to change the variable names.
-
-(sphere-viewers)=
-#### Viewers on the Riemann sphere
-
-Add `view=sphere` to a complex viewer's `@viewer` line to show the whole Riemann sphere as a
-globe, instead of the plane:
-
-``` fractalstream
-@viewer "Newton's method" var=z view=sphere
-iterate z -> z - (z^3 - 1) / (3 z^2) until z stops
-color <- if re(affine(1, z)) < 0 then yellow else blue
-```
-
-Here `z` is the point of the sphere under each pixel, a value of type `Ĉ` (see
-{ref}`riemann-sphere`): 0 is the globe's north pole, ∞ its south pole, and the unit circle its
-equator. It is exact everywhere, ∞ included, so a rational map is right all over the globe. To
-get the complex number a point stands for, use `affine(1, z)`. If the viewer's variable is a
-configuration value, as for a parameter space (`var=c`), declare it as a point of the sphere:
-`c : Ĉ := 0`.
-
-The globe always fills the window. `center=` is the point that faces you to start with, and
-`pixelSize=` is the size of a pixel in the middle of the globe, measured on the sphere (whose
-radius is 1); leave it out to start with the front half of the sphere filling the globe. In the
-viewer's script, `pixel_size` is the size of the current pixel on the sphere.
-
-A tool on a sphere viewer works the same way: the point a click or drag is at is a point of `Ĉ`,
-exactly (a click on ∞ is ∞ itself), and drawing at a point of the sphere draws on the globe, with
-lines as arcs of great circles and circles measured by chordal distance (see
-{ref}`draw-commands`). A click off the globe does nothing.
-
-### Shared definitions
-
-Shared definitions are grouped into one or more *common* stanzas, delineated by a `@common` header.
-
-``` fractalstream
-@common
-
-f(z) := z^2 + C
-
-my_special_constant := 1234
-
-define my_coloring_script(p):
-    color <- if p then red else blue
-```
-
-`@common` stanzas can contain definitions for constants, functions, and script fragments, but
-nothing else. These definitions are made visible to every other component of your project.
-
-### Configuration panels
-
-Configuration panels hold one or more variable definitions, giving the user a way to view and update those variables while the viewers are running and to see the results in real time. They  are
-defined by stanzas of the form `@config "GROUP NAME"`, where `GROUP NAME` is the name that the
-variables will be grouped under in the "Configuration" window.
-
-The variables defined in a `@config` block are visible to every other script in your project,
-and their values can be updated by the user or by tool scripts.
-
-`@config` stanzas can hold variable definitions, but every variable defined in a `@config` stanza
-must be given a type annotation; type inference is not enabled here.
-
-``` fractalstream
-@config "My parameters"
-
-a : C := 0
-b : R := 1
-```
-
-You can use `text` to add explanatory text to your configuration panel:
-
-``` fractalstream
-@config "My parameters"
-
-text "`a` is complex, but `b` is real"
-a : C := 0
-b : R := 1
-```
-
-Different types of variables turn into different widgets in the configuration panel:
-numeric variables get a text entry field, `Boolean` variables become a checkbox, and
-`Color` variables become a color picker.
-
-By default, the label on a variable is just the variable's name. If you would like to
-use a different label, add an `as "LABEL"` clause after the variable's type but before
-the `:=` operator:
-
-``` fractalstream
-@config "My parameters"
-
-C : C as "f_C(z) = z^2 + " := 0
-```
-
-The widgets for variables can be placed side-by-side by collecting the variable definitions
-under a `row:` block:
-
-``` fractalstream
-@config "My parameters"
-
-text "`a` is complex, but `b` is real"
-row:
-  a : C := 0
-  b : R := 1
-```
-
-A table (see {ref}`language-tables`) is also declared in a `@config` stanza, with its type but
-without a default value, since every table starts out empty:
-
-``` fractalstream
-@config "Parameters"
-saddle : Table 2 of C
-```
-
-A table can hold integers, real numbers, complex numbers, truth values, colors, or tuples of
-these, in any number of dimensions (`Table 1 of R`, `Table 3 of Z`, `Table 2 of C x Z`, and so
-on). In the configuration panel, a table appears as a line showing its name, its type, and its
-current size, with buttons to export it to a file and import it from one (see {ref}`table-files`).
-
-When you edit a project's script and rebuild it, each table keeps its contents as long as the new
-script still declares it with the same name and type.
-
-### Tools
-
-Tools are additional scripts attached to a viewer that provide some user interaction customized
-to that viewer. A tool is defined by a header like `@tool NAME for="VIEWER"` where `NAME` is
-the name of the tool, and `VIEWER` is the name of the viewer that the tool should attach to.
-
-Tools work by running scripts in response to actions taken by the user. A tool can draw on top
-of the viewer's window, and can also change the value of configuration variables. Through these
-simple mechanisms, fairly sophisticated tools can be built.
-
-| Event name | Meaning |
-| ---------- | ------- |
-| `activated` | The user switched to this tool |
-| `deactivated` | The user switched away from this tool |
-| `refresh` | The tool's viewer redrew itself, often because some parameter changed value |
-| `click` / `click at NAME` | The user clicked at a point, represented by `NAME` (or the viewer's variable, if `NAME` was not given) |
-| `click-or-drag` / `click-or-drag at NAME` | The user clicked or dragged to a point, represented by `NAME` (or the viewer's variable, if `NAME` was not given) |
-| `drag from NAME1 to NAME2` | The user continued a drag; the starting point is stored in the variable `NAME1` and the ending point in `NAME2` |
-| `button TEXT` | The tool's button labeled with `TEXT` was pressed |
-
-A tool can also have its own configuration panel, which only appears when the tool is activated.
-Any `@config`-style variable definitions immediately following the `@tool` header will go
-into the tool's configuration panel, and those variables will be visible to the tool's event
-scripts.
-
-After the optional variable definitions, the tool's script defines any number of blocks of the form
-
-``` fractalstream
-on EVENT:
-  SCRIPT
-```
-
-As a simple example, let's build a blank viewer and a tool that draws the unit circle when it is
-activated, and erases it when a button is pressed:
-
-``` {code-block} fs
----
-caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=bZBNTsMwEIX3OcWT94lCW5I2EhICsecKrjMQCyuOxpOmSNyFU3AhToLz14LEbr55b954HAzbTip8JMD9ydJADPXgdPumYsd45xnfn18YGiuUjCbx3kE9WjaOFF48363-qAqdBeqZKQRIYwOOvYhvIR7EOlBsEsw8G-2Lqp5GbQqIpI3Ykxaqq8hAH6eY6nETnG1patashyUHWpBjsNKAdW37gJsl6G_6nDa9IhnomHbsO2KxFEZlPj3MpumeuYx_cK6Qr_X7te6cNrSaUpTZgdLtBYus2FG6uXCebQ_F_heWm_2KTK_Wt9eoXVbsy9v_MTS6oyqe-AM)
----
-@viewer "Blank"
-color <- white
-
-@tool "Circle" for="Blank"
-
-text "Press this button to erase the circle"
-button "Erase"
-
-on activated:
-  use red for line
-  draw circle at 0 with radius 1
-
-on button "Erase":
-  erase
-```
-
-### Colorizers
-
-**TODO**

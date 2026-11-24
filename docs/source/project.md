@@ -1,0 +1,205 @@
+# Project structure
+
+A FractalStream project's script is made up of several *stanzas* that name and define the components
+making up a FractalStream project. Each stanza starts with a *stanza definition*, indicated by
+a `@` at the start of the line. The different kinds of stanzas are described in the subsections here.
+
+## Viewers
+
+A *viewer* is defined by a stanza of the form `@viewer "VIEWER NAME"`, where `VIEWER NAME` is the
+quoted title of the viewer window. The job of the viewer's script is to run once for each pixel in the view, and tell FractalStream how to color that pixel. This communication back and forth between FractalStream and the script works as follows:
+- FractalStream tells the script which pixel it is drawing by setting a variable. For complex viewers, this variable is called `z` by default.
+- The script tells FractalStream what color to use for this pixel by setting a variable called `color`, of `Color` type. If the script does not set `color`, FractalStream will fall back to a default colorizer (**TODO** link for more info)
+
+For example, the viewer script
+
+```{code-block} fs
+---
+caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=bY9NTsMwFIT3OcWoe1v9Se00K9bcIg0DsbASy3YJVNyFOyCx66pH6Un6RJWUBbv53nszmpfa6EKu8akK4OHNcWTE4vHgXYPEvJCpy4xNJo64fJ1wPH9DYaXttqystcbg0GfnZcvUNoFJHO3ghyjXP3DP8-IJuWOPsZM80Cdi75v2tRi5VyEOgTE7plrstxa_Epir3FDC32ssJ_1x10HSOB0pWL2j2sxotCmp1jMv9WZnqj9o19WEkS9u6O9RpTaV3f6PqZPXaqyKKw)
+---
+@viewer "Julia set"
+iterate z -> z^2 - 1.754877766 until z escapes
+color <- if z escaped then white else black
+```
+
+draws the "airplane" Julia set in black, with white for the rest of the plane.
+
+If a viewer's script does not explicitly set the `color` variable, FractalStream will implicitly insert some "colorizer" code at the of the script. For example, the default "Rainbow" colorizer is roughly equivalent to this script fragment:
+
+``` fractalstream
+if stuck:
+  color <- black
+else:
+  color <- rainbow(iterations / 20)
+```
+
+FractalStream currently supports three different kinds of viewers:
+
+| Kind | Default variables | Viewer modes |
+| ---- | ----------------- | ------------ |
+| Complex line | `z : C` | Plane, Riemann sphere |
+| Real plane | `x : R`, `y : R` | Plane |
+| Hyperbolic plane | `z : C` | Disk, upper halfplane; coordinate is bounded in norm by 1 |
+
+To use a different variable name for your viewer, add a `var=NAME` attribute to the end of your
+`@viewer` line. For example, here is a Mandelbrot viewer script that uses `C` instead of `z` for
+the variable name:
+
+```{code-block} fs
+---
+caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=bY9NCsIwEIX3PcWjW2mptvYnIAiuPURaBw2UNiSx_uAF3Lv3Dq5deRRPYmyxVXD3fY-ZeYwulJCG4eQA80bQjhTcJa9WVOaqNtBkXDRczRZ24Ijn-YLAkjCkuKF3cr3j-LhhhAW2lRGlzUgXXJJ2dpR7UtWSlBGkmd3rGloEfmu6DCj2rK1o-TCwLHlBnyEPiZ-RF_Ya-3FE3qT3wA-zOP3SZJJ-VNFa1NVwKvLjNJn-V72xnzCMnRc)
+---
+@viewer "Mandelbrot set" var=C
+z := 0
+iterate z -> z^2 + C until z escapes
+```
+
+For real plane viewers, use `xvar=` and `yvar=` instead of `var=` to change the variable names.
+
+## Shared definitions
+
+Shared definitions are grouped into one or more *common* stanzas, delineated by a `@common` header.
+
+``` fractalstream
+@common
+
+f(z) := z^2 + C
+
+my_special_constant := 1234
+
+define my_coloring_script(p):
+    color <- if p then red else blue
+```
+
+`@common` stanzas can contain definitions for constants, functions, and script fragments, but
+nothing else. These definitions are made visible to every other component of your project.
+
+## Configuration panels
+
+Configuration panels hold one or more variable definitions, giving the user a way to view and update those variables while the viewers are running and to see the results in real time. They  are
+defined by stanzas of the form `@config "GROUP NAME"`, where `GROUP NAME` is the name that the
+variables will be grouped under in the "Configuration" window.
+
+The variables defined in a `@config` block are visible to every other script in your project,
+and their values can be updated by the user or by tool scripts.
+
+`@config` stanzas can hold variable definitions, but every variable defined in a `@config` stanza
+must be given a type annotation; type inference is not enabled here.
+
+``` fractalstream
+@config "My parameters"
+
+a : C := 0
+b : R := 1
+```
+
+You can use `text` to add explanatory text to your configuration panel:
+
+``` fractalstream
+@config "My parameters"
+
+text "`a` is complex, but `b` is real"
+a : C := 0
+b : R := 1
+```
+
+Different types of variables turn into different widgets in the configuration panel:
+numeric variables get a text entry field, `Boolean` variables become a checkbox, and
+`Color` variables become a color picker.
+
+By default, the label on a variable is just the variable's name. If you would like to
+use a different label, add an `as "LABEL"` clause after the variable's type but before
+the `:=` operator:
+
+``` fractalstream
+@config "My parameters"
+
+C : C as "f_C(z) = z^2 + " := 0
+```
+
+The widgets for variables can be placed side-by-side by collecting the variable definitions
+under a `row:` block:
+
+``` fractalstream
+@config "My parameters"
+
+text "`a` is complex, but `b` is real"
+row:
+  a : C := 0
+  b : R := 1
+```
+
+A table (see {ref}`language-tables`) is also declared in a `@config` stanza, with its type but
+without a default value, since every table starts out empty:
+
+``` fractalstream
+@config "Parameters"
+saddle : Table 2 of C
+```
+
+A table can hold integers, real numbers, complex numbers, truth values, colors, or tuples of
+these, in any number of dimensions (`Table 1 of R`, `Table 3 of Z`, `Table 2 of C x Z`, and so
+on). In the configuration panel, a table appears as a line showing its name, its type, and its
+current size, with buttons to export it to a file and import it from one (see {ref}`table-files`).
+
+When you edit a project's script and rebuild it, each table keeps its contents as long as the new
+script still declares it with the same name and type.
+
+## Tools
+
+Tools are additional scripts attached to a viewer that provide some user interaction customized
+to that viewer. A tool is defined by a header like `@tool NAME for="VIEWER"` where `NAME` is
+the name of the tool, and `VIEWER` is the name of the viewer that the tool should attach to.
+
+Tools work by running scripts in response to actions taken by the user. A tool can draw on top
+of the viewer's window, and can also change the value of configuration variables. Through these
+simple mechanisms, fairly sophisticated tools can be built.
+
+| Event name | Meaning |
+| ---------- | ------- |
+| `activated` | The user switched to this tool |
+| `deactivated` | The user switched away from this tool |
+| `refresh` | The tool's viewer redrew itself, often because some parameter changed value |
+| `click` / `click at NAME` | The user clicked at a point, represented by `NAME` (or the viewer's variable, if `NAME` was not given) |
+| `click-or-drag` / `click-or-drag at NAME` | The user clicked or dragged to a point, represented by `NAME` (or the viewer's variable, if `NAME` was not given) |
+| `drag from NAME1 to NAME2` | The user continued a drag; the starting point is stored in the variable `NAME1` and the ending point in `NAME2` |
+| `button TEXT` | The tool's button labeled with `TEXT` was pressed |
+
+A tool can also have its own configuration panel, which only appears when the tool is activated.
+Any `@config`-style variable definitions immediately following the `@tool` header will go
+into the tool's configuration panel, and those variables will be visible to the tool's event
+scripts.
+
+After the optional variable definitions, the tool's script defines any number of blocks of the form
+
+``` fractalstream
+on EVENT:
+  SCRIPT
+```
+
+As a simple example, let's build a blank viewer and a tool that draws the unit circle when it is
+activated, and erases it when a button is pressed:
+
+``` {code-block} fs
+---
+caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=bZBNTsMwEIX3OcWT94lCW5I2EhICsecKrjMQCyuOxpOmSNyFU3AhToLz14LEbr55b954HAzbTip8JMD9ydJADPXgdPumYsd45xnfn18YGiuUjCbx3kE9WjaOFF48363-qAqdBeqZKQRIYwOOvYhvIR7EOlBsEsw8G-2Lqp5GbQqIpI3Ykxaqq8hAH6eY6nETnG1patashyUHWpBjsNKAdW37gJsl6G_6nDa9IhnomHbsO2KxFEZlPj3MpumeuYx_cK6Qr_X7te6cNrSaUpTZgdLtBYus2FG6uXCebQ_F_heWm_2KTK_Wt9eoXVbsy9v_MTS6oyqe-AM)
+---
+@viewer "Blank"
+color <- white
+
+@tool "Circle" for="Blank"
+
+text "Press this button to erase the circle"
+button "Erase"
+
+on activated:
+  use red for line
+  draw circle at 0 with radius 1
+
+on button "Erase":
+  erase
+```
+
+## Colorizers
+
+**TODO**
