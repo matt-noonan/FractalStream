@@ -498,8 +498,11 @@ Every table also has a position in the plane (see {ref}`language-tables` below),
 the value in the cell that contains the point `z`. A point can be a complex number or, as in a real
 viewer, a pair of real numbers: `T @ point (x, y)` means the same as `T @ point (x + y i)`, and
 the same goes everywhere a table takes a point. Each cell covers a small rectangle of the
-plane; when a table is laid over a viewer's window, its cells are the viewer's pixels. Looking up
-a point outside of the table is an error, like reading an index out of range. To look up a point
+plane; when a table is laid over a viewer's window, its cells are the viewer's pixels. A point on
+the line between two cells is in the one to its right, or below it (as a pixel's top left corner is
+in that pixel), and a point on the table's edge is in the cell along that edge: a table covers its
+whole rectangle, edges included. So a table over the square from `0` to `1 + i` takes every point
+that `mod(x, 1), mod(y, 1)` gives. Looking up a point outside of the table is an error, like reading an index out of range. To look up a point
 that may be off the table, give a value to use there instead with `else`:
 
 ``` fractalstream
