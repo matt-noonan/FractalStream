@@ -157,7 +157,7 @@ jobs:
           echo "Some libraries were not found"; exit 1
         fi
         fsrun-dist/bin/fsrun --version
-        printf 'script: |\n  @viewer "Plane" var=z\n  color <- if |z| < 1 then blue else black\n' > plane.yaml
+        printf 'script: |\n  @viewer "Plane" over z\n  color <- if |z| < 1 then blue else black\n' > plane.yaml
         fsrun-dist/bin/fsrun snapshot --project plane.yaml --viewer Plane --output plane.png
         ls -l plane.png
         # (the runner has no GPU: drawing on it must say so, or draw with
