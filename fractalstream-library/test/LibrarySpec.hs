@@ -45,6 +45,7 @@ handMadePreviews = [ "0 Starting points" </> "blank-project.fs" ]
 
 spec :: Spec
 spec = describe "the built-in project library" $ do
+  let isScript x = (".fs" `isSuffixOf` x) || (".fsz" `isSuffixOf` x)
   sections <- runIO $
     listDirectory libraryDir >>= filterM (doesDirectoryExist . (libraryDir </>)) . sort
   it "has at least one section" $
@@ -53,7 +54,7 @@ spec = describe "the built-in project library" $ do
   it "is all embedded in the app, sections in order and named without \
      \their ordering numbers, each project titled by its metadata" $ do
     let embedded = [ (lsName s, length (lsEntries s)) | s <- librarySections ]
-    onDisk <- mapM (\s -> (,) s . length . filter (".fs" `isSuffixOf`)
+    onDisk <- mapM (\s -> (,) s . length . filter isScript
                             <$> listDirectory (libraryDir </> s)) sections
     map snd embedded `shouldBe` map snd onDisk
     map fst embedded `shouldBe` map (dropOrdering . fst) onDisk
@@ -61,7 +62,7 @@ spec = describe "the built-in project library" $ do
       `shouldBe` []
 
   forM_ sections $ \section -> do
-    projects <- runIO $ sort . filter (".fs" `isSuffixOf`) <$> listDirectory (libraryDir </> section)
+    projects <- runIO $ sort . filter isScript <$> listDirectory (libraryDir </> section)
     describe section $ do
       it "has at least one project" $
         projects `shouldNotBe` []
