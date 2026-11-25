@@ -444,7 +444,9 @@ takes a single index, `T @ k`. Reading outside of the table is an error, just as
 the pixel is drawn in magenta, or a tool's changes are discarded.
 
 Every table also has a position in the plane (see {ref}`language-tables` below), so `T @ point z` is
-the value in the cell that contains the point `z`. Each cell covers a small rectangle of the
+the value in the cell that contains the point `z`. A point can be a complex number or, as in a real
+viewer, a pair of real numbers: `T @ point (x, y)` means the same as `T @ point (x + y i)`, and
+the same goes everywhere a table takes a point. Each cell covers a small rectangle of the
 plane; when a table is laid over a viewer's window, its cells are the viewer's pixels. Looking up
 a point outside of the table is an error, like reading an index out of range. To look up a point
 that may be off the table, give a value to use there instead with `else`:
@@ -957,6 +959,10 @@ its top left and bottom right corners:
 ``` fractalstream
 reset T to (200, 100) from -2 + i to 2 - i
 ```
+
+These are the outer corners of the table's corner cells, so here each cell is 0.02 wide and high,
+and cell `(1, 1)`, the top left one, is centered at `-1.99 + 0.99 i`. The corners can also be
+pairs of real numbers, as in `reset T to (250, 250) from (0, 1) to (1, 0)`.
 
 For a table with layers, give one more size for each further dimension:
 `reset crit to (viewer_width, viewer_height, 4)` lays 4 layers over the window. To start every
