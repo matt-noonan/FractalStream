@@ -96,11 +96,26 @@ sha256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
 |---|---|
 | `type` | the table's type, as the script declares it (written as FractalStream prints types: `ℝ`, `ℂ`, `ℤ`, `Boolean`, `Color`, and tuples as `(ℂ × ℤ)`) |
 | `size` | its size along each dimension |
-| `origin` | the point at the center of cell (1, 1) |
-| `step` | a cell's width and height (rows go down the plane) |
+| `origin` | the point at the center of cell (1, 1), the table's **top left** cell |
+| `step` | a cell's width and height, both positive: columns go right, and rows go *down* the plane (cell `(j, k)` is centered at `origin + ((j - 1) step_x, -(k - 1) step_y)`) |
 | `encoding` | how the file holds the elements: `raw` (below); a version of FractalStream refuses one it doesn't know |
 | `file` | the file holding the elements, beside the description |
 | `sha256` | the SHA-256 of that file's bytes (inflated, in an archive), in hex; FractalStream checks it, and refuses a table whose data doesn't match |
+
+For example, a 250 × 250 table covering the square from (0, 0) to (1, 1)
+has cells 0.004 wide and high, and its top left cell is centered half a
+cell in from the square's top left corner (0, 1):
+
+```yaml
+size: [250, 250]
+origin: [0.002, 0.998]
+step: [0.004, 0.004]
+```
+
+(`origin: [0, 0]` would instead put the table's top left cell at 0, so
+that it covers the square from (-0.002, -0.998) to (0.998, 0.002), below
+the real axis.) Rows going down is the order a picture's rows come in, so
+an image's first row is the table's top one.
 
 A table is restored only into a table the script still declares with the
 same name and type; the others are skipped, with a warning.

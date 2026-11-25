@@ -110,6 +110,21 @@ readSpec = describe "tables" $ do
     -- (and an if/then/else with a lookup in it is just that)
     evalIn t RealType "if true then T @ point (2 - i) else 0" `shouldReturn` 23
 
+  it "take a pair of real numbers (x, y) as the point x + y i, as a real viewer's" $ do
+    t <- sample
+    evalIn t BooleanType "(1, -1) in T" `shouldReturn` True
+    evalIn t BooleanType "(1.0, 2) in T" `shouldReturn` False
+    evalIn t (PairType IntegerType IntegerType) "table_cell(T, (2, -1))" `shouldReturn` (3, 2)
+    evalIn t RealType "T @ point (2, -1)" `shouldReturn` 23
+    evalIn t RealType "T @ point (9.0, 0.0) else -1" `shouldReturn` (-1)
+    t0 <- frozenSample
+    (_, x) <- run t0 "T @ point (2.2, -0.9) <- 7\nx <- T @ (3, 2)"
+    x `shouldBe` 7
+    Just t1 <- newTable RealType [0, 0] (0, 0) (1, 1)
+    (t2, _) <- run t1 "reset T to (3, 2) from (-1.5, 1) to (1.5, -1) filled with 7\nx <- 0"
+    readCell RealType t2 [1, 1] `shouldBe` Just 7
+    tableOrigin t2 `shouldBe` (-1, 0.5)
+
   it "have points only in two dimensions" $ do
     parseIn BooleanType "1 in 2" `shouldSatisfy` isLeft
     parseIn (PairType IntegerType IntegerType) "table_cell(1, 0)" `shouldSatisfy` isLeft
