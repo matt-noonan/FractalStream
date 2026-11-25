@@ -158,7 +158,7 @@ autocolorEditor owner st changed = do
           unless (null ids) $ set groupChoice [ selection := ix ]
           selectGroup (if null ids then -1 else ix)
         when (null ids) $
-          say "No viewer has used autocolor yet:\na group appears here once one does."
+          say "No groups yet"
 
       -- Keep the list up to date with the points scripts add while they
       -- draw: rebuilt only when the selected group's points change, so that

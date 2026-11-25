@@ -58,10 +58,10 @@ export const backendLabels: Record<Backend, string> = {
 let gpuMissing: string | null = null;
 export function setGpuMissing(why: string | null) { gpuMissing = why; }
 
-/** What to say after a backend's name, where it's listed: why it can't
-    draw anything here, if it can't. */
+/** Why a backend can't draw anything here, if it can't (shown on hover,
+    where it's listed); else "". */
 export function backendNote(b: Backend): string {
-  return b !== "cpu" && gpuMissing ? ` (${gpuMissing})` : "";
+  return b !== "cpu" && gpuMissing ? gpuMissing : "";
 }
 
 /** Precision first, then speed. */

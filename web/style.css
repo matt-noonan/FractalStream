@@ -557,3 +557,6 @@ body {
 }
 @keyframes spinner-turn { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner-ring { animation-duration: 3s; } }
+
+/* a backend that can't draw anything here (why is its hover text) */
+.prefs-order .unavailable { opacity: 0.5; }

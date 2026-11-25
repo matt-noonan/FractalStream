@@ -86,7 +86,7 @@ export function saveDownload(m: Extract<Message, { type: "download" }>) {
 
 /** The last movie's settings (and script), to start the next one from:
     which viewer it was of, too, and whether it had an inset, and where. */
-const last = { script: null as string | null, frames: 150, fps: 30, loop: false, smooth: true, drawings: false,
+const last = { script: null as string | null, seconds: 5, frames: 150, fps: 30, loop: false, smooth: true, drawings: false,
                viewer: null as string | null, inset: false, corner: 3 };
 
 /** A project's viewer, as a movie can be made of it. */
@@ -175,9 +175,10 @@ export class Movies {
     which.setAttribute("aria-label", "Viewer to record");
     this.problem = el("div", { className: "form-error" });
     const number = (value: number) => el("input", { type: "text", value: String(value), spellcheck: false });
-    const frames = number(last.frames), fps = number(last.fps);
-    const smooth = checkbox("Use subpixel smoothing", last.smooth);
-    const drawings = checkbox("Include what the viewer's tools have drawn", last.drawings);
+    const seconds = number(last.seconds), fps = number(last.fps);
+    const smooth = checkbox("Subpixel smoothing", last.smooth);
+    const drawings = checkbox("Tool drawings", last.drawings);
+    drawings.row.title = "Include what the viewer's tools have drawn";
     const parts: HTMLElement[] = [];
     let loop: ReturnType<typeof checkbox>;
     let inset: ReturnType<typeof checkbox> | null = null;
@@ -188,14 +189,17 @@ export class Movies {
         clearTimeout(this.checkTimer);
         this.checkTimer = window.setTimeout(() => this.check(), 300);
       });
-      parts.push(el("p", { textContent: "Run this script for each frame, with t going from 0 to 1:" }),
-                 this.script, this.problem);
-      loop = checkbox("Loop (the last frame comes just before the first again)", last.loop);
+      this.script.title = "Run for each frame, with t going from 0 to 1";
+      parts.push(this.script, this.problem);
+      loop = checkbox("Loop", last.loop);
+      loop.row.title = "Leave out the last frame, since a movie playing in a loop goes back to the first frame";
     } else {
       this.script = null;
       const v = source.drawnIn;
-      parts.push(el("p", { textContent: `${v.animates} will move along the path drawn in “${v.title}”.` }), this.problem);
-      loop = checkbox("Loop back to start (along a straight line from the path's end)", closedPath(source.path));
+      parts.push(el("p", { textContent: `${v.animates} along the path drawn in “${v.title}”` }), this.problem);
+      loop = checkbox("Loop back to start", closedPath(source.path));
+      loop.row.title = "Come back to the start along a straight line and leave out the last frame, \
+since a movie playing in a loop goes back to the first frame";
       inset = checkbox(`Show “${v.title}” as an inset, marking ${v.animates}, in the`, last.inset);
       corner = el("select", { disabled: !last.inset }, ...CORNERS.map((c, i) =>
         el("option", { value: String(i), textContent: `${c} corner`, selected: i === last.corner })));
@@ -203,10 +207,12 @@ export class Movies {
       inset.input.addEventListener("change", () => { corner!.disabled = !inset!.input.checked; });
     }
     const record = () => {
-      const f = Math.round(Number(frames.value)), r = Math.round(Number(fps.value));
-      if (!(f >= 1) || !(r >= 1)) { this.problem!.textContent = "The frames and frames per second should be positive whole numbers."; return; }
+      const s = Number(seconds.value), r = Number(fps.value);
+      if (!(s > 0) || !Number.isFinite(s)) { this.problem!.textContent = "The length should be a number of seconds, more than zero."; return; }
+      if (!Number.isInteger(r) || r < 1) { this.problem!.textContent = "The frame rate should be a whole number of frames a second, more than zero."; return; }
+      const f = Math.max(1, Math.round(s * r));   // (as the desktop counts them)
       const chosen = viewers.find((v) => String(v.id) === which.value) ?? first;
-      Object.assign(last, { frames: f, fps: r, smooth: smooth.input.checked, drawings: drawings.input.checked,
+      Object.assign(last, { seconds: s, frames: f, fps: r, smooth: smooth.input.checked, drawings: drawings.input.checked,
                             viewer: chosen.title });
       this.title = chosen.title;
       const common = { viewer: chosen.id, frames: f, fps: r, loop: loop.input.checked,
@@ -224,7 +230,7 @@ export class Movies {
       el("label", { className: "form-field" }, el("span", { textContent: "Record:" }), which),
       ...parts,
       el("div", { className: "capture-grid" },
-         el("span", { textContent: "Frames:" }), frames, el("span", { textContent: "Frames per second:" }), fps),
+         el("span", { textContent: "Length (seconds):" }), seconds, el("span", { textContent: "Frames per second:" }), fps),
       loop.row, smooth.row, drawings.row,
       ...(inset && corner ? [el("div", { className: "capture-inset" }, inset.row, corner)] : []),
       buttons(button("Cancel", () => this.close?.()), button("Record", record)));

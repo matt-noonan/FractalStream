@@ -59,7 +59,7 @@ export class Welcome {
     const newButton = el("button", { type: "button", textContent: "New project",
                                      title: "Start a new project from one of the starting points" });
     newButton.addEventListener("click", () => this.chooseSection(this.sections.findIndex((s) => s.startingPoints)));
-    const openFile = el("button", { type: "button", textContent: "Open a file…", title: "Open a FractalStream project file (⌘O)" });
+    const openFile = el("button", { type: "button", textContent: "Open a file…", title: "Open a FractalStream project file (⌘O), or drop one anywhere on this page" });
     openFile.addEventListener("click", () => host.openFile());
     const prefs = el("button", { type: "button", className: "welcome-preferences", textContent: "⚙",
                                  title: "Preferences" });
@@ -78,8 +78,7 @@ export class Welcome {
       el("header", { className: "welcome-header" },
         el("div", { className: "welcome-name" }, el("h1", { textContent: "FractalStream" }), this.versionEl),
         el("span", { className: "welcome-gap" }), newButton, openFile, prefs),
-      el("div", { className: "welcome-panes" }, this.sectionsEl, this.gridEl, this.detailsEl),
-      el("p", { className: "welcome-hint", textContent: "You can also drop a project file anywhere on this page." }));
+      el("div", { className: "welcome-panes" }, this.sectionsEl, this.gridEl, this.detailsEl));
     this.element.addEventListener("keydown", (e) => { if (e.key === "Escape") this.closeSheet(); });
     this.showDetails();
   }
