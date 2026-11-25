@@ -203,6 +203,12 @@ writeSpec = describe "tables, in a tool" $ do
     x `shouldBe` 12
     readCell RealType t [1, 1] `shouldBe` Just 7
 
+  it "have a shape that's a constant to diff, even written from what it's by" $ do
+    t0 <- sample
+    -- (T's cells are written from w, but where they are doesn't change)
+    (_, x) <- run t0 "w := 2.0\nT @ (1, 1) <- w\np := table_point(T, (2, 1))\nv := w^2 + re(p)\nx <- diff(v, w)"
+    x `shouldBe` 4
+
   it "are written and read at the cell nearest a point" $ do
     t0 <- frozenSample
     (_, x) <- run t0 "T @ point (2.2 - 0.9i) <- 7\nx <- T @ (3, 2) + T @ point (0.1 - 0.1i)"

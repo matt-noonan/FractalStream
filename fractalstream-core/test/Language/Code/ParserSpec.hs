@@ -683,6 +683,19 @@ x <- d|] `shouldBe` Right 3
               , "u := 2.0"
               , "y := g(u)"
               , "x <- diff(y, u)" ] `gives` 48
+      -- (Newton's method on such a function, in a loop that works its
+      -- variable out from the derivative: g(w) = 4 w^3 - 32, root 2)
+      unlines [ "function g(w0):"
+              , "  w := w0 + 0.0"
+              , "  x := w"
+              , "  repeat 2 times:"
+              , "    x <- x^2"
+              , "  g <- diff(x, w) - 32"
+              , "t := 1.0"
+              , "repeat 40 times:"
+              , "  y := g(t)"
+              , "  t <- t - y / diff(y, t)"
+              , "x <- t" ] `gives` 2
 
     it "follow tuples, through functions that give pairs (as SaddleDrop's Hénon step)" $
       unlines [ "step(p, q, c) := (p^2 + c - 0.3 q, p)"
