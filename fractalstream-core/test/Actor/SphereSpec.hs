@@ -256,6 +256,12 @@ spec = do
     it "gives a sphere viewer's tools points of Ĉ, drawn where they are" $
       checkScript "@viewer \"V\" over z on the sphere\ncolor <- red\n\n@tool \"T\" for \"V\"\non click:\n  z := click\n  w := z^2\n  draw point at w\n  if w = ∞:\n    draw line from z to w\n"
         `shouldBe` Right ()
+
+    it "lets a tool that draws at ∞ draw at points worked out from a table's cells" $
+      -- (the projective pass types such a point, and typing sees the
+      -- table index it made again)
+      checkScript "@config \"C\"\nT : Table 2 of C\n\n@viewer \"V\" on the sphere\ncolor <- white\n\n@tool overlay for \"V\"\non refresh:\n  draw line from 0 to ∞\n  draw point at (T @ (1, 1) + 2) / 4\n"
+        `shouldBe` Right ()
   where
     -- (dragging loses a little precision near the rim)
     close2' (a, b) (c, d) = abs (a - c) < 1e-6 && abs (b - d) < 1e-6

@@ -497,9 +497,33 @@ synth env (Syn sr node) = case node of
         ix' <- check env IntegerT ix
         done t (EIndex cyc lst' ix')
 
-  ETableIndex{} -> throwError (Internal (Advice sr "unexpected table index"))
-  ETablePoint{} -> throwError (Internal (Advice sr "unexpected table point"))
-  ETableSlice{} -> throwError (Internal (Advice sr "unexpected table slice"))
+  -- Typing makes these from an index (`EIndex`), so they're only met in
+  -- an expression typed once already and put back together, as the
+  -- projective pass does ("Language.Code.Projective"): checked again, the
+  -- same way.
+  ETableIndex tbl ixs -> do
+    tbl' <- synth env tbl
+    case exprType tbl' of
+      TableT _ it -> do
+        ixs' <- mapM (check env IntegerT) ixs
+        done it (ETableIndex tbl' ixs')
+      _ -> throwError (Internal (Advice sr "a table index of something that isn't a table"))
+  ETablePoint tbl p ixs -> do
+    tbl' <- synth env tbl
+    case exprType tbl' of
+      TableT _ it -> do
+        p' <- checkPlanePoint env p
+        ixs' <- mapM (check env IntegerT) ixs
+        done it (ETablePoint tbl' p' ixs')
+      _ -> throwError (Internal (Advice sr "a table point of something that isn't a table"))
+  ETableSlice tbl mp ixs -> do
+    tbl' <- synth env tbl
+    case exprType tbl' of
+      TableT _ it -> do
+        mp' <- traverse (checkPlanePoint env) mp
+        ixs' <- mapM (traverse (check env IntegerT)) ixs
+        done (ListT it) (ETableSlice tbl' mp' ixs')
+      _ -> throwError (Internal (Advice sr "a table slice of something that isn't a table"))
 
   EPointIndex _ -> advise sr "`point z` only goes in a table's index, where it stands for the \
                              \first two indices: `T @ point z`, or `T @ (point z, k)`."
