@@ -528,7 +528,7 @@ valueAndArithGrammar funs own = mdo
   concatenatedAtoms <- ruleChoice
     [ node (EBin OpMul <$> concatenatedAtoms <*> noFunPower)
     , noFunPower
-    , node (funAp $> EAdvice "To avoid ambiguity when using implicit multiplication, functions must go to the left of other values")
+    , node (funAp $> EAdvice "A function applied without parentheses, like `sin x`, can only be followed by other functions in a product, since `sin x y` could mean sin(x y) or sin(x) y: write `sin(x) y` (or `sin(x y)`).")
     ]
 
   -- (what comes before a function in an implicit product can end in a
@@ -540,48 +540,64 @@ valueAndArithGrammar funs own = mdo
     , noFunPower
     ]
 
-  funAp <- ruleChoice
-    [ node (EApp . fst
-        <$> (tokenMatch (\case { Identifier n | free n -> (n,) <$> Map.lookup n commonFunctions;
-                                 _ -> Nothing }))
-        <*> atomOrFunAp)
+  -- A function applied to its argument. In parentheses, `f(x)` or
+  -- `f(x, y)`, it's an atom like any other, so it can be anywhere in an
+  -- implicit product: `sin(x) y`, `a f(x) b`. Without them, `sin x`, its
+  -- argument is one atom, and only other functions can follow it in a
+  -- product (`sin x cos y`): `sin x y` could be sin(x y) or sin(x) y,
+  -- so it's an error saying so (see 'concatenatedAtoms').
+  let applications arg =
+        [ node (EApp . fst
+            <$> (tokenMatch (\case { Identifier n | free n -> (n,) <$> Map.lookup n commonFunctions;
+                                     _ -> Nothing }))
+            <*> arg)
+        , node (EApp . fst
+            <$> (tokenMatch (\case { Identifier n | free n -> (n,) <$> Map.lookup n realFunctions;
+                                     _ -> Nothing }))
+            <*> arg)
+        , node (EApp . fst
+            <$> (tokenMatch (\case { Identifier n | free n -> (n,) <$> Map.lookup n roundingFunctions;
+                                     _ -> Nothing }))
+            <*> arg)
+        , node (EApp . fst
+            <$> (tokenMatch (\case { Identifier n | free n -> (n,) <$> Map.lookup n complexFunctions;
+                                     _ -> Nothing }))
+            <*> arg)
+        , node (ECall
+            <$> funName
+            <*> ((:[]) <$> arg))
+        , node (EDerivCall
+            <$> funName
+            <*> (length <$> some (token Prime))
+            <*> ((:[]) <$> arg))
+        -- `g'(x)` for a parameter `g`, which is a function where it's given
+        -- one (see "Language.Code.FunctionArgs")
+        , node (EDerivCall
+            <$> paramName
+            <*> (length <$> some (token Prime))
+            <*> ((:[]) <$> arg))
+        -- `(f ∘ g)'(x)`
+        , node (EDerivOf
+            <$> (token OpenParen *> compose <* token CloseParen)
+            <*> (length <$> some (token Prime))
+            <*> arg)
+        ]
 
-    , node (EApp . fst
-        <$> (tokenMatch (\case { Identifier n | free n -> (n,) <$> Map.lookup n realFunctions;
-                                 _ -> Nothing }))
-        <*> atomOrFunAp)
+  -- (a function's argument in parentheses: one value, or several)
+  parenthesized <- ruleChoice
+    [ token OpenParen *> toplevel <* token CloseParen
+    , token OpenBrace *> toplevel <* token CloseBrace
+    ]
 
-    , node (EApp . fst
-        <$> (tokenMatch (\case { Identifier n | free n -> (n,) <$> Map.lookup n roundingFunctions;
-                                 _ -> Nothing }))
-        <*> atomOrFunAp)
-
-    , node (EApp . fst
-        <$> (tokenMatch (\case { Identifier n | free n -> (n,) <$> Map.lookup n complexFunctions;
-                                 _ -> Nothing }))
-        <*> atomOrFunAp)
-    , node (ECall
-        <$> funName
-        <*> ((:[]) <$> atomOrFunAp))
-    , node (EDerivCall
-        <$> funName
-        <*> (length <$> some (token Prime))
-        <*> ((:[]) <$> atomOrFunAp))
-    -- `g'(x)` for a parameter `g`, which is a function where it's given
-    -- one (see "Language.Code.FunctionArgs")
-    , node (EDerivCall
-        <$> paramName
-        <*> (length <$> some (token Prime))
-        <*> ((:[]) <$> atomOrFunAp))
-    -- `(f ∘ g)'(x)`
-    , node (EDerivOf
-        <$> (token OpenParen *> compose <* token CloseParen)
-        <*> (length <$> some (token Prime))
-        <*> atomOrFunAp)
-    , node (EBin OpMod
+  funApParen <- ruleChoice $ applications parenthesized ++
+    [ node (EBin OpMod
         <$> (builtinWord "mod" *> token OpenParen *> argument)
         <*> (token Comma *> argument <* token CloseParen))
     ]
+
+  -- (a function applied without parentheses: `sin x`, `sin cos(x)`)
+  funAp <- ruleChoice (applications bareArgument)
+  bareArgument <- ruleChoice [simpleAtom, funApParen, funAp]
 
   negated <- ruleChoice
     [ node (EUn OpNeg <$> (token Minus *> negated))
@@ -589,7 +605,8 @@ valueAndArithGrammar funs own = mdo
     ]
 
   power <- ruleChoice
-    [ node (EBin OpPow <$> (atomOrFunAp <* token Caret) <*> power)
+    [ node (EBin OpPow <$> (atom <* token Caret) <*> power)
+    , node ((funAp *> token Caret *> power) $> powerOfBareApplication)
     , atomOrFunAp
     , fraction
     ]
@@ -612,6 +629,7 @@ valueAndArithGrammar funs own = mdo
 
   atom <- ruleChoice
     [ simpleAtom
+    , funApParen
     , token OpenParen   *> toplevel <* token CloseParen
     , token OpenBrace   *> toplevel <* token CloseBrace
     ]
@@ -818,7 +836,7 @@ valueAndArithGrammar funs own = mdo
   concatenatedAtomsNp <- ruleChoice
     [ node (EBin OpMul <$> concatenatedAtomsNp <*> noFunPowerNp)
     , noFunPowerNp
-    , node (funAp $> EAdvice "To avoid ambiguity when using implicit multiplication, functions must go to the left of other values")
+    , node (funAp $> EAdvice "A function applied without parentheses, like `sin x`, can only be followed by other functions in a product, since `sin x y` could mean sin(x y) or sin(x) y: write `sin(x) y` (or `sin(x y)`).")
     ]
 
   concatenatedFunApsNp <- ruleChoice
@@ -834,7 +852,8 @@ valueAndArithGrammar funs own = mdo
     ]
 
   powerNp <- ruleChoice
-    [ node (EBin OpPow <$> (atomOrFunApNp <* token Caret) <*> powerNp)
+    [ node (EBin OpPow <$> (atomNp <* token Caret) <*> powerNp)
+    , node ((funAp *> token Caret *> powerNp) $> powerOfBareApplication)
     , atomOrFunApNp
     ]
 
@@ -847,6 +866,7 @@ valueAndArithGrammar funs own = mdo
 
   atomNp <- ruleChoice
     [ simpleAtom
+    , funApParen
     , token OpenParen *> addOrSubNp <* token CloseParen
     , token OpenBrace *> addOrSubNp <* token CloseBrace
     ]
@@ -872,3 +892,9 @@ node = withSourceRange . fmap (flip mkExpr)
 
 literal :: String -> TypeProxy t -> HaskellType t -> ExprF ParsedValue
 literal d ty v = ELit d (SomeHaskellType ty v)
+
+-- | A function applied without parentheses, raised to a power: `sin x^2`
+-- could be (sin x)² or sin(x²).
+powerOfBareApplication :: ExprF r
+powerOfBareApplication =
+  EAdvice "`sin x^2` could mean (sin x)^2 or sin(x^2): write one of those, or `sin(x)^2`."

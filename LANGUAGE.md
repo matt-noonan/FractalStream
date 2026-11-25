@@ -258,9 +258,13 @@ written without parentheses. So instead of writing `cos(z)`, you could write
 
 FractalStream also supports implicit multiplication when arguments are
 concatenated, so `x y` is the same as `x * y` and `2 cos z` is the same as
-`2 * cos(z)`. To avoid ambiguity, FractalStream will not allow you to
-write expressions like `cos 2z` since it could be interpreted as
-`(cos 2) * z` or as `cos (2 * z)`.
+`2 * cos(z)`. A function applied in parentheses is a factor like any
+other, anywhere in a product: `cos(z) 2`, `a sin(x) b` and `f(x) g(y)` all
+multiply. A function applied *without* parentheses takes a single factor
+as its argument, and only other functions can follow it in a product:
+`2 cos z sin z` is fine, but FractalStream won't allow `cos 2z`, since it
+could mean `(cos 2) * z` or `cos (2 * z)`. For the same reason, `sin x^2`
+is an error (is it `(sin x)^2` or `sin(x^2)`?); `sin(x)^2` is fine.
 
 ### Colors
 

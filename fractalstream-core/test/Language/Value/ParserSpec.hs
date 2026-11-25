@@ -245,11 +245,26 @@ spec = do
           [ "  cos 2 pi"
           , "  ^^^^^"
           , ""
-          , "To avoid ambiguity when using implicit multiplication, functions must go to the left of other values"])
+          , "A function applied without parentheses, like `sin x`, can only be followed by other functions in a product, since `sin x y` could mean sin(x y) or sin(x) y: write `sin(x) y` (or `sin(x y)`)."])
       parses4 `shouldBe` Right (cos 2 * pi - 1)
       parses5 `shouldBe` Right (3 * cos 2 * sin 1)
       parses6 `shouldBe` Right 12
       parses7 `shouldBe` Right (-1)
+
+    it "takes a function applied in parentheses as a factor anywhere in a product" $ do
+      parseF "sin(1) 2" `shouldBe` Right (sin 1 * 2)
+      parseF "2 sin(1) 3" `shouldBe` Right (2 * sin 1 * 3)
+      parseF "cos(1) sin(2) 3" `shouldBe` Right (cos 1 * sin 2 * 3)
+      parseF "sin(1)^2 3" `shouldBe` Right (sin 1 ^ (2 :: Int) * 3)
+      parseF "sin(1) (2 + 1)" `shouldBe` Right (sin 1 * 3)
+      parseF "mod(7, 4) 2" `shouldBe` Right 6
+      -- (without parentheses, a function's argument is one atom, as before)
+      parseF "sin cos 1" `shouldBe` Right (sin (cos 1))
+      parseF "2 sin 1 cos 2" `shouldBe` Right (2 * sin 1 * cos 2)
+
+    it "rejects what a function without parentheses would make ambiguous" $ do
+      parseF "sin 1 2" `shouldSatisfy` either (isInfixOf "`sin(x) y` (or `sin(x y)`)") (const False)
+      parseF "sin 1^2" `shouldSatisfy` either (isInfixOf "could mean (sin x)^2 or sin(x^2)") (const False)
 
     it "parses a power before a function as multiplication" $ do
       parseF "2^2 sin 1" `shouldBe` Right (4 * sin 1)

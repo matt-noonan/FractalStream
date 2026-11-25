@@ -406,9 +406,11 @@ Arithmetic: `+ - * / // ^`, unary `-` (`×` is also `*`). Implicit multiplicatio
 juxtaposition: `2 z`, `x y`, `2 pi i theta`, `r x (1 - x)`. Functions apply
 to a simple following argument without parentheses (`cos z`, `log |z|`),
 but `cos x + y` is `(cos x) + y`, and `cos 2z` is rejected:
-write `cos(2 z)`. When juxtaposing, a function application must be the
-last factor: `2 cos z` and `z cos z` are fine, `cos z 2` and `cos(z) 2` are
-not (write `2 cos z`).
+write `cos(2 z)`. A parenthesized application is an ordinary factor
+anywhere: `cos(z) 2`, `a sin(x) b`, `conj(z) diff(z, c)` all multiply. A bare
+one (`cos z`) can only be followed by other functions: `2 cos z sin z` is
+fine, `cos z 2` is not. `sin x^2` is rejected as ambiguous: write
+`sin(x)^2` or `sin(x^2)`.
 
 Powers: `z^2`, `z²` (superscript digits, `z⁻¹`), `2^(-m / S)`, `z^(1/3)`
 (principal branch). `e^(...)` and `e^{...}` for exponentials. Any of
@@ -767,7 +769,8 @@ viewer color a pixel by a condition and assert on it.
 |---|---|
 | `` `max` is this script's own variable here, not the built-in, so `max(...)` multiplies it ... `` | the stanza (or `@config`/`@common`) defines a name that is also a built-in, and then uses the built-in: rename the variable |
 | `I got stuck and couldn't parse the input here, where I was expecting ...` | a keyword as a variable (`i := 0`), a statement where an expression should be, bad indentation, `text(x)` with one argument |
-| `To avoid ambiguity when using implicit multiplication, functions must go to the left of other values` | `cos 2z` (write `cos(2 z)`) |
+| `A function applied without parentheses, like \`sin x\`, can only be followed by other functions in a product ...` | `cos 2z` (write `cos(2 z)` or `cos(2) z`) |
+| `` `sin x^2` could mean (sin x)^2 or sin(x^2) ... `` | write `sin(x)^2` or `sin(x^2)` |
 | `` `and` and `or` can't be mixed without parentheses ... `` | `p and q or r`; write `(p and q) or r` or `p and (q or r)` |
 | `A @config stanza can't have a button ...` | move the button into the `@tool` whose `on button` handles it |
 | `The variable z is already defined, and would be re-defined here.` | `:=` on an existing name; use `<-` |
