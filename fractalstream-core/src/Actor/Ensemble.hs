@@ -82,12 +82,17 @@ import Language.Value.Typing (strictTypeEnv, surfaceTypeMarker)
 import Language.Code.Projective (lowerValueAt, showFieldValue)
 import Language.Typecheck (TC(..), ppError)
 import Language.Code (Code, letInEnv)
-import Language.Code.Syntax (Stmt(..), StmtF(SBlock))
-import Language.Code.Parser (noCommonDefs, ParsedCode, CommonDefs)
+import Language.Code.Syntax (Stmt(..), StmtF(SBlock, SDecl, SFun, SFunction, SProc))
+import Language.Code.Parser (noCommonDefs, ParsedCode, CommonDefs(..), withUsedCommon)
+import Language.Code.Typecheck.Functions (FunDef(..), expandCalls)
+import qualified Data.Set as Set
 import Language.Value.Builtins (viewKindName, viewPixelSizeName, viewMobiusNames)
 import Language.Code.Typecheck (hyperbolicToolName, runExpandedCode)
 import Language.Code.Hoist (Split(..))
 import Language.Parser.SourceRange
+import Language.Parser (parse)
+import Language.Parser.Tokenizer (tokenize)
+import Language.Value.Syntax (Syn(..), ExprF(ELet, ECast))
 import Data.Color (black, grey)
 
 import Data.Aeson (Value(..))
@@ -106,7 +111,6 @@ import qualified Data.ByteString.UTF8 as UTF8
 import qualified Data.Map as Map
 import qualified GHC.TypeNats as TN
 import Language.Table (emptyTable, freezeTable, Table(..))
-import qualified Data.Set as Set
 import Data.List (nub, (\\))
 import Data.Typeable (Typeable)
 
@@ -943,7 +947,7 @@ checkViewer configEnv env myTools ViewerFields{..} = do
   mEscPV  <- parseMaybeAttrValue vfEscape
   mVanPV  <- parseMaybeAttrValue vfVanish
   -- (`show_if=` is a truth value over the configuration)
-  parseMaybeAttrValue vfShowIf >>= mapM_ (\pv ->
+  traverse (showIfExpr vfCommon) vfShowIf >>= mapM_ (\pv ->
     withEnvFromMap (Map.fromList configEnv) $ \cenv -> withEnvironment cenv $
       case showIfValue pv cenv of
         Left err -> Left (NoSourceRange, err)
@@ -1193,6 +1197,8 @@ data ViewerFields = ViewerFields
   , vfVanish    :: Maybe String
   , vfPixelVar  :: Maybe String
   , vfShowIf    :: Maybe String
+  , vfCommon    :: CommonDefs
+    -- ^ The @\@common@ definitions its @show_if=@ can use.
   , vfLattice   :: Maybe String
   , vfLatticeCenter :: Maybe String
   , vfTiled     :: Maybe String
@@ -1207,7 +1213,7 @@ viewerFields = \case
     , vfGroup = vsGroup, vfGroupCenter = vsGroupCenter
     , vfIterLimit = vsIterLimit, vfEscape = vsEscape, vfVanish = vsVanish
     , vfPixelVar = vsPixelVar
-    , vfShowIf = vsShowIf
+    , vfShowIf = vsShowIf, vfCommon = vsCommon
     , vfLattice = vsLattice, vfLatticeCenter = vsLatticeCenter
     , vfTiled = vsTiled
     , vfCode = vsCode
@@ -1598,7 +1604,7 @@ buildComplexViewer contextDyn mlattice myTools n ViewerFields{..} =
   parseMaybeAttrValue vfIterLimit >>=? \mIterPV ->
   parseMaybeAttrValue vfEscape >>=? \mEscPV ->
   parseMaybeAttrValue vfVanish >>=? \mVanPV ->
-  parseMaybeAttrValue vfShowIf >>=? \mShowIfPV ->
+  traverse (showIfExpr vfCommon) vfShowIf >>=? \mShowIfPV ->
   -- (`show_if=` must be a truth value over the configuration, as
   -- 'checkViewer' checks too)
   showIfProblem contextDyn mShowIfPV >>= \problem -> (\k -> maybe k (pure . Left . (NoSourceRange,)) problem) $
@@ -2286,6 +2292,34 @@ groupFoldDyn model cache src contextDyn = case src of
 
 -- | A viewer's @show_if=@, typed as a truth value in the configuration's
 -- environment (with the standard library's functions expanded).
+-- | A viewer's @show_if=@, as an expression: what it uses of the
+-- project's @\@common@ (values, and one-line functions) put in place.
+showIfExpr :: CommonDefs -> String -> Either (SourceRange, String) ParsedValue
+showIfExpr defs src = do
+  e <- left (errorLocation &&& unlines . pp)
+            (parse (valueGrammarWithFunctions (funNames defs) Set.empty) (tokenize src))
+  let shown = "[internal] shown"
+      stmts = case withUsedCommon defs (Stmt NoSourceRange (SDecl shown Nothing e)) of
+        Stmt _ (SBlock ss) -> ss
+        s -> [s]
+      -- (the values, as local bindings around it, and the functions)
+      bindAll funs = \case
+        [] -> Right (funs, e)
+        Stmt _ (SDecl n _ v) : _ | n == shown -> Right (funs, v)
+        Stmt sr (SDecl n mty v) : rest ->
+          fmap (\b -> Syn sr (ELet n (maybe v (Syn sr . ECast v) mty) b)) <$> bindAll funs rest
+        Stmt _ (SFun f ps body) : rest ->
+          let funs' = Map.insert f (FunDef ps body funs') funs in bindAll funs' rest
+        Stmt _ (SFunction f _ _) : _ -> notOneLine f
+        Stmt _ (SProc f _ _) : _ -> notOneLine f
+        _ : rest -> bindAll funs rest
+      notOneLine f = Left ("`" ++ f ++ "` has a body, and a viewer's `show_if=` is worked out apart from any \
+                           \code, so it can only use @common's values and one-line functions.")
+  (funs, e') <- left (NoSourceRange,) (bindAll Map.empty stmts)
+  case expandCalls funs e' of
+    TC (Left err) -> Left (NoSourceRange, "A viewer's `show_if=` can't be worked out: " ++ ppError err)
+    TC (Right x) -> Right x
+
 showIfValue :: forall env. KnownEnvironment env => ParsedValue -> EnvironmentProxy env
             -> Either String (Language.Value.Value '(env, 'BooleanT))
 showIfValue pv _ = case expandStdlibCalls pv >>= \e -> atType e BooleanType of

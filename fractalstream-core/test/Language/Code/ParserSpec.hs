@@ -887,6 +887,12 @@ x <- d|] `shouldBe` Right 3
       -- (an orbit that escapes)
       "C := 1\nfound, w, p := find_cycle(z -> z^2 + C, 0, 10000, 100, (a, b) -> |a - b| < 0.000001, a -> |a| < 2.5)\nx <- if found then p else 0" `gives` 0
 
+    describe "the standard library's Newton's method and Schwarzian" $
+      it "work from any kind of number, an integer included" $ do
+        "(ok, r) := full_newton_root(w -> w^3 - 2, 1, 50, (a, b) -> |a - b| < 10^(-14))\nx <- if ok and |r^3 - 2| < 10^(-12) then 1 else 0" `gives` 1
+        "(ok, r) := full_newton_root(w -> w^2 + 1, 0.5 + 0.5 i, 50, (a, b) -> |a - b| < 10^(-14))\nx <- if ok and |r - i| < 10^(-12) then 1 else 0" `gives` 1
+        "x <- re(S(w -> w^3, 2))" `gives` (-1)
+
     describe "the standard library's elliptic functions" $ do
       it "give ℘, whose derivative ℘' (in z) is wp_prime, and differentiate wp itself" $ do
         "z := 0.31 + 0.17 i\nerr := |℘(z, 1, 0.3 + 1.1 i) - wp(z, 1, 0.3 + 1.1 i)|\nx <- if err < 10^(-15) then 1 else 0" `gives` 1
