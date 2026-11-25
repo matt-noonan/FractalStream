@@ -3,7 +3,7 @@ script: |
   @common
   # the map, its second iterate, and its critical point
   f(z) := z^2 + c
-  f2(w) := (w^2 + c)^2 + c
+  f2(w) := (f ∘ f)(w)
   critical_point(c) := 0
   degree := 2
 
@@ -26,19 +26,19 @@ script: |
       color <- blend (cos (s pi)^2, dark color, light color)
 
     else:
-      λ := 1
-
+      # around the cycle once, from a copy of where it starts: the cycle's
+      # multiplier λ is the derivative of where that ends up
+      z1 := z
+      z <- z1
       repeat:
         z <- f(z)
-        λ <- f'(z) * λ
       until |z-w| vanishes
+      λ := diff(z, z1)
 
       period := iterations
 
-      counter := 0
-      while counter < extra_iterations period:
+      repeat extra_iterations period times:
         w <- f2(w)
-        counter <- counter + 1
 
       z <- z0
       while not (|z-w| vanishes):

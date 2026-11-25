@@ -18,11 +18,7 @@ script: |
   @viewer "Roots of f"
   setup:
     vanishing radius: tol
-  lastZ := 0
-  repeat:
-    lastZ <- z
-    z <- newton(z)
-  while z != lastZ
+  iterate z -> newton(z) until z stops
 
   col := yellow
   if z = a:
@@ -31,7 +27,7 @@ script: |
     col <- green
   else if z = c:
     col <- blue
-  if z = lastZ:
+  if not stuck:
     color <- blend ((cos (iterations pi / 10))^2, light col, dark col)
   else:
     color <- black

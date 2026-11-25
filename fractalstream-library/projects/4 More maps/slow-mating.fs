@@ -36,7 +36,7 @@ script: |
   # P1 or P2 tells whether it lies in its filled Julia set, and if not, its
   # potential (on the overlap G1 + G2 = 2t, and the equator is G1 = G2 = t).
   define mating:
-    tt := if t < 0.0001 then 0.0001 else t
+    tt := max(t, 0.0001)
     # levels 0 .. L, the level-k sphere being S at 2^k tt
     L := 1
     top := 2 tt
@@ -87,23 +87,18 @@ script: |
     As <- prepend(As, a @ 1)
     Bs <- prepend(Bs, b @ 1)
     # push the pixel up to the top level
-    # (and its derivative, for drawing the equator at a constant width)
-    # (z is a point of the sphere; u is the same point as a complex number)
-    u := affine(1, z)
-    du : C := 1
+    # (z is a point of the sphere; u0 is the same point as a complex number)
+    u0 := affine(1, z)
+    u := u0
     for each n in range(1, L):
-      u2 := u^2
       A := As @ n
       B := Bs @ n
-      du <- 2 u (1 - A B) du / (B u2 + 1)^2
-      u <- (u2 + A) / (B u2 + 1)
+      u <- (u^2 + A) / (B u^2 + 1)
     # then follow it in its own plane
     first := |u| < 1
     p := if first then u exp(top) else exp(top) / u
-    dp := if first then du exp(top) else -du * exp(top) / u^2
     cc := if first then c1 else c2
     until |p| > 1000:
-      dp <- 2 p dp
       p <- p^2 + cc
     inside := stuck
     # the potential, as a fraction of the equator's: in (0, 1) on either side
@@ -117,9 +112,10 @@ script: |
       color <- blend(g, dark side, blend(0.3, white, side))
       if show_bands and mod(band, 2) = 1:
         color <- blend(0.85, black, color)
-      # |grad g|, and the size of a pixel in the plane at z
-      dg := |dp| / (tt |p| exp((L + iterations) log 2))
-      px := pixel_size (1 + |affine(1, z)|^2) / 2
+      # |grad g| (g is log |p| over a constant, and p is holomorphic in
+      # u0), and the size of a pixel in the plane at z
+      dg := |diff(p, u0)| / (tt |p| exp((L + iterations) log 2))
+      px := pixel_size (1 + |u0|^2) / 2
       if show_equator and 1 - g < 1.5 px dg:
         color <- red
 

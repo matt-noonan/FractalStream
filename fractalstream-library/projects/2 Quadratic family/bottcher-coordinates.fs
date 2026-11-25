@@ -43,45 +43,35 @@ script: |
   @common
   f(z) := z^2 + C
 
-  # Compute phi at `start` (and |grad G| there). `dc` is 0 for the
-  # dynamical plane (derivatives in z, starting at d0 = 1) and 1 for the
-  # parameter plane (derivatives in C).
-  # Sets the caller's phi, grad and found.
-  define boettcher(start, d0, dc):
-    b_w := start
-    b_dw : C := d0
-    b_scale := 1.0
-    b_safe := if |C| > 1 then 2 sqrt |C| else 2
-    b_m := 0
-    while |b_w| <= b_safe:
-      b_dw <- 2 b_w b_dw + dc
-      b_w <- b_w^2 + C
-      b_scale <- b_scale / 2
-      b_m <- b_m + 1
-    found <- |b_w| > b_safe
-    if found:
+  # phi at `start`, or 0 where it can't be computed (start is in K_C, as
+  # far as max_iters can tell).
+  function boettcher(start):
+    w := start
+    safe := max(2, 2 sqrt |C|)
+    m := 0
+    while |w| <= safe:
+      w <- f(w)
+      m <- m + 1
+    if |w| > safe:
       # tail of the product: log r_m = sum 2^-(k-m+1) log(1 + C/z_k^2)
-      b_L : C := 0
-      b_s := 0.5
-      while |b_w| < 10^8 up to 60 times:
-        b_L <- b_L + b_s log(1 + C / b_w^2)
-        b_dw <- 2 b_w b_dw + dc
-        b_w <- b_w^2 + C
-        b_scale <- b_scale / 2
-        b_s <- b_s / 2
-      b_r := exp b_L
+      L : C := 0
+      s := 0.5
+      while |w| < 10^8 up to 60 times:
+        L <- L + s log(1 + C / w^2)
+        w <- f(w)
+        s <- s / 2
       # unwind r_k = sqrt(r_(k+1) (1 + C / z_k^2)) for k = m-1, ..., 0
-      b_k := b_m - 1
-      while b_k >= 0 up to b_m times:
-        b_u := start
-        while true up to b_k times:
-          b_u <- b_u^2 + C
-        b_r <- sqrt(b_r (1 + C / b_u^2))
-        b_k <- b_k - 1
-      phi <- start b_r
-      grad <- b_scale |b_dw| / |b_w|
+      r := exp L
+      k := m - 1
+      repeat m times:
+        r <- sqrt(r (1 + C / compose(f, k, start)^2))
+        k <- k - 1
+      boettcher <- start r
+    else:
+      boettcher <- 0
 
-  # Color a point from phi = phi(z) and grad = |grad G|.
+  # Color a point from phi = phi(z) and grad = |grad G|, which is |phi' / phi|
+  # (log phi = G + 2 pi i t is holomorphic).
   define paint(valid):
     t := arg phi / (2 pi)
     if t < 0:
@@ -118,16 +108,11 @@ script: |
   # M, as far as max_iters can tell). This doesn't depend on the pixel, so
   # it runs once per render.
   v := C
-  n := 0
-  while |v| < 10^8:
-    v <- v^2 + C
-    n <- n + 1
-  crit := if stuck then 0 else log |v| / 2^(n + 1)
-  phi : C := 0
-  grad : R := 1
-  found := false
-  run boettcher(z, 1, 0)
-  if found:
+  iterate v -> f(v) until |v| >= 10^8
+  crit := if stuck then 0 else log |v| / 2^(iterations + 1)
+  phi := boettcher(z)
+  if phi ≠ 0:
+    grad := |diff(phi, z) / phi|
     run paint(log |phi| > crit)
   else:
     color <- inside
@@ -136,11 +121,10 @@ script: |
   setup:
     center: -0.5
     pixel size: 1/150
-  phi : C := 0
-  grad : R := 1
-  found := false
-  run boettcher(C, 1, 1)
-  if found:
+  # (the derivative in C follows C into f, as well as the start)
+  phi := boettcher(C)
+  if phi ≠ 0:
+    grad := |diff(phi, C) / phi|
     run paint(true)
   else:
     color <- inside
@@ -160,14 +144,11 @@ script: |
   on click:
     w := click
     erase
-    phi : C := 0
-    grad : R := 1
-    found := false
-    run boettcher(w, 1, 0)
+    phi := boettcher(w)
     use white for stroke
     use white for fill
     draw filled circle at w with radius 3 pixel_size
-    if found:
+    if phi ≠ 0:
       t := arg phi / (2 pi)
       if t < 0:
         t <- t + 1
@@ -187,12 +168,10 @@ script: |
     erase
     use yellow for stroke
     use yellow for fill
-    prev := w
     repeat up to 200 times:
       draw point at w
-      prev <- w
       w <- f(w)
-      draw line from prev to w
+      draw line from previous w to w
     until w escapes
   on deactivated:
     erase

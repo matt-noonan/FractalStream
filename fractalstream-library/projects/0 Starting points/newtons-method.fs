@@ -11,11 +11,7 @@ script: |
   @viewer "Newton's method on ℂ"
   setup:
     colorizer: Rainbow(arg z / (2π))
-  lastZ := 0
-  repeat:
-    lastZ <- z
-    z <- newton(z)
-  until z = lastZ
+  iterate z -> newton(z) until z stops
 
   @tool "Trace" with shortcut t
   on refresh:

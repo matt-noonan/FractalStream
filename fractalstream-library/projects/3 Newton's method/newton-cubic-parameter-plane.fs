@@ -8,11 +8,7 @@ script: |
   f(z) := (z - 1) (z + 1) (z - a)
   newton(z) := z - f(z) / f'(z)
   define converge:
-    lastZ := 0
-    repeat:
-      lastZ <- z
-      z <- newton(z)
-    until z = lastZ
+    iterate z -> newton(z) until z stops
 
   # Each a, colored by where Newton's method takes its free critical point
   # (the inflection point of f, a/3). This viewer only looks colors up: it

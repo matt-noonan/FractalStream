@@ -10,10 +10,8 @@ script: |
   tolerance : R as "Tolerance" := 0.000001
 
   @common
-  # One step of the Hénon map, (x, y) ↦ (1 - a x² + y, b x), updating the
-  # x and y where it's run.
-  define step:
-    x, y <- 1 - a x² + y, b x
+  # The Hénon map
+  henon(x, y) := (1 - a x² + y, b x)
 
   @viewer "Parameter plane" over (a, b)
   setup:
@@ -23,13 +21,13 @@ script: |
   # Follow the orbit of (0, 0) until it settles down; then look for the
   # period of the cycle it has settled onto.
   x, y := 0, 0
-  iterate (x, y) -> (1 - a x² + y, b x) until (x, y) escapes up to settle times
+  iterate (x, y) -> henon(x, y) until (x, y) escapes up to settle times
   if not stuck:
     color <- cycle(iterations / 20, white, dark blue)
   else:
     x0, y0 := x, y
     repeat up to max_period times:
-      run step
+      x, y <- henon(x, y)
     until (x - x0)² + (y - y0)² < tolerance² or (x, y) escapes
     if (x, y) escapes:
       color <- dark blue
@@ -44,7 +42,7 @@ script: |
     center: (0, 0)
     pixel size: 1/200
     aspect: 1/2
-  iterate (x, y) -> (1 - a x² + y, b x) until (x, y) escapes
+  iterate (x, y) -> henon(x, y) until (x, y) escapes
   color <- if stuck then black else cycle(iterations / 10, white, dark blue)
 
   @tool "Attractor" for "Dynamical plane" with shortcut a
@@ -53,13 +51,13 @@ script: |
     erase
     use orange for stroke
     x, y := 0, 0
-    # (skipping the first few points, on their way to the attractor)
-    n := 0
-    repeat up to points + 100 times:
-      run step
-      n <- n + 1
-      if n > 100:
-        draw point at (x, y)
+    # (not drawing the first few points, on their way to the attractor)
+    repeat up to 100 times:
+      x, y <- henon(x, y)
+    until (x, y) escapes
+    repeat up to points times:
+      x, y <- henon(x, y)
+      draw point at (x, y)
     until (x, y) escapes
   on deactivated:
     erase
@@ -73,7 +71,7 @@ script: |
     draw point at (x, y)
     use yellow for stroke
     repeat up to orbit_length times:
-      run step
+      x, y <- henon(x, y)
       draw point at (x, y)
     until (x, y) escapes
   on deactivated:

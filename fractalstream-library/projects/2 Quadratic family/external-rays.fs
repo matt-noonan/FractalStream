@@ -3,6 +3,19 @@ script: |
   @config "Configuration"
   C : C as "f(z) = z² +" := -0.11 + 0.78i
 
+  @common
+  # f_c(w) = w² + c applied k times, starting from c (so f_c applied k + 1
+  # times to 0), and f_C applied k times to z: the rays are where these hit
+  # the points t of the circles around ∞ that each level set maps to.
+  function orbit_c(c, k):
+    w := c
+    repeat k times:
+      w <- w² + c
+    orbit_c <- w
+
+  function orbit_z(z, k):
+    orbit_z <- compose(w -> w² + C, k, z)
+
   @viewer "Dynamical plane"
   setup:
     center: 0
@@ -51,25 +64,13 @@ script: |
           m ≔ (k - 1) S + j
           r_m ≔ R^(2^(-m / S))
           t_m ≔ r_m^(2^k) e^{2^{k+1} π 𝑖 theta}
-          temp_c ≔ z
-          difference ≔ error
-          C_k ≔ temp_c
-          D_k ≔ 1
-          n ≔ 0
-          while difference >= error up to iter_limit times:
-            n ⭠ n + 1
-            old_c ≔ temp_c
-            C_k ⭠ old_c
-            D_k ⭠ 1
-            while true up to k times:
-              D_k ⭠ 2 D_k C_k + 1
-              C_k ⭠ C_k² + old_c
-            temp_c ⭠ old_c - (C_k - t_m) / D_k
-            difference ⭠ |old_c - temp_c|
-          if difference < error:
-            dist ⭠ 2 |C_k| log |C_k| / |D_k|
-            draw line from z to temp_c
-            z ⭠ temp_c
+          (ok, c) ≔ full_newton_root(w -> orbit_c(w, k) - t_m, z, iter_limit, (a, b) -> |a - b| < error)
+          if ok:
+            # (the distance from c to the Mandelbrot set, estimated)
+            w ≔ orbit_c(c, k)
+            dist ⭠ 2 |w| log |w| / |orbit_c'(c, k)|
+            draw line from z to c
+            z ⭠ c
           else:
             dist ⭠ 0
             draw filled circle at z with radius error
@@ -99,25 +100,11 @@ script: |
           m ≔ (k - 1) S + j
           r_m ≔ R^(2^(-m / S))
           t_m ≔ r_m^(2^k) e^{2^{k+1} π 𝑖 theta}
-          difference ≔ error
-          temp_z ≔ z
-          z_k ≔ 0
-          dz_k ≔ 0
-          while difference >= error up to iter_limit times:
-            old_z ≔ temp_z
-            z_k ⭠ temp_z
-            dz_k ⭠ 1
-            t ≔ 0
-            while t < k:
-              t ⭠ t + 1
-              dz_k ⭠ 2 dz_k z_k
-              z_k ⭠ z_k² + C
-            temp_z ⭠ old_z - (z_k - t_m) / dz_k
-            difference ⭠ |old_z - temp_z|
-          if difference < error:
-            dist ⭠ |z - temp_z|
-            draw line from z to temp_z
-            z ⭠ temp_z
+          (ok, w) ≔ full_newton_root(u -> orbit_z(u, k) - t_m, z, iter_limit, (a, b) -> |a - b| < error)
+          if ok:
+            dist ⭠ |z - w|
+            draw line from z to w
+            z ⭠ w
           else:
             dist ⭠ 0
             draw filled circle at z with radius error

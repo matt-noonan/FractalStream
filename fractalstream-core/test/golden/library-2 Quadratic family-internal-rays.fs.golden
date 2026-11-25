@@ -13,10 +13,16 @@ let `color` = Color 128 128 128 in:
                     block:
                       let `degree` = 2 in:
                         block:
-                          let `[internal] draw_rays.dynamical #0` = False in:
+                          let `d z/d z1` = 0:R:C in:
                             block:
-                              set `[hoisted] degree` := degree
-                              set `[hoisted] [internal] draw_rays.dynamical #0` := [internal] draw_rays.dynamical #0
+                              let `d z0/d z1` = d z/d z1 in:
+                                block:
+                                  let `[internal] draw_rays.dynamical #0` = False in:
+                                    block:
+                                      set `[hoisted] degree` := degree
+                                      set `[hoisted] d z/d z1` := d z/d z1
+                                      set `[hoisted] d z0/d z1` := d z0/d z1
+                                      set `[hoisted] [internal] draw_rays.dynamical #0` := [internal] draw_rays.dynamical #0
 
 --- body
 let `[internal] vanishing radius` = minRadius in:
@@ -30,99 +36,107 @@ let `[internal] vanishing radius` = minRadius in:
               block:
                 let `degree` = [hoisted] degree in:
                   block:
-                    let `[internal] draw_rays.dynamical #0` = [hoisted] [internal] draw_rays.dynamical #0 in:
+                    let `d z/d z1` = [hoisted] d z/d z1 in:
                       block:
-                        let `z` = let [internal] critical_point.c #0 = c in 0:R:C in:
+                        let `d z0/d z1` = [hoisted] d z0/d z1 in:
                           block:
-                            let `w` = z in:
+                            let `[internal] draw_rays.dynamical #0` = [hoisted] [internal] draw_rays.dynamical #0 in:
                               block:
-                                let `z0` = z in:
+                                let `z` = let [internal] critical_point.c #0 = c in 0:R:C in:
                                   block:
-                                    let `[internal] fresh #32` = 0 in:
-                                      let `[internal] fresh #33` = [internal] iteration limit in:
-                                        block:
-                                          do-while (!((||(z - w)|| < [internal] vanishing radius) or ([internal] escape radius < |z|)) and ([internal] fresh #32 < [internal] fresh #33)):
-                                            block:
-                                              block:
-                                                set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + c)
-                                                set `w` := let [internal] f2.w #0 = w in (((([internal] f2.w #0 ^ 2:R:C) + c) ^ 2:R:C) + c)
-                                              set `[internal] fresh #32` := ([internal] fresh #32 + 1)
-                                          set `[internal] iteration count` := [internal] fresh #32
-                                          set `[internal] stuck` := ([internal] fresh #32 = [internal] fresh #33)
-                                    if [internal] stuck then:
+                                    let `w` = z in:
                                       block:
-                                        set `color` := Color 0 0 0
-                                    else:
-                                      if ([internal] escape radius < |z|) then:
-                                        block:
-                                          set `color` := if (0:R < im(z)) then Color 0 0 255 else Color 255 255 0
-                                          let `s` = (([internal] iteration count + 1):R - (log(log(|z|)) / log(degree:R))) in:
-                                            block:
-                                              set `color` := blend((cos((s * 3.141592653589793)) ^ 2:R), let [internal] [std] dark.c #1 = color in blend(0.333, [internal] [std] dark.c #1, Color 0 0 0), let [internal] [std] light.c #0 = color in blend(0.333, [internal] [std] light.c #0, Color 255 255 255))
-                                      else:
-                                        block:
-                                          let `λ` = 1:R:C in:
-                                            block:
-                                              let `[internal] fresh #33` = 0 in:
-                                                let `[internal] fresh #34` = [internal] iteration limit in:
-                                                  block:
-                                                    do-while (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #33 < [internal] fresh #34)):
-                                                      block:
-                                                        block:
-                                                          set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + c)
-                                                          set `λ` := (let [internal] f'.z #0 = z in (2:R:C * [internal] f'.z #0) * λ)
-                                                        set `[internal] fresh #33` := ([internal] fresh #33 + 1)
-                                                    set `[internal] iteration count` := [internal] fresh #33
-                                                    set `[internal] stuck` := ([internal] fresh #33 = [internal] fresh #34)
-                                              let `period` = [internal] iteration count in:
+                                        let `z0` = z in:
+                                          block:
+                                            let `[internal] fresh #36` = 0 in:
+                                              let `[internal] fresh #37` = [internal] iteration limit in:
                                                 block:
-                                                  let `counter` = 0 in:
+                                                  do-while (!((||(z - w)|| < [internal] vanishing radius) or ([internal] escape radius < |z|)) and ([internal] fresh #36 < [internal] fresh #37)):
                                                     block:
-                                                      let `[internal] fresh #35` = 0 in:
-                                                        let `[internal] fresh #36` = [internal] iteration limit in:
+                                                      block:
+                                                        set `d z/d z1` := let [internal] f.z #0 = z in ((2:R:C * [internal] f.z #0) * d z/d z1)
+                                                        set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + c)
+                                                        set `w` := let [internal] f2.w #0 = w in let [internal] [internal] ∘.composition #1.[internal] f.z #2 @3:10 = [internal] f2.w #0 in let [internal] [internal] ∘.applied #4.[internal] f.z #3 @3:10 = let [internal] f.z #5 = [internal] [internal] ∘.composition #1.[internal] f.z #2 @3:10 in (([internal] f.z #5 ^ 2:R:C) + c) in let [internal] f.z #6 = [internal] [internal] ∘.applied #4.[internal] f.z #3 @3:10 in (([internal] f.z #6 ^ 2:R:C) + c)
+                                                      set `[internal] fresh #36` := ([internal] fresh #36 + 1)
+                                                  set `[internal] iteration count` := [internal] fresh #36
+                                                  set `[internal] stuck` := ([internal] fresh #36 = [internal] fresh #37)
+                                            if [internal] stuck then:
+                                              block:
+                                                set `color` := Color 0 0 0
+                                            else:
+                                              if ([internal] escape radius < |z|) then:
+                                                block:
+                                                  set `color` := if (0:R < im(z)) then Color 0 0 255 else Color 255 255 0
+                                                  let `s` = (([internal] iteration count + 1):R - (log(log(|z|)) / log(degree:R))) in:
+                                                    block:
+                                                      set `color` := blend((cos((s * 3.141592653589793)) ^ 2:R), let [internal] [std] dark.c #1 = color in blend(0.333, [internal] [std] dark.c #1, Color 0 0 0), let [internal] [std] light.c #0 = color in blend(0.333, [internal] [std] light.c #0, Color 255 255 255))
+                                              else:
+                                                block:
+                                                  let `z1` = z in:
+                                                    block:
+                                                      set `d z/d z1` := 1:R:C
+                                                      set `z` := z1
+                                                      let `[internal] fresh #37` = 0 in:
+                                                        let `[internal] fresh #38` = [internal] iteration limit in:
                                                           block:
-                                                            if ((counter < (extra_iterations * period)) and ([internal] fresh #35 < [internal] fresh #36)) then:
-                                                              do-while ((counter < (extra_iterations * period)) and ([internal] fresh #35 < [internal] fresh #36)):
+                                                            do-while (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #37 < [internal] fresh #38)):
+                                                              block:
                                                                 block:
-                                                                  block:
-                                                                    set `w` := let [internal] f2.w #0 = w in (((([internal] f2.w #0 ^ 2:R:C) + c) ^ 2:R:C) + c)
-                                                                    set `counter` := (counter + 1)
-                                                                  set `[internal] fresh #35` := ([internal] fresh #35 + 1)
-                                                            else:
-                                                              no-op
-                                                            set `[internal] iteration count` := [internal] fresh #35
-                                                            set `[internal] stuck` := ([internal] fresh #35 = [internal] fresh #36)
-                                                      set `z` := z0
-                                                      let `[internal] fresh #35` = 0 in:
-                                                        let `[internal] fresh #36` = [internal] iteration limit in:
-                                                          block:
-                                                            if (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #35 < [internal] fresh #36)) then:
-                                                              do-while (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #35 < [internal] fresh #36)):
-                                                                block:
-                                                                  block:
-                                                                    set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + c)
-                                                                  set `[internal] fresh #35` := ([internal] fresh #35 + 1)
-                                                            else:
-                                                              no-op
-                                                            set `[internal] iteration count` := [internal] fresh #35
-                                                            set `[internal] stuck` := ([internal] fresh #35 = [internal] fresh #36)
-                                                      let `preperiod` = [internal] iteration count in:
+                                                                  set `d z/d z1` := let [internal] f.z #0 = z in ((2:R:C * [internal] f.z #0) * d z/d z1)
+                                                                  set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + c)
+                                                                set `[internal] fresh #37` := ([internal] fresh #37 + 1)
+                                                            set `[internal] iteration count` := [internal] fresh #37
+                                                            set `[internal] stuck` := ([internal] fresh #37 = [internal] fresh #38)
+                                                      let `λ` = d z/d z1 in:
                                                         block:
-                                                          let `s` = (preperiod:R / period:R) in:
+                                                          let `period` = [internal] iteration count in:
                                                             block:
-                                                              let `θ` = if [internal] draw_rays.dynamical #0 then (arg((z - w)) - (s * arg(λ))) else arg(λ) in:
+                                                              let `[internal] fresh #39` = 0 in:
+                                                                let `[internal] fresh #40` = (extra_iterations * period) in:
+                                                                  block:
+                                                                    if (True and ([internal] fresh #39 < [internal] fresh #40)) then:
+                                                                      do-while (True and ([internal] fresh #39 < [internal] fresh #40)):
+                                                                        block:
+                                                                          block:
+                                                                            set `w` := let [internal] f2.w #0 = w in let [internal] [internal] ∘.composition #1.[internal] f.z #2 @3:10 = [internal] f2.w #0 in let [internal] [internal] ∘.applied #4.[internal] f.z #3 @3:10 = let [internal] f.z #5 = [internal] [internal] ∘.composition #1.[internal] f.z #2 @3:10 in (([internal] f.z #5 ^ 2:R:C) + c) in let [internal] f.z #6 = [internal] [internal] ∘.applied #4.[internal] f.z #3 @3:10 in (([internal] f.z #6 ^ 2:R:C) + c)
+                                                                          set `[internal] fresh #39` := ([internal] fresh #39 + 1)
+                                                                    else:
+                                                                      no-op
+                                                                    set `[internal] iteration count` := [internal] fresh #39
+                                                                    set `[internal] stuck` := ([internal] fresh #39 = [internal] fresh #40)
+                                                              set `d z/d z1` := d z0/d z1
+                                                              set `z` := z0
+                                                              let `[internal] fresh #39` = 0 in:
+                                                                let `[internal] fresh #40` = [internal] iteration limit in:
+                                                                  block:
+                                                                    if (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #39 < [internal] fresh #40)) then:
+                                                                      do-while (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #39 < [internal] fresh #40)):
+                                                                        block:
+                                                                          block:
+                                                                            set `d z/d z1` := let [internal] f.z #0 = z in ((2:R:C * [internal] f.z #0) * d z/d z1)
+                                                                            set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + c)
+                                                                          set `[internal] fresh #39` := ([internal] fresh #39 + 1)
+                                                                    else:
+                                                                      no-op
+                                                                    set `[internal] iteration count` := [internal] fresh #39
+                                                                    set `[internal] stuck` := ([internal] fresh #39 = [internal] fresh #40)
+                                                              let `preperiod` = [internal] iteration count in:
                                                                 block:
-                                                                  let `pθ` = ((θ / (2:R * 3.141592653589793)) mod 1:R) in:
+                                                                  let `s` = (preperiod:R / period:R) in:
                                                                     block:
-                                                                      if continuous then:
+                                                                      let `θ` = if [internal] draw_rays.dynamical #0 then (arg((z - w)) - (s * arg(λ))) else arg(λ) in:
                                                                         block:
-                                                                          set `color` := let [internal] [std] rainbow.t #0 = ((pθ * den:R) mod 1:R) in let [internal] [std] wheel8.t #2 = [internal] [std] rainbow.t #0 in let [internal] [std] wheel8.c1 #2 = Color 255 0 0 in let [internal] [std] wheel8.c2 #2 = Color 255 100 0 in let [internal] [std] wheel8.c3 #2 = Color 255 255 0 in let [internal] [std] wheel8.c4 #2 = Color 0 180 0 in let [internal] [std] wheel8.c5 #2 = let [internal] [std] rgb255.r #1 = 0 in let [internal] [std] rgb255.g #1 = 128 in let [internal] [std] rgb255.b #1 = 128 in rgb(([internal] [std] rgb255.r #1:R / 255:R), ([internal] [std] rgb255.g #1:R / 255:R), ([internal] [std] rgb255.b #1:R / 255:R)) in let [internal] [std] wheel8.c6 #2 = Color 0 0 255 in let [internal] [std] wheel8.c7 #2 = Color 128 0 128 in let [internal] [std] wheel8.c8 #2 = Color 255 0 160 in let [internal] [std] wheel8_at.u #3 = ([internal] [std] wheel8.t #2 mod 1.0) in let [internal] [std] wheel8_at.c1 #3 = [internal] [std] wheel8.c1 #2 in let [internal] [std] wheel8_at.c2 #3 = [internal] [std] wheel8.c2 #2 in let [internal] [std] wheel8_at.c3 #3 = [internal] [std] wheel8.c3 #2 in let [internal] [std] wheel8_at.c4 #3 = [internal] [std] wheel8.c4 #2 in let [internal] [std] wheel8_at.c5 #3 = [internal] [std] wheel8.c5 #2 in let [internal] [std] wheel8_at.c6 #3 = [internal] [std] wheel8.c6 #2 in let [internal] [std] wheel8_at.c7 #3 = [internal] [std] wheel8.c7 #2 in let [internal] [std] wheel8_at.c8 #3 = [internal] [std] wheel8.c8 #2 in if ([internal] [std] wheel8_at.u #3 < 0.5) then let [internal] [std] wheel4_at.u #4 = [internal] [std] wheel8_at.u #3 in let [internal] [std] wheel4_at.lo #4 = 0.0 in let [internal] [std] wheel4_at.c1 #4 = [internal] [std] wheel8_at.c1 #3 in let [internal] [std] wheel4_at.c2 #4 = [internal] [std] wheel8_at.c2 #3 in let [internal] [std] wheel4_at.c3 #4 = [internal] [std] wheel8_at.c3 #3 in let [internal] [std] wheel4_at.c4 #4 = [internal] [std] wheel8_at.c4 #3 in let [internal] [std] wheel4_at.c5 #4 = [internal] [std] wheel8_at.c5 #3 in if ([internal] [std] wheel4_at.u #4 < ([internal] [std] wheel4_at.lo #4 + 0.25)) then let [internal] [std] wheel2_at.u #5 = [internal] [std] wheel4_at.u #4 in let [internal] [std] wheel2_at.lo #5 = [internal] [std] wheel4_at.lo #4 in let [internal] [std] wheel2_at.c1 #5 = [internal] [std] wheel4_at.c1 #4 in let [internal] [std] wheel2_at.c2 #5 = [internal] [std] wheel4_at.c2 #4 in let [internal] [std] wheel2_at.c3 #5 = [internal] [std] wheel4_at.c3 #4 in if ([internal] [std] wheel2_at.u #5 < ([internal] [std] wheel2_at.lo #5 + 0.125)) then blend((8:R * ([internal] [std] wheel2_at.u #5 - [internal] [std] wheel2_at.lo #5)), [internal] [std] wheel2_at.c1 #5, [internal] [std] wheel2_at.c2 #5) else blend((8:R * ([internal] [std] wheel2_at.u #5 - ([internal] [std] wheel2_at.lo #5 + 0.125))), [internal] [std] wheel2_at.c2 #5, [internal] [std] wheel2_at.c3 #5) else let [internal] [std] wheel2_at.u #6 = [internal] [std] wheel4_at.u #4 in let [internal] [std] wheel2_at.lo #6 = ([internal] [std] wheel4_at.lo #4 + 0.25) in let [internal] [std] wheel2_at.c1 #6 = [internal] [std] wheel4_at.c3 #4 in let [internal] [std] wheel2_at.c2 #6 = [internal] [std] wheel4_at.c4 #4 in let [internal] [std] wheel2_at.c3 #6 = [internal] [std] wheel4_at.c5 #4 in if ([internal] [std] wheel2_at.u #6 < ([internal] [std] wheel2_at.lo #6 + 0.125)) then blend((8:R * ([internal] [std] wheel2_at.u #6 - [internal] [std] wheel2_at.lo #6)), [internal] [std] wheel2_at.c1 #6, [internal] [std] wheel2_at.c2 #6) else blend((8:R * ([internal] [std] wheel2_at.u #6 - ([internal] [std] wheel2_at.lo #6 + 0.125))), [internal] [std] wheel2_at.c2 #6, [internal] [std] wheel2_at.c3 #6) else let [internal] [std] wheel4_at.u #7 = [internal] [std] wheel8_at.u #3 in let [internal] [std] wheel4_at.lo #7 = 0.5 in let [internal] [std] wheel4_at.c1 #7 = [internal] [std] wheel8_at.c5 #3 in let [internal] [std] wheel4_at.c2 #7 = [internal] [std] wheel8_at.c6 #3 in let [internal] [std] wheel4_at.c3 #7 = [internal] [std] wheel8_at.c7 #3 in let [internal] [std] wheel4_at.c4 #7 = [internal] [std] wheel8_at.c8 #3 in let [internal] [std] wheel4_at.c5 #7 = [internal] [std] wheel8_at.c1 #3 in if ([internal] [std] wheel4_at.u #7 < ([internal] [std] wheel4_at.lo #7 + 0.25)) then let [internal] [std] wheel2_at.u #8 = [internal] [std] wheel4_at.u #7 in let [internal] [std] wheel2_at.lo #8 = [internal] [std] wheel4_at.lo #7 in let [internal] [std] wheel2_at.c1 #8 = [internal] [std] wheel4_at.c1 #7 in let [internal] [std] wheel2_at.c2 #8 = [internal] [std] wheel4_at.c2 #7 in let [internal] [std] wheel2_at.c3 #8 = [internal] [std] wheel4_at.c3 #7 in if ([internal] [std] wheel2_at.u #8 < ([internal] [std] wheel2_at.lo #8 + 0.125)) then blend((8:R * ([internal] [std] wheel2_at.u #8 - [internal] [std] wheel2_at.lo #8)), [internal] [std] wheel2_at.c1 #8, [internal] [std] wheel2_at.c2 #8) else blend((8:R * ([internal] [std] wheel2_at.u #8 - ([internal] [std] wheel2_at.lo #8 + 0.125))), [internal] [std] wheel2_at.c2 #8, [internal] [std] wheel2_at.c3 #8) else let [internal] [std] wheel2_at.u #9 = [internal] [std] wheel4_at.u #7 in let [internal] [std] wheel2_at.lo #9 = ([internal] [std] wheel4_at.lo #7 + 0.25) in let [internal] [std] wheel2_at.c1 #9 = [internal] [std] wheel4_at.c3 #7 in let [internal] [std] wheel2_at.c2 #9 = [internal] [std] wheel4_at.c4 #7 in let [internal] [std] wheel2_at.c3 #9 = [internal] [std] wheel4_at.c5 #7 in if ([internal] [std] wheel2_at.u #9 < ([internal] [std] wheel2_at.lo #9 + 0.125)) then blend((8:R * ([internal] [std] wheel2_at.u #9 - [internal] [std] wheel2_at.lo #9)), [internal] [std] wheel2_at.c1 #9, [internal] [std] wheel2_at.c2 #9) else blend((8:R * ([internal] [std] wheel2_at.u #9 - ([internal] [std] wheel2_at.lo #9 + 0.125))), [internal] [std] wheel2_at.c2 #9, [internal] [std] wheel2_at.c3 #9)
-                                                                      else:
-                                                                        block:
-                                                                          set `color` := if ((0.5 / den:R) < (pθ mod (1:R / den:R))) then Color 255 0 0 else rgb(0:R, 1:R, 1:R)
-                                                                      let `s_adjusted` = ((s + 1:R) - (log(|(z - w)|) / log(|λ|))) in:
-                                                                        block:
-                                                                          set `color` := blend((cos((s_adjusted * 3.141592653589793)) ^ 2:R), let [internal] [std] dark.c #1 = color in blend(0.333, [internal] [std] dark.c #1, Color 0 0 0), let [internal] [std] light.c #0 = color in blend(0.333, [internal] [std] light.c #0, Color 255 255 255))
+                                                                          let `pθ` = ((θ / (2:R * 3.141592653589793)) mod 1:R) in:
+                                                                            block:
+                                                                              if continuous then:
+                                                                                block:
+                                                                                  set `color` := let [internal] [std] rainbow.t #0 = ((pθ * den:R) mod 1:R) in let [internal] [std] wheel8.t #2 = [internal] [std] rainbow.t #0 in let [internal] [std] wheel8.c1 #2 = Color 255 0 0 in let [internal] [std] wheel8.c2 #2 = Color 255 100 0 in let [internal] [std] wheel8.c3 #2 = Color 255 255 0 in let [internal] [std] wheel8.c4 #2 = Color 0 180 0 in let [internal] [std] wheel8.c5 #2 = let [internal] [std] rgb255.r #1 = 0 in let [internal] [std] rgb255.g #1 = 128 in let [internal] [std] rgb255.b #1 = 128 in rgb(([internal] [std] rgb255.r #1:R / 255:R), ([internal] [std] rgb255.g #1:R / 255:R), ([internal] [std] rgb255.b #1:R / 255:R)) in let [internal] [std] wheel8.c6 #2 = Color 0 0 255 in let [internal] [std] wheel8.c7 #2 = Color 128 0 128 in let [internal] [std] wheel8.c8 #2 = Color 255 0 160 in let [internal] [std] wheel8_at.u #3 = ([internal] [std] wheel8.t #2 mod 1.0) in let [internal] [std] wheel8_at.c1 #3 = [internal] [std] wheel8.c1 #2 in let [internal] [std] wheel8_at.c2 #3 = [internal] [std] wheel8.c2 #2 in let [internal] [std] wheel8_at.c3 #3 = [internal] [std] wheel8.c3 #2 in let [internal] [std] wheel8_at.c4 #3 = [internal] [std] wheel8.c4 #2 in let [internal] [std] wheel8_at.c5 #3 = [internal] [std] wheel8.c5 #2 in let [internal] [std] wheel8_at.c6 #3 = [internal] [std] wheel8.c6 #2 in let [internal] [std] wheel8_at.c7 #3 = [internal] [std] wheel8.c7 #2 in let [internal] [std] wheel8_at.c8 #3 = [internal] [std] wheel8.c8 #2 in if ([internal] [std] wheel8_at.u #3 < 0.5) then let [internal] [std] wheel4_at.u #4 = [internal] [std] wheel8_at.u #3 in let [internal] [std] wheel4_at.lo #4 = 0.0 in let [internal] [std] wheel4_at.c1 #4 = [internal] [std] wheel8_at.c1 #3 in let [internal] [std] wheel4_at.c2 #4 = [internal] [std] wheel8_at.c2 #3 in let [internal] [std] wheel4_at.c3 #4 = [internal] [std] wheel8_at.c3 #3 in let [internal] [std] wheel4_at.c4 #4 = [internal] [std] wheel8_at.c4 #3 in let [internal] [std] wheel4_at.c5 #4 = [internal] [std] wheel8_at.c5 #3 in if ([internal] [std] wheel4_at.u #4 < ([internal] [std] wheel4_at.lo #4 + 0.25)) then let [internal] [std] wheel2_at.u #5 = [internal] [std] wheel4_at.u #4 in let [internal] [std] wheel2_at.lo #5 = [internal] [std] wheel4_at.lo #4 in let [internal] [std] wheel2_at.c1 #5 = [internal] [std] wheel4_at.c1 #4 in let [internal] [std] wheel2_at.c2 #5 = [internal] [std] wheel4_at.c2 #4 in let [internal] [std] wheel2_at.c3 #5 = [internal] [std] wheel4_at.c3 #4 in if ([internal] [std] wheel2_at.u #5 < ([internal] [std] wheel2_at.lo #5 + 0.125)) then blend((8:R * ([internal] [std] wheel2_at.u #5 - [internal] [std] wheel2_at.lo #5)), [internal] [std] wheel2_at.c1 #5, [internal] [std] wheel2_at.c2 #5) else blend((8:R * ([internal] [std] wheel2_at.u #5 - ([internal] [std] wheel2_at.lo #5 + 0.125))), [internal] [std] wheel2_at.c2 #5, [internal] [std] wheel2_at.c3 #5) else let [internal] [std] wheel2_at.u #6 = [internal] [std] wheel4_at.u #4 in let [internal] [std] wheel2_at.lo #6 = ([internal] [std] wheel4_at.lo #4 + 0.25) in let [internal] [std] wheel2_at.c1 #6 = [internal] [std] wheel4_at.c3 #4 in let [internal] [std] wheel2_at.c2 #6 = [internal] [std] wheel4_at.c4 #4 in let [internal] [std] wheel2_at.c3 #6 = [internal] [std] wheel4_at.c5 #4 in if ([internal] [std] wheel2_at.u #6 < ([internal] [std] wheel2_at.lo #6 + 0.125)) then blend((8:R * ([internal] [std] wheel2_at.u #6 - [internal] [std] wheel2_at.lo #6)), [internal] [std] wheel2_at.c1 #6, [internal] [std] wheel2_at.c2 #6) else blend((8:R * ([internal] [std] wheel2_at.u #6 - ([internal] [std] wheel2_at.lo #6 + 0.125))), [internal] [std] wheel2_at.c2 #6, [internal] [std] wheel2_at.c3 #6) else let [internal] [std] wheel4_at.u #7 = [internal] [std] wheel8_at.u #3 in let [internal] [std] wheel4_at.lo #7 = 0.5 in let [internal] [std] wheel4_at.c1 #7 = [internal] [std] wheel8_at.c5 #3 in let [internal] [std] wheel4_at.c2 #7 = [internal] [std] wheel8_at.c6 #3 in let [internal] [std] wheel4_at.c3 #7 = [internal] [std] wheel8_at.c7 #3 in let [internal] [std] wheel4_at.c4 #7 = [internal] [std] wheel8_at.c8 #3 in let [internal] [std] wheel4_at.c5 #7 = [internal] [std] wheel8_at.c1 #3 in if ([internal] [std] wheel4_at.u #7 < ([internal] [std] wheel4_at.lo #7 + 0.25)) then let [internal] [std] wheel2_at.u #8 = [internal] [std] wheel4_at.u #7 in let [internal] [std] wheel2_at.lo #8 = [internal] [std] wheel4_at.lo #7 in let [internal] [std] wheel2_at.c1 #8 = [internal] [std] wheel4_at.c1 #7 in let [internal] [std] wheel2_at.c2 #8 = [internal] [std] wheel4_at.c2 #7 in let [internal] [std] wheel2_at.c3 #8 = [internal] [std] wheel4_at.c3 #7 in if ([internal] [std] wheel2_at.u #8 < ([internal] [std] wheel2_at.lo #8 + 0.125)) then blend((8:R * ([internal] [std] wheel2_at.u #8 - [internal] [std] wheel2_at.lo #8)), [internal] [std] wheel2_at.c1 #8, [internal] [std] wheel2_at.c2 #8) else blend((8:R * ([internal] [std] wheel2_at.u #8 - ([internal] [std] wheel2_at.lo #8 + 0.125))), [internal] [std] wheel2_at.c2 #8, [internal] [std] wheel2_at.c3 #8) else let [internal] [std] wheel2_at.u #9 = [internal] [std] wheel4_at.u #7 in let [internal] [std] wheel2_at.lo #9 = ([internal] [std] wheel4_at.lo #7 + 0.25) in let [internal] [std] wheel2_at.c1 #9 = [internal] [std] wheel4_at.c3 #7 in let [internal] [std] wheel2_at.c2 #9 = [internal] [std] wheel4_at.c4 #7 in let [internal] [std] wheel2_at.c3 #9 = [internal] [std] wheel4_at.c5 #7 in if ([internal] [std] wheel2_at.u #9 < ([internal] [std] wheel2_at.lo #9 + 0.125)) then blend((8:R * ([internal] [std] wheel2_at.u #9 - [internal] [std] wheel2_at.lo #9)), [internal] [std] wheel2_at.c1 #9, [internal] [std] wheel2_at.c2 #9) else blend((8:R * ([internal] [std] wheel2_at.u #9 - ([internal] [std] wheel2_at.lo #9 + 0.125))), [internal] [std] wheel2_at.c2 #9, [internal] [std] wheel2_at.c3 #9)
+                                                                              else:
+                                                                                block:
+                                                                                  set `color` := if ((0.5 / den:R) < (pθ mod (1:R / den:R))) then Color 255 0 0 else rgb(0:R, 1:R, 1:R)
+                                                                              let `s_adjusted` = ((s + 1:R) - (log(|(z - w)|) / log(|λ|))) in:
+                                                                                block:
+                                                                                  set `color` := blend((cos((s_adjusted * 3.141592653589793)) ^ 2:R), let [internal] [std] dark.c #1 = color in blend(0.333, [internal] [std] dark.c #1, Color 0 0 0), let [internal] [std] light.c #0 = color in blend(0.333, [internal] [std] light.c #0, Color 255 255 255))
 
 
 === viewer 1: Dynamical plane
@@ -138,12 +152,18 @@ let `color` = Color 128 128 128 in:
                 let `[internal] stuck` = False in:
                   let `[internal] iteration count` = 0 in:
                     block:
-                      let `degree` = 2 in:
+                      let `d z/d z1` = 0.0 :+ 0.0 in:
                         block:
-                          let `[internal] draw_rays.dynamical #0` = True in:
+                          let `degree` = 2 in:
                             block:
-                              set `[hoisted] degree` := degree
-                              set `[hoisted] [internal] draw_rays.dynamical #0` := [internal] draw_rays.dynamical #0
+                              let `d z0/d z1` = d z/d z1 in:
+                                block:
+                                  let `[internal] draw_rays.dynamical #0` = True in:
+                                    block:
+                                      set `[hoisted] d z/d z1` := d z/d z1
+                                      set `[hoisted] degree` := degree
+                                      set `[hoisted] d z0/d z1` := d z0/d z1
+                                      set `[hoisted] [internal] draw_rays.dynamical #0` := [internal] draw_rays.dynamical #0
 
 --- body
 let `[internal] vanishing radius` = minRadius in:
@@ -154,99 +174,107 @@ let `[internal] vanishing radius` = minRadius in:
           let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
             let `pixel_size` = [internal] dx in:
               block:
-                let `degree` = [hoisted] degree in:
+                let `d z/d z1` = [hoisted] d z/d z1 in:
                   block:
-                    let `[internal] draw_rays.dynamical #0` = [hoisted] [internal] draw_rays.dynamical #0 in:
+                    let `degree` = [hoisted] degree in:
                       block:
-                        let `w` = z in:
+                        let `d z0/d z1` = [hoisted] d z0/d z1 in:
                           block:
-                            let `z0` = z in:
+                            let `[internal] draw_rays.dynamical #0` = [hoisted] [internal] draw_rays.dynamical #0 in:
                               block:
-                                let `[internal] fresh #32` = 0 in:
-                                  let `[internal] fresh #33` = [internal] iteration limit in:
-                                    block:
-                                      do-while (!((||(z - w)|| < [internal] vanishing radius) or ([internal] escape radius < |z|)) and ([internal] fresh #32 < [internal] fresh #33)):
-                                        block:
-                                          block:
-                                            set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + c)
-                                            set `w` := let [internal] f2.w #0 = w in (((([internal] f2.w #0 ^ 2:R:C) + c) ^ 2:R:C) + c)
-                                          set `[internal] fresh #32` := ([internal] fresh #32 + 1)
-                                      set `[internal] iteration count` := [internal] fresh #32
-                                      set `[internal] stuck` := ([internal] fresh #32 = [internal] fresh #33)
-                                if [internal] stuck then:
+                                let `w` = z in:
                                   block:
-                                    set `color` := Color 0 0 0
-                                else:
-                                  if ([internal] escape radius < |z|) then:
-                                    block:
-                                      set `color` := if (0:R < im(z)) then Color 0 0 255 else Color 255 255 0
-                                      let `s` = (([internal] iteration count + 1):R - (log(log(|z|)) / log(degree:R))) in:
-                                        block:
-                                          set `color` := blend((cos((s * 3.141592653589793)) ^ 2:R), let [internal] [std] dark.c #1 = color in blend(0.333, [internal] [std] dark.c #1, Color 0 0 0), let [internal] [std] light.c #0 = color in blend(0.333, [internal] [std] light.c #0, Color 255 255 255))
-                                  else:
-                                    block:
-                                      let `λ` = 1:R:C in:
-                                        block:
-                                          let `[internal] fresh #33` = 0 in:
-                                            let `[internal] fresh #34` = [internal] iteration limit in:
-                                              block:
-                                                do-while (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #33 < [internal] fresh #34)):
-                                                  block:
-                                                    block:
-                                                      set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + c)
-                                                      set `λ` := (let [internal] f'.z #0 = z in (2:R:C * [internal] f'.z #0) * λ)
-                                                    set `[internal] fresh #33` := ([internal] fresh #33 + 1)
-                                                set `[internal] iteration count` := [internal] fresh #33
-                                                set `[internal] stuck` := ([internal] fresh #33 = [internal] fresh #34)
-                                          let `period` = [internal] iteration count in:
+                                    let `z0` = z in:
+                                      block:
+                                        let `[internal] fresh #36` = 0 in:
+                                          let `[internal] fresh #37` = [internal] iteration limit in:
                                             block:
-                                              let `counter` = 0 in:
+                                              do-while (!((||(z - w)|| < [internal] vanishing radius) or ([internal] escape radius < |z|)) and ([internal] fresh #36 < [internal] fresh #37)):
                                                 block:
-                                                  let `[internal] fresh #35` = 0 in:
-                                                    let `[internal] fresh #36` = [internal] iteration limit in:
+                                                  block:
+                                                    set `d z/d z1` := let [internal] f.z #0 = z in ((2:R:C * [internal] f.z #0) * d z/d z1)
+                                                    set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + c)
+                                                    set `w` := let [internal] f2.w #0 = w in let [internal] [internal] ∘.composition #1.[internal] f.z #2 @3:10 = [internal] f2.w #0 in let [internal] [internal] ∘.applied #4.[internal] f.z #3 @3:10 = let [internal] f.z #5 = [internal] [internal] ∘.composition #1.[internal] f.z #2 @3:10 in (([internal] f.z #5 ^ 2:R:C) + c) in let [internal] f.z #6 = [internal] [internal] ∘.applied #4.[internal] f.z #3 @3:10 in (([internal] f.z #6 ^ 2:R:C) + c)
+                                                  set `[internal] fresh #36` := ([internal] fresh #36 + 1)
+                                              set `[internal] iteration count` := [internal] fresh #36
+                                              set `[internal] stuck` := ([internal] fresh #36 = [internal] fresh #37)
+                                        if [internal] stuck then:
+                                          block:
+                                            set `color` := Color 0 0 0
+                                        else:
+                                          if ([internal] escape radius < |z|) then:
+                                            block:
+                                              set `color` := if (0:R < im(z)) then Color 0 0 255 else Color 255 255 0
+                                              let `s` = (([internal] iteration count + 1):R - (log(log(|z|)) / log(degree:R))) in:
+                                                block:
+                                                  set `color` := blend((cos((s * 3.141592653589793)) ^ 2:R), let [internal] [std] dark.c #1 = color in blend(0.333, [internal] [std] dark.c #1, Color 0 0 0), let [internal] [std] light.c #0 = color in blend(0.333, [internal] [std] light.c #0, Color 255 255 255))
+                                          else:
+                                            block:
+                                              let `z1` = z in:
+                                                block:
+                                                  set `d z/d z1` := 1:R:C
+                                                  set `z` := z1
+                                                  let `[internal] fresh #37` = 0 in:
+                                                    let `[internal] fresh #38` = [internal] iteration limit in:
                                                       block:
-                                                        if ((counter < (extra_iterations * period)) and ([internal] fresh #35 < [internal] fresh #36)) then:
-                                                          do-while ((counter < (extra_iterations * period)) and ([internal] fresh #35 < [internal] fresh #36)):
+                                                        do-while (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #37 < [internal] fresh #38)):
+                                                          block:
                                                             block:
-                                                              block:
-                                                                set `w` := let [internal] f2.w #0 = w in (((([internal] f2.w #0 ^ 2:R:C) + c) ^ 2:R:C) + c)
-                                                                set `counter` := (counter + 1)
-                                                              set `[internal] fresh #35` := ([internal] fresh #35 + 1)
-                                                        else:
-                                                          no-op
-                                                        set `[internal] iteration count` := [internal] fresh #35
-                                                        set `[internal] stuck` := ([internal] fresh #35 = [internal] fresh #36)
-                                                  set `z` := z0
-                                                  let `[internal] fresh #35` = 0 in:
-                                                    let `[internal] fresh #36` = [internal] iteration limit in:
-                                                      block:
-                                                        if (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #35 < [internal] fresh #36)) then:
-                                                          do-while (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #35 < [internal] fresh #36)):
-                                                            block:
-                                                              block:
-                                                                set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + c)
-                                                              set `[internal] fresh #35` := ([internal] fresh #35 + 1)
-                                                        else:
-                                                          no-op
-                                                        set `[internal] iteration count` := [internal] fresh #35
-                                                        set `[internal] stuck` := ([internal] fresh #35 = [internal] fresh #36)
-                                                  let `preperiod` = [internal] iteration count in:
+                                                              set `d z/d z1` := let [internal] f.z #0 = z in ((2:R:C * [internal] f.z #0) * d z/d z1)
+                                                              set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + c)
+                                                            set `[internal] fresh #37` := ([internal] fresh #37 + 1)
+                                                        set `[internal] iteration count` := [internal] fresh #37
+                                                        set `[internal] stuck` := ([internal] fresh #37 = [internal] fresh #38)
+                                                  let `λ` = d z/d z1 in:
                                                     block:
-                                                      let `s` = (preperiod:R / period:R) in:
+                                                      let `period` = [internal] iteration count in:
                                                         block:
-                                                          let `θ` = if [internal] draw_rays.dynamical #0 then (arg((z - w)) - (s * arg(λ))) else arg(λ) in:
+                                                          let `[internal] fresh #39` = 0 in:
+                                                            let `[internal] fresh #40` = (extra_iterations * period) in:
+                                                              block:
+                                                                if (True and ([internal] fresh #39 < [internal] fresh #40)) then:
+                                                                  do-while (True and ([internal] fresh #39 < [internal] fresh #40)):
+                                                                    block:
+                                                                      block:
+                                                                        set `w` := let [internal] f2.w #0 = w in let [internal] [internal] ∘.composition #1.[internal] f.z #2 @3:10 = [internal] f2.w #0 in let [internal] [internal] ∘.applied #4.[internal] f.z #3 @3:10 = let [internal] f.z #5 = [internal] [internal] ∘.composition #1.[internal] f.z #2 @3:10 in (([internal] f.z #5 ^ 2:R:C) + c) in let [internal] f.z #6 = [internal] [internal] ∘.applied #4.[internal] f.z #3 @3:10 in (([internal] f.z #6 ^ 2:R:C) + c)
+                                                                      set `[internal] fresh #39` := ([internal] fresh #39 + 1)
+                                                                else:
+                                                                  no-op
+                                                                set `[internal] iteration count` := [internal] fresh #39
+                                                                set `[internal] stuck` := ([internal] fresh #39 = [internal] fresh #40)
+                                                          set `d z/d z1` := d z0/d z1
+                                                          set `z` := z0
+                                                          let `[internal] fresh #39` = 0 in:
+                                                            let `[internal] fresh #40` = [internal] iteration limit in:
+                                                              block:
+                                                                if (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #39 < [internal] fresh #40)) then:
+                                                                  do-while (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #39 < [internal] fresh #40)):
+                                                                    block:
+                                                                      block:
+                                                                        set `d z/d z1` := let [internal] f.z #0 = z in ((2:R:C * [internal] f.z #0) * d z/d z1)
+                                                                        set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + c)
+                                                                      set `[internal] fresh #39` := ([internal] fresh #39 + 1)
+                                                                else:
+                                                                  no-op
+                                                                set `[internal] iteration count` := [internal] fresh #39
+                                                                set `[internal] stuck` := ([internal] fresh #39 = [internal] fresh #40)
+                                                          let `preperiod` = [internal] iteration count in:
                                                             block:
-                                                              let `pθ` = ((θ / (2:R * 3.141592653589793)) mod 1:R) in:
+                                                              let `s` = (preperiod:R / period:R) in:
                                                                 block:
-                                                                  if continuous then:
+                                                                  let `θ` = if [internal] draw_rays.dynamical #0 then (arg((z - w)) - (s * arg(λ))) else arg(λ) in:
                                                                     block:
-                                                                      set `color` := let [internal] [std] rainbow.t #0 = ((pθ * den:R) mod 1:R) in let [internal] [std] wheel8.t #2 = [internal] [std] rainbow.t #0 in let [internal] [std] wheel8.c1 #2 = Color 255 0 0 in let [internal] [std] wheel8.c2 #2 = Color 255 100 0 in let [internal] [std] wheel8.c3 #2 = Color 255 255 0 in let [internal] [std] wheel8.c4 #2 = Color 0 180 0 in let [internal] [std] wheel8.c5 #2 = let [internal] [std] rgb255.r #1 = 0 in let [internal] [std] rgb255.g #1 = 128 in let [internal] [std] rgb255.b #1 = 128 in rgb(([internal] [std] rgb255.r #1:R / 255:R), ([internal] [std] rgb255.g #1:R / 255:R), ([internal] [std] rgb255.b #1:R / 255:R)) in let [internal] [std] wheel8.c6 #2 = Color 0 0 255 in let [internal] [std] wheel8.c7 #2 = Color 128 0 128 in let [internal] [std] wheel8.c8 #2 = Color 255 0 160 in let [internal] [std] wheel8_at.u #3 = ([internal] [std] wheel8.t #2 mod 1.0) in let [internal] [std] wheel8_at.c1 #3 = [internal] [std] wheel8.c1 #2 in let [internal] [std] wheel8_at.c2 #3 = [internal] [std] wheel8.c2 #2 in let [internal] [std] wheel8_at.c3 #3 = [internal] [std] wheel8.c3 #2 in let [internal] [std] wheel8_at.c4 #3 = [internal] [std] wheel8.c4 #2 in let [internal] [std] wheel8_at.c5 #3 = [internal] [std] wheel8.c5 #2 in let [internal] [std] wheel8_at.c6 #3 = [internal] [std] wheel8.c6 #2 in let [internal] [std] wheel8_at.c7 #3 = [internal] [std] wheel8.c7 #2 in let [internal] [std] wheel8_at.c8 #3 = [internal] [std] wheel8.c8 #2 in if ([internal] [std] wheel8_at.u #3 < 0.5) then let [internal] [std] wheel4_at.u #4 = [internal] [std] wheel8_at.u #3 in let [internal] [std] wheel4_at.lo #4 = 0.0 in let [internal] [std] wheel4_at.c1 #4 = [internal] [std] wheel8_at.c1 #3 in let [internal] [std] wheel4_at.c2 #4 = [internal] [std] wheel8_at.c2 #3 in let [internal] [std] wheel4_at.c3 #4 = [internal] [std] wheel8_at.c3 #3 in let [internal] [std] wheel4_at.c4 #4 = [internal] [std] wheel8_at.c4 #3 in let [internal] [std] wheel4_at.c5 #4 = [internal] [std] wheel8_at.c5 #3 in if ([internal] [std] wheel4_at.u #4 < ([internal] [std] wheel4_at.lo #4 + 0.25)) then let [internal] [std] wheel2_at.u #5 = [internal] [std] wheel4_at.u #4 in let [internal] [std] wheel2_at.lo #5 = [internal] [std] wheel4_at.lo #4 in let [internal] [std] wheel2_at.c1 #5 = [internal] [std] wheel4_at.c1 #4 in let [internal] [std] wheel2_at.c2 #5 = [internal] [std] wheel4_at.c2 #4 in let [internal] [std] wheel2_at.c3 #5 = [internal] [std] wheel4_at.c3 #4 in if ([internal] [std] wheel2_at.u #5 < ([internal] [std] wheel2_at.lo #5 + 0.125)) then blend((8:R * ([internal] [std] wheel2_at.u #5 - [internal] [std] wheel2_at.lo #5)), [internal] [std] wheel2_at.c1 #5, [internal] [std] wheel2_at.c2 #5) else blend((8:R * ([internal] [std] wheel2_at.u #5 - ([internal] [std] wheel2_at.lo #5 + 0.125))), [internal] [std] wheel2_at.c2 #5, [internal] [std] wheel2_at.c3 #5) else let [internal] [std] wheel2_at.u #6 = [internal] [std] wheel4_at.u #4 in let [internal] [std] wheel2_at.lo #6 = ([internal] [std] wheel4_at.lo #4 + 0.25) in let [internal] [std] wheel2_at.c1 #6 = [internal] [std] wheel4_at.c3 #4 in let [internal] [std] wheel2_at.c2 #6 = [internal] [std] wheel4_at.c4 #4 in let [internal] [std] wheel2_at.c3 #6 = [internal] [std] wheel4_at.c5 #4 in if ([internal] [std] wheel2_at.u #6 < ([internal] [std] wheel2_at.lo #6 + 0.125)) then blend((8:R * ([internal] [std] wheel2_at.u #6 - [internal] [std] wheel2_at.lo #6)), [internal] [std] wheel2_at.c1 #6, [internal] [std] wheel2_at.c2 #6) else blend((8:R * ([internal] [std] wheel2_at.u #6 - ([internal] [std] wheel2_at.lo #6 + 0.125))), [internal] [std] wheel2_at.c2 #6, [internal] [std] wheel2_at.c3 #6) else let [internal] [std] wheel4_at.u #7 = [internal] [std] wheel8_at.u #3 in let [internal] [std] wheel4_at.lo #7 = 0.5 in let [internal] [std] wheel4_at.c1 #7 = [internal] [std] wheel8_at.c5 #3 in let [internal] [std] wheel4_at.c2 #7 = [internal] [std] wheel8_at.c6 #3 in let [internal] [std] wheel4_at.c3 #7 = [internal] [std] wheel8_at.c7 #3 in let [internal] [std] wheel4_at.c4 #7 = [internal] [std] wheel8_at.c8 #3 in let [internal] [std] wheel4_at.c5 #7 = [internal] [std] wheel8_at.c1 #3 in if ([internal] [std] wheel4_at.u #7 < ([internal] [std] wheel4_at.lo #7 + 0.25)) then let [internal] [std] wheel2_at.u #8 = [internal] [std] wheel4_at.u #7 in let [internal] [std] wheel2_at.lo #8 = [internal] [std] wheel4_at.lo #7 in let [internal] [std] wheel2_at.c1 #8 = [internal] [std] wheel4_at.c1 #7 in let [internal] [std] wheel2_at.c2 #8 = [internal] [std] wheel4_at.c2 #7 in let [internal] [std] wheel2_at.c3 #8 = [internal] [std] wheel4_at.c3 #7 in if ([internal] [std] wheel2_at.u #8 < ([internal] [std] wheel2_at.lo #8 + 0.125)) then blend((8:R * ([internal] [std] wheel2_at.u #8 - [internal] [std] wheel2_at.lo #8)), [internal] [std] wheel2_at.c1 #8, [internal] [std] wheel2_at.c2 #8) else blend((8:R * ([internal] [std] wheel2_at.u #8 - ([internal] [std] wheel2_at.lo #8 + 0.125))), [internal] [std] wheel2_at.c2 #8, [internal] [std] wheel2_at.c3 #8) else let [internal] [std] wheel2_at.u #9 = [internal] [std] wheel4_at.u #7 in let [internal] [std] wheel2_at.lo #9 = ([internal] [std] wheel4_at.lo #7 + 0.25) in let [internal] [std] wheel2_at.c1 #9 = [internal] [std] wheel4_at.c3 #7 in let [internal] [std] wheel2_at.c2 #9 = [internal] [std] wheel4_at.c4 #7 in let [internal] [std] wheel2_at.c3 #9 = [internal] [std] wheel4_at.c5 #7 in if ([internal] [std] wheel2_at.u #9 < ([internal] [std] wheel2_at.lo #9 + 0.125)) then blend((8:R * ([internal] [std] wheel2_at.u #9 - [internal] [std] wheel2_at.lo #9)), [internal] [std] wheel2_at.c1 #9, [internal] [std] wheel2_at.c2 #9) else blend((8:R * ([internal] [std] wheel2_at.u #9 - ([internal] [std] wheel2_at.lo #9 + 0.125))), [internal] [std] wheel2_at.c2 #9, [internal] [std] wheel2_at.c3 #9)
-                                                                  else:
-                                                                    block:
-                                                                      set `color` := if ((0.5 / den:R) < (pθ mod (1:R / den:R))) then Color 255 0 0 else rgb(0:R, 1:R, 1:R)
-                                                                  let `s_adjusted` = ((s + 1:R) - (log(|(z - w)|) / log(|λ|))) in:
-                                                                    block:
-                                                                      set `color` := blend((cos((s_adjusted * 3.141592653589793)) ^ 2:R), let [internal] [std] dark.c #1 = color in blend(0.333, [internal] [std] dark.c #1, Color 0 0 0), let [internal] [std] light.c #0 = color in blend(0.333, [internal] [std] light.c #0, Color 255 255 255))
+                                                                      let `pθ` = ((θ / (2:R * 3.141592653589793)) mod 1:R) in:
+                                                                        block:
+                                                                          if continuous then:
+                                                                            block:
+                                                                              set `color` := let [internal] [std] rainbow.t #0 = ((pθ * den:R) mod 1:R) in let [internal] [std] wheel8.t #2 = [internal] [std] rainbow.t #0 in let [internal] [std] wheel8.c1 #2 = Color 255 0 0 in let [internal] [std] wheel8.c2 #2 = Color 255 100 0 in let [internal] [std] wheel8.c3 #2 = Color 255 255 0 in let [internal] [std] wheel8.c4 #2 = Color 0 180 0 in let [internal] [std] wheel8.c5 #2 = let [internal] [std] rgb255.r #1 = 0 in let [internal] [std] rgb255.g #1 = 128 in let [internal] [std] rgb255.b #1 = 128 in rgb(([internal] [std] rgb255.r #1:R / 255:R), ([internal] [std] rgb255.g #1:R / 255:R), ([internal] [std] rgb255.b #1:R / 255:R)) in let [internal] [std] wheel8.c6 #2 = Color 0 0 255 in let [internal] [std] wheel8.c7 #2 = Color 128 0 128 in let [internal] [std] wheel8.c8 #2 = Color 255 0 160 in let [internal] [std] wheel8_at.u #3 = ([internal] [std] wheel8.t #2 mod 1.0) in let [internal] [std] wheel8_at.c1 #3 = [internal] [std] wheel8.c1 #2 in let [internal] [std] wheel8_at.c2 #3 = [internal] [std] wheel8.c2 #2 in let [internal] [std] wheel8_at.c3 #3 = [internal] [std] wheel8.c3 #2 in let [internal] [std] wheel8_at.c4 #3 = [internal] [std] wheel8.c4 #2 in let [internal] [std] wheel8_at.c5 #3 = [internal] [std] wheel8.c5 #2 in let [internal] [std] wheel8_at.c6 #3 = [internal] [std] wheel8.c6 #2 in let [internal] [std] wheel8_at.c7 #3 = [internal] [std] wheel8.c7 #2 in let [internal] [std] wheel8_at.c8 #3 = [internal] [std] wheel8.c8 #2 in if ([internal] [std] wheel8_at.u #3 < 0.5) then let [internal] [std] wheel4_at.u #4 = [internal] [std] wheel8_at.u #3 in let [internal] [std] wheel4_at.lo #4 = 0.0 in let [internal] [std] wheel4_at.c1 #4 = [internal] [std] wheel8_at.c1 #3 in let [internal] [std] wheel4_at.c2 #4 = [internal] [std] wheel8_at.c2 #3 in let [internal] [std] wheel4_at.c3 #4 = [internal] [std] wheel8_at.c3 #3 in let [internal] [std] wheel4_at.c4 #4 = [internal] [std] wheel8_at.c4 #3 in let [internal] [std] wheel4_at.c5 #4 = [internal] [std] wheel8_at.c5 #3 in if ([internal] [std] wheel4_at.u #4 < ([internal] [std] wheel4_at.lo #4 + 0.25)) then let [internal] [std] wheel2_at.u #5 = [internal] [std] wheel4_at.u #4 in let [internal] [std] wheel2_at.lo #5 = [internal] [std] wheel4_at.lo #4 in let [internal] [std] wheel2_at.c1 #5 = [internal] [std] wheel4_at.c1 #4 in let [internal] [std] wheel2_at.c2 #5 = [internal] [std] wheel4_at.c2 #4 in let [internal] [std] wheel2_at.c3 #5 = [internal] [std] wheel4_at.c3 #4 in if ([internal] [std] wheel2_at.u #5 < ([internal] [std] wheel2_at.lo #5 + 0.125)) then blend((8:R * ([internal] [std] wheel2_at.u #5 - [internal] [std] wheel2_at.lo #5)), [internal] [std] wheel2_at.c1 #5, [internal] [std] wheel2_at.c2 #5) else blend((8:R * ([internal] [std] wheel2_at.u #5 - ([internal] [std] wheel2_at.lo #5 + 0.125))), [internal] [std] wheel2_at.c2 #5, [internal] [std] wheel2_at.c3 #5) else let [internal] [std] wheel2_at.u #6 = [internal] [std] wheel4_at.u #4 in let [internal] [std] wheel2_at.lo #6 = ([internal] [std] wheel4_at.lo #4 + 0.25) in let [internal] [std] wheel2_at.c1 #6 = [internal] [std] wheel4_at.c3 #4 in let [internal] [std] wheel2_at.c2 #6 = [internal] [std] wheel4_at.c4 #4 in let [internal] [std] wheel2_at.c3 #6 = [internal] [std] wheel4_at.c5 #4 in if ([internal] [std] wheel2_at.u #6 < ([internal] [std] wheel2_at.lo #6 + 0.125)) then blend((8:R * ([internal] [std] wheel2_at.u #6 - [internal] [std] wheel2_at.lo #6)), [internal] [std] wheel2_at.c1 #6, [internal] [std] wheel2_at.c2 #6) else blend((8:R * ([internal] [std] wheel2_at.u #6 - ([internal] [std] wheel2_at.lo #6 + 0.125))), [internal] [std] wheel2_at.c2 #6, [internal] [std] wheel2_at.c3 #6) else let [internal] [std] wheel4_at.u #7 = [internal] [std] wheel8_at.u #3 in let [internal] [std] wheel4_at.lo #7 = 0.5 in let [internal] [std] wheel4_at.c1 #7 = [internal] [std] wheel8_at.c5 #3 in let [internal] [std] wheel4_at.c2 #7 = [internal] [std] wheel8_at.c6 #3 in let [internal] [std] wheel4_at.c3 #7 = [internal] [std] wheel8_at.c7 #3 in let [internal] [std] wheel4_at.c4 #7 = [internal] [std] wheel8_at.c8 #3 in let [internal] [std] wheel4_at.c5 #7 = [internal] [std] wheel8_at.c1 #3 in if ([internal] [std] wheel4_at.u #7 < ([internal] [std] wheel4_at.lo #7 + 0.25)) then let [internal] [std] wheel2_at.u #8 = [internal] [std] wheel4_at.u #7 in let [internal] [std] wheel2_at.lo #8 = [internal] [std] wheel4_at.lo #7 in let [internal] [std] wheel2_at.c1 #8 = [internal] [std] wheel4_at.c1 #7 in let [internal] [std] wheel2_at.c2 #8 = [internal] [std] wheel4_at.c2 #7 in let [internal] [std] wheel2_at.c3 #8 = [internal] [std] wheel4_at.c3 #7 in if ([internal] [std] wheel2_at.u #8 < ([internal] [std] wheel2_at.lo #8 + 0.125)) then blend((8:R * ([internal] [std] wheel2_at.u #8 - [internal] [std] wheel2_at.lo #8)), [internal] [std] wheel2_at.c1 #8, [internal] [std] wheel2_at.c2 #8) else blend((8:R * ([internal] [std] wheel2_at.u #8 - ([internal] [std] wheel2_at.lo #8 + 0.125))), [internal] [std] wheel2_at.c2 #8, [internal] [std] wheel2_at.c3 #8) else let [internal] [std] wheel2_at.u #9 = [internal] [std] wheel4_at.u #7 in let [internal] [std] wheel2_at.lo #9 = ([internal] [std] wheel4_at.lo #7 + 0.25) in let [internal] [std] wheel2_at.c1 #9 = [internal] [std] wheel4_at.c3 #7 in let [internal] [std] wheel2_at.c2 #9 = [internal] [std] wheel4_at.c4 #7 in let [internal] [std] wheel2_at.c3 #9 = [internal] [std] wheel4_at.c5 #7 in if ([internal] [std] wheel2_at.u #9 < ([internal] [std] wheel2_at.lo #9 + 0.125)) then blend((8:R * ([internal] [std] wheel2_at.u #9 - [internal] [std] wheel2_at.lo #9)), [internal] [std] wheel2_at.c1 #9, [internal] [std] wheel2_at.c2 #9) else blend((8:R * ([internal] [std] wheel2_at.u #9 - ([internal] [std] wheel2_at.lo #9 + 0.125))), [internal] [std] wheel2_at.c2 #9, [internal] [std] wheel2_at.c3 #9)
+                                                                          else:
+                                                                            block:
+                                                                              set `color` := if ((0.5 / den:R) < (pθ mod (1:R / den:R))) then Color 255 0 0 else rgb(0:R, 1:R, 1:R)
+                                                                          let `s_adjusted` = ((s + 1:R) - (log(|(z - w)|) / log(|λ|))) in:
+                                                                            block:
+                                                                              set `color` := blend((cos((s_adjusted * 3.141592653589793)) ^ 2:R), let [internal] [std] dark.c #1 = color in blend(0.333, [internal] [std] dark.c #1, Color 0 0 0), let [internal] [std] light.c #0 = color in blend(0.333, [internal] [std] light.c #0, Color 255 255 255))
 
 
 --- tool Trace
@@ -276,7 +304,7 @@ let `[internal] vanishing radius` = minRadius in:
                                         block:
                                           block:
                                             set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + c)
-                                            set `w` := let [internal] f2.w #0 = w in (((([internal] f2.w #0 ^ 2:R:C) + c) ^ 2:R:C) + c)
+                                            set `w` := let [internal] f2.w #0 = w in let [internal] [internal] ∘.composition #1.[internal] f.z #2 @3:10 = [internal] f2.w #0 in let [internal] [internal] ∘.applied #4.[internal] f.z #3 @3:10 = let [internal] f.z #5 = [internal] [internal] ∘.composition #1.[internal] f.z #2 @3:10 in (([internal] f.z #5 ^ 2:R:C) + c) in let [internal] f.z #6 = [internal] [internal] ∘.applied #4.[internal] f.z #3 @3:10 in (([internal] f.z #6 ^ 2:R:C) + c)
                                           set `[internal] fresh #25` := ([internal] fresh #25 + 1)
                                       set `[internal] iteration count` := [internal] fresh #25
                                       set `[internal] stuck` := ([internal] fresh #25 = [internal] fresh #26)
@@ -335,7 +363,7 @@ let `[internal] vanishing radius` = minRadius in:
                                           block:
                                             block:
                                               set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + c)
-                                              set `w` := let [internal] f2.w #0 = w in (((([internal] f2.w #0 ^ 2:R:C) + c) ^ 2:R:C) + c)
+                                              set `w` := let [internal] f2.w #0 = w in let [internal] [internal] ∘.composition #1.[internal] f.z #2 @3:10 = [internal] f2.w #0 in let [internal] [internal] ∘.applied #4.[internal] f.z #3 @3:10 = let [internal] f.z #5 = [internal] [internal] ∘.composition #1.[internal] f.z #2 @3:10 in (([internal] f.z #5 ^ 2:R:C) + c) in let [internal] f.z #6 = [internal] [internal] ∘.applied #4.[internal] f.z #3 @3:10 in (([internal] f.z #6 ^ 2:R:C) + c)
                                             set `[internal] fresh #28` := ([internal] fresh #28 + 1)
                                         set `[internal] iteration count` := [internal] fresh #28
                                         set `[internal] stuck` := ([internal] fresh #28 = [internal] fresh #29)
@@ -391,7 +419,7 @@ let `[internal] vanishing radius` = minRadius in:
                                       block:
                                         block:
                                           set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + c)
-                                          set `w` := let [internal] f2.w #0 = w in (((([internal] f2.w #0 ^ 2:R:C) + c) ^ 2:R:C) + c)
+                                          set `w` := let [internal] f2.w #0 = w in let [internal] [internal] ∘.composition #1.[internal] f.z #2 @3:10 = [internal] f2.w #0 in let [internal] [internal] ∘.applied #4.[internal] f.z #3 @3:10 = let [internal] f.z #5 = [internal] [internal] ∘.composition #1.[internal] f.z #2 @3:10 in (([internal] f.z #5 ^ 2:R:C) + c) in let [internal] f.z #6 = [internal] [internal] ∘.applied #4.[internal] f.z #3 @3:10 in (([internal] f.z #6 ^ 2:R:C) + c)
                                         set `[internal] fresh #22` := ([internal] fresh #22 + 1)
                                     set `[internal] iteration count` := [internal] fresh #22
                                     set `[internal] stuck` := ([internal] fresh #22 = [internal] fresh #23)

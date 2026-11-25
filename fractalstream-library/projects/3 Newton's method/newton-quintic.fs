@@ -15,11 +15,7 @@ script: |
     colorizer: Autocolor
     center: 0
     pixel size: 1/150
-  lastZ := 0
-  repeat:
-    lastZ <- z
-    z <- newton(z)
-  until z = lastZ
+  iterate z -> newton(z) until z stops
 
   @tool "Trace" for "Roots of f" with shortcut t
   on deactivated:

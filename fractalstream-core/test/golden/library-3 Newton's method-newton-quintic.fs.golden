@@ -11,9 +11,9 @@ let `color` = Color 128 128 128 in:
                 let `[internal] stuck` = False in:
                   let `[internal] iteration count` = 0 in:
                     block:
-                      let `lastZ` = 0:R:C in:
+                      let `[internal] stops.started #0` = False in:
                         block:
-                          set `[hoisted] lastZ` := lastZ
+                          set `[hoisted] [internal] stops.started #0` := [internal] stops.started #0
 
 --- body
 let `[internal] vanishing radius` = vanishing_radius in:
@@ -24,41 +24,47 @@ let `[internal] vanishing radius` = vanishing_radius in:
           let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
             let `pixel_size` = [internal] dx in:
               block:
-                let `lastZ` = [hoisted] lastZ in:
+                let `[internal] stops.started #0` = [hoisted] [internal] stops.started #0 in:
                   block:
-                    let `[internal] fresh #25` = 0 in:
-                      let `[internal] fresh #26` = [internal] iteration limit in:
-                        block:
-                          do-while (!(|(z - lastZ)| < [internal] vanishing radius) and ([internal] fresh #25 < [internal] fresh #26)):
-                            block:
-                              block:
-                                set `lastZ` := z
-                                set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] f.z #1 = [internal] newton.z #0 in ((([internal] f.z #1 ^ 5:R:C) - [internal] f.z #1) - 1:R:C) / let [internal] f'.z #2 = [internal] newton.z #0 in ((5:R:C * ([internal] f'.z #2 ^ 4:R:C)) - 1:R:C)))
-                              set `[internal] fresh #25` := ([internal] fresh #25 + 1)
-                          set `[internal] iteration count` := [internal] fresh #25
-                          set `[internal] stuck` := ([internal] fresh #25 = [internal] fresh #26)
-                    let `[colorizer] Roots of f: z` = z in:
+                    let `[internal] stops.prev #1` = z in:
                       block:
-                        if [internal] stuck then:
-                          block:
-                            set `color` := [colorizer] Roots of f: gives_up
-                        else:
-                          block:
-                            if [colorizer] Roots of f: allow_new then:
-                              block:
-                                set `color` := autocolor(0, [colorizer] Roots of f: z)
-                            else:
-                              if [colorizer] Roots of f: blend_misses then:
-                                block:
-                                  set `color` := get_autocolor(0, [colorizer] Roots of f: z)
+                        let `[internal] fresh #26` = 0 in:
+                          let `[internal] fresh #27` = [internal] iteration limit in:
+                            block:
+                              if (!([internal] stops.started #0 and (|(z - [internal] stops.prev #1)| < [internal] vanishing radius)) and ([internal] fresh #26 < [internal] fresh #27)) then:
+                                do-while (!([internal] stops.started #0 and (|(z - [internal] stops.prev #1)| < [internal] vanishing radius)) and ([internal] fresh #26 < [internal] fresh #27)):
+                                  block:
+                                    block:
+                                      set `[internal] stops.prev #1` := z
+                                      set `[internal] stops.started #0` := True
+                                      set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] f.z #1 = [internal] newton.z #0 in ((([internal] f.z #1 ^ 5:R:C) - [internal] f.z #1) - 1:R:C) / let [internal] f'.z #2 = [internal] newton.z #0 in ((5:R:C * ([internal] f'.z #2 ^ 4:R:C)) - 1:R:C)))
+                                    set `[internal] fresh #26` := ([internal] fresh #26 + 1)
                               else:
-                                block:
-                                  set `color` := nearest_autocolor(0, [colorizer] Roots of f: z)
-                            if [colorizer] Roots of f: shade then:
+                                no-op
+                              set `[internal] iteration count` := [internal] fresh #26
+                              set `[internal] stuck` := ([internal] fresh #26 = [internal] fresh #27)
+                        let `[colorizer] Roots of f: z` = z in:
+                          block:
+                            if [internal] stuck then:
                               block:
-                                set `color` := let [internal] [std] cycle.t #2 = ([internal] iteration count:R / [colorizer] Roots of f: period) in let [internal] [std] cycle.c1 #2 = let [internal] [std] light.c #0 = color in blend(0.333, [internal] [std] light.c #0, Color 255 255 255) in let [internal] [std] cycle.c2 #2 = let [internal] [std] dark.c #1 = color in blend(0.333, [internal] [std] dark.c #1, Color 0 0 0) in let [internal] [std] cycle_at.s #3 = ([internal] [std] cycle.t #2 mod 1.0) in let [internal] [std] cycle_at.c1 #3 = [internal] [std] cycle.c1 #2 in let [internal] [std] cycle_at.c2 #3 = [internal] [std] cycle.c2 #2 in blend(if ([internal] [std] cycle_at.s #3 < 0.5) then (2:R * [internal] [std] cycle_at.s #3) else (2:R - (2:R * [internal] [std] cycle_at.s #3)), [internal] [std] cycle_at.c1 #3, [internal] [std] cycle_at.c2 #3)
+                                set `color` := [colorizer] Roots of f: gives_up
                             else:
-                              no-op
+                              block:
+                                if [colorizer] Roots of f: allow_new then:
+                                  block:
+                                    set `color` := autocolor(0, [colorizer] Roots of f: z)
+                                else:
+                                  if [colorizer] Roots of f: blend_misses then:
+                                    block:
+                                      set `color` := get_autocolor(0, [colorizer] Roots of f: z)
+                                  else:
+                                    block:
+                                      set `color` := nearest_autocolor(0, [colorizer] Roots of f: z)
+                                if [colorizer] Roots of f: shade then:
+                                  block:
+                                    set `color` := let [internal] [std] cycle.t #2 = ([internal] iteration count:R / [colorizer] Roots of f: period) in let [internal] [std] cycle.c1 #2 = let [internal] [std] light.c #0 = color in blend(0.333, [internal] [std] light.c #0, Color 255 255 255) in let [internal] [std] cycle.c2 #2 = let [internal] [std] dark.c #1 = color in blend(0.333, [internal] [std] dark.c #1, Color 0 0 0) in let [internal] [std] cycle_at.s #3 = ([internal] [std] cycle.t #2 mod 1.0) in let [internal] [std] cycle_at.c1 #3 = [internal] [std] cycle.c1 #2 in let [internal] [std] cycle_at.c2 #3 = [internal] [std] cycle.c2 #2 in blend(if ([internal] [std] cycle_at.s #3 < 0.5) then (2:R * [internal] [std] cycle_at.s #3) else (2:R - (2:R * [internal] [std] cycle_at.s #3)), [internal] [std] cycle_at.c1 #3, [internal] [std] cycle_at.c2 #3)
+                                else:
+                                  no-op
 
 
 --- tool Trace

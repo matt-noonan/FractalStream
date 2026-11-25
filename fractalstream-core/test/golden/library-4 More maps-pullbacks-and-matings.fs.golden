@@ -149,25 +149,27 @@ let `[internal] vanishing radius` = vanishing_radius in:
               use zero_orbit_color for line
               let `z` = 0:R:C in:
                 block:
-                  let `last_z` = z in:
-                    block:
-                      let `[internal] fresh #22` = 0 in:
-                        let `[internal] fresh #23` = [internal] iteration limit in:
-                          block:
-                            do-while (!(|(z - 0:R:C)| < [internal] vanishing radius) and ([internal] fresh #22 < [internal] fresh #23)):
-                              block:
+                  block:
+                    let `[internal] previous.z #0` = z in:
+                      block:
+                        let `[internal] fresh #22` = 0 in:
+                          let `[internal] fresh #23` = [internal] iteration limit in:
+                            block:
+                              do-while (!(|(z - 0:R:C)| < [internal] vanishing radius) and ([internal] fresh #22 < [internal] fresh #23)):
                                 block:
-                                  draw point at (z, 1.0 :+ 0.0)
-                                  if follow then:
+                                  block:
+                                    set `[internal] previous.z #0` := z
                                     block:
-                                      draw line from (last_z, 1.0 :+ 0.0) to (z, 1.0 :+ 0.0)
-                                      set `last_z` := z
-                                  else:
-                                    no-op
-                                  set `z` := let [internal] f.z #0 = z in ((([internal] f.z #0 ^ 2:R:C) - C) / (([internal] f.z #0 ^ 2:R:C) - 1:R:C))
-                                set `[internal] fresh #22` := ([internal] fresh #22 + 1)
-                            set `[internal] iteration count` := [internal] fresh #22
-                            set `[internal] stuck` := ([internal] fresh #22 = [internal] fresh #23)
+                                      draw point at (z, 1.0 :+ 0.0)
+                                      set `z` := let [internal] f.z #0 = z in ((([internal] f.z #0 ^ 2:R:C) - C) / (([internal] f.z #0 ^ 2:R:C) - 1:R:C))
+                                      if follow then:
+                                        block:
+                                          draw line from ([internal] previous.z #0, 1.0 :+ 0.0) to (z, 1.0 :+ 0.0)
+                                      else:
+                                        no-op
+                                  set `[internal] fresh #22` := ([internal] fresh #22 + 1)
+                              set `[internal] iteration count` := [internal] fresh #22
+                              set `[internal] stuck` := ([internal] fresh #22 = [internal] fresh #23)
 
 
 --- tool Pullback
@@ -194,10 +196,12 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                   set `last_z` := z
                                   if (|(last_pre1 - pre2)| < |(last_pre1 - pre1)|) then:
                                     block:
-                                      let `tmp` = pre1 in:
+                                      let `[internal] tuple #0` = pre2 in:
                                         block:
-                                          set `pre1` := pre2
-                                          set `pre2` := tmp
+                                          let `[internal] tuple #1` = pre1 in:
+                                            block:
+                                              set `pre1` := [internal] tuple #0
+                                              set `pre2` := [internal] tuple #1
                                   else:
                                     no-op
                                   use color2 for line
