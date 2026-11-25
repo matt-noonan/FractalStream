@@ -2175,8 +2175,7 @@ class ViewerView {
   /** Ask for a colorizer's arguments, as the desktop does. */
   askArguments(name: string, fields: { param: string; note: string; text: string }[]) {
     askForm(this.element, `${name}: arguments`,
-            fields.map((f) => ({ label: `${f.param} =`, value: f.text,
-                                 note: (f.note ? f.note + "\n" : "") + `Empty: its default, or else the viewer's variable ${f.param}` })),
+            fields.map((f) => ({ label: `${f.param} =`, value: f.text, note: f.note })),
             (answers) => {
               colorizerChange = this.info.title;
               send({ type: "colorizerAnswers", viewer: this.info.id, name, answers });

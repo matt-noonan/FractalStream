@@ -68,9 +68,9 @@ preferencesWindow available settingsVar = do
   -- ...and the order viewers try the backends in (GPU_PLAN.md, G1)
   renderingList <- singleListBox viewersTab
     [ items := [], size := sz 320 80
-    , tooltip := "Each viewer is drawn with the first of these that can draw it as\n\
-                 \precisely as the CPU's doubles would (the GPU's double-float can't\n\
-                 \zoom as deep, for instance), and so those after the CPU only when\n\
+    , tooltip := "Each viewer is drawn with the first of these that can draw it as \
+                 \precisely as the CPU's doubles would (the GPU's double-float can't \
+                 \zoom as deep, for instance), and so those after the CPU only when \
                  \it can't. A viewer's menu can choose one for that viewer." ]
   upButton <- button viewersTab [ text := "Move up" ]
   downButton <- button viewersTab [ text := "Move down" ]

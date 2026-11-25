@@ -198,11 +198,8 @@ askColorizerArguments f name params = do
   p <- panel d []
   ok <- button p [ text := "OK" ]
   cancel <- button p [ text := "Cancel" ]
-  -- (what a field means, and what leaving it empty does, are in its tooltip)
-  fields <- forM params $ \(param, note, current) ->
-    textEntry p [ text := current
-                , tooltip := (if null note then "" else note ++ "\n")
-                             ++ "Empty: its default, or else the viewer's variable " ++ param ]
+  -- (what leaving a field empty does is its tooltip)
+  fields <- forM params $ \(_, note, current) -> textEntry p [ text := current, tooltip := note ]
   let fieldRow (param, _, _) field = row 5
         [ margin 3 (label (param ++ " =")), hfill (widget field) ]
   set d [ layout := margin 10 $ fill $ container p $ column 5 $

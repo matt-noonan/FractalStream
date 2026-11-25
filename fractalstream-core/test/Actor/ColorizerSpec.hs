@@ -257,11 +257,11 @@ iterate z -> z^2 + 0.25 until z escapes
       missingArguments (scope ["z"]) binary `shouldBe` []
       missingArguments (scope []) rainbow `shouldBe` []
     it "starts each field from what's written, the viewer's variable, or nothing" $ do
-      argumentFields (scope ["z"]) binary "" `shouldBe` [("z", "", "z")]
-      argumentFields (scope []) binary "" `shouldBe` [("z", "(this viewer has no z)", "")]
-      argumentFields (scope ["z"]) binary "w" `shouldBe` [("z", "", "w")]
+      argumentFields (scope ["z"]) binary "" `shouldBe` [("z", "Empty means the viewer's variable z", "z")]
+      argumentFields (scope []) binary "" `shouldBe` [("z", "Needed: this viewer has no variable z", "")]
+      argumentFields (scope ["z"]) binary "w" `shouldBe` [("z", "Empty means the viewer's variable z", "w")]
       [ (p, t) | (p, _, t) <- argumentFields (scope []) rainbow "" ] `shouldBe` [("t", "")]
-      [ n | (_, n, _) <- argumentFields (scope []) rainbow "" ] `shouldSatisfy` all ("(default: " `isPrefixOf`)
+      [ n | (_, n, _) <- argumentFields (scope []) rainbow "" ] `shouldSatisfy` all ("Empty means the default, " `isPrefixOf`)
     it "leaves out the arguments that come to their defaults, or the viewer's variable" $ do
       choiceWithArguments binary ["z"] `shouldBe` "Binary decomposition"
       choiceWithArguments binary [" w "] `shouldBe` "Binary decomposition(w)"
