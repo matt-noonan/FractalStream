@@ -59,8 +59,10 @@ For real plane viewers, use `xvar=` and `yvar=` instead of `var=` to change the 
 ### Showing a viewer only some of the time
 
 A viewer with a `show_if=` attribute is only shown while its condition holds. The condition is a
-truth value worked out from the configuration's values (and the standard library's functions,
-like `max`), and it's worked out again whenever one of them changes. For example, this project
+truth value worked out from the configuration's values, and it's worked out again whenever one of
+them changes. It can also use the values and one-line functions defined in `@common`, and the
+standard library's one-line functions, like `max`. Because it's worked out apart from any viewer
+or tool code, it can't call a function with a body. For example, this project
 shows the Julia set only once a point of the Mandelbrot set has been picked with the "Pick C" tool:
 
 ```{code-block} fs
