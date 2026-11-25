@@ -62,6 +62,8 @@
 //             (dev-tools/web/tables.fs): asked, with each table's size;
 //             saved with them, as a .fsz archive (and reopened, filled),
 //             or without them, as a plain .fs; not asked when they're empty
+//   tableEdges a point on a table's far edges is in its last cells (the
+//             wasm backend, as the others; dev-tools/web/table-edges.fs)
 //   capture   a viewer's Capture submenu: a picture (its size times the
 //             multiplier, as a PNG), and a movie from a script (checked as
 //             it's typed; recorded, encoded and saved as an MP4; stopped;
@@ -108,7 +110,7 @@ import { start, Checks, kinds } from "./harness.mjs";
 const args = process.argv.slice(2);
 let shots = null;
 if (args[0] === "--screenshots") { shots = args[1]; args.splice(0, 2); fs.mkdirSync(shots, { recursive: true }); }
-const all = { welcome, project, fit, links, drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, disk, group, lattice, progressive, menu, autocolor, tables, capture, path: pathMovie, panel, preferences, backends, issues, viewkind, showif };
+const all = { welcome, project, fit, links, drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, disk, group, lattice, progressive, menu, autocolor, tables, tableEdges, capture, path: pathMovie, panel, preferences, backends, issues, viewkind, showif };
 const wanted = args.length ? args : Object.keys(all);
 for (const w of wanted) if (!all[w]) { console.error(`no section "${w}" (there are: ${Object.keys(all).join(", ")})`); process.exit(2); }
 
@@ -1801,6 +1803,16 @@ async function autocolor() {
   await page.waitForTimeout(800);
   c.check(!(await overlay.isVisible()) && (await app.messages("autocolor")).length === 0,
           "another page hides it (and the groups aren't posted any more)");
+}
+
+async function tableEdges() {
+  await app.openFile(new URL("table-edges.fs", import.meta.url).pathname);
+  await page.waitForTimeout(1000);
+  const colour = await page.evaluate(() => {
+    const cv = document.querySelector(".viewer canvas");
+    return [...cv.getContext("2d").getImageData(cv.width / 2, cv.height / 2, 1, 1).data].slice(0, 3);
+  });
+  c.check(colour[1] > 100 && colour[0] < 50, `a table's edges are on it, and just past them isn't (green, not red: ${colour})`);
 }
 
 async function tables() {

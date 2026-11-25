@@ -272,15 +272,26 @@ pointIndices getExtern desc x y = do
   oy <- loadField desc 24 AST.double
   sx <- loadField desc 32 AST.double
   sy <- loadField desc 40 AST.double
-  let nearest u = do  -- 1 + floor(u + 1/2 + 10^-6), as 'nearestCell'
-        v <- fadd u (C.double 0.500001)
+  -- 1 + floor(u + 1/2 + 10^-6), or on the far edge (where that's one
+  -- past the end, and 1 + floor(u + 1/2 - 10^-6) isn't) the last cell, as
+  -- 'nearestCell'
+  let index u bias = do
+        v <- fadd u (C.double bias)
         f <- call (getExtern "floor") [(v, [])]
         -- (saturating, as the wasm backend's: a NaN point is cell 1, not
         -- poison)
         n <- call (getExtern "fptosi_sat") [(f, [])]
         add n (C.int32 1)
-  j <- fsub x ox >>= (`fdiv` sx) >>= nearest
-  k <- fsub oy y >>= (`fdiv` sy) >>= nearest
+      nearest dimOffset u = do
+        dim <- loadField desc dimOffset AST.i32
+        after <- index u 0.500001
+        before <- index u 0.499999
+        pastEnd <- add dim (C.int32 1) >>= icmp IP.EQ after
+        atEnd <- icmp IP.EQ before dim
+        onEdge <- I.and pastEnd atEnd
+        select onEdge dim after
+  j <- fsub x ox >>= (`fdiv` sx) >>= nearest 48
+  k <- fsub oy y >>= (`fdiv` sy) >>= nearest 52
   pure [j, k]
 
 -- | Read the cell nearest a point, at some indices in the dimensions

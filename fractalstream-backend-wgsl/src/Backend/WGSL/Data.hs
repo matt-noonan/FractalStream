@@ -392,9 +392,18 @@ complexOf = \case { LComplex c -> pure c; l -> throwError ("internal error: a po
 -- 'Language.Table.nearestCell').
 pointIndices :: String -> String -> Gen (String, String)
 pointIndices d z = do
-  let nearest u = "rtoi(rfloor(radd(" ++ u ++ ", " ++ realLiteral 0.500001 ++ "))) + 1"
-  j <- letName (nearest ("rdiv(rsub(" ++ z ++ ".re, " ++ descReal d 2 ++ "), " ++ descReal d 6 ++ ")"))
-  k <- letName (nearest ("rdiv(rsub(" ++ descReal d 4 ++ ", " ++ z ++ ".im), " ++ descReal d 8 ++ ")"))
+  -- (1 + floor(u + 1/2 + 10^-6), or the last cell where that's one past
+  -- the end and 1 + floor(u + 1/2 - 10^-6) isn't)
+  let index u bias = "rtoi(rfloor(radd(" ++ u ++ ", " ++ realLiteral bias ++ "))) + 1"
+      nearest k position = do
+        u <- letName position
+        after <- letName (index u 0.500001)
+        before <- letName (index u 0.499999)
+        let dim = "i32(" ++ desc d (10 + k) ++ ")"
+        letName ("select(" ++ after ++ ", " ++ dim ++ ", " ++ after ++ " == " ++ dim ++ " + 1 && "
+                 ++ before ++ " == " ++ dim ++ ")")
+  j <- nearest 0 ("rdiv(rsub(" ++ z ++ ".re, " ++ descReal d 2 ++ "), " ++ descReal d 6 ++ ")")
+  k <- nearest 1 ("rdiv(rsub(" ++ descReal d 4 ++ ", " ++ z ++ ".im), " ++ descReal d 8 ++ ")")
   pure (j, k)
 
 -- | The cell nearest a point, at some indices after the first two.

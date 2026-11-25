@@ -1990,7 +1990,12 @@ everywhere a table takes a point (`(x, y) in T`, `table_cell(T, (x, y))`,
 writing `T @ point (x, y) <- v`, and the corners of `reset ... from
 (x0, y0) to (x1, y1)`). `table_point` gives a complex number either way. Each
 cell covers a small rectangle, so the cells of a table laid over a
-viewer's window are its pixels. A point outside the table is an error,
+viewer's window are its pixels. A point on the line between two cells is
+in the one to the right of it, or below it (as a pixel's top left corner
+is in that pixel), and a point on the table's edge is in the cell along
+that edge, so the table covers its whole rectangle, edges included. (A
+table over the square from `0` to `1 + i` takes every point that
+`mod(x, 1), mod(y, 1)` gives.) A point outside the table is an error,
 like reading out of range.
 
 It's a table's first two dimensions, its columns and rows, that are laid
