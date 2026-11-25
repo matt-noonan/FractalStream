@@ -669,6 +669,21 @@ x <- d|] `shouldBe` Right 3
       -- z_3 = (c^2 + c)^2 + c, so dz_3/dc = 2 (c^2 + c) (2 c + 1) + 1 = 4 at c = 0.5
       (loop3 ++ "x <- diff(z, c)") `gives` 4
 
+    it "follow a variable worked out from a derivative, as a derivative" $ do
+      -- (dv = 4 w^3, whose derivative is 12 w^2 = 48 at w = 2, not 0)
+      "w := 2.0\nv := w^4\ndv := diff(v, w)\nx <- diff(dv, w)" `gives` 48
+      "w := 2.0\nv := w^4\ndv := diff(v, w)\ny := dv / v\nx <- diff(y, w)" `gives` (-1)   -- (y = 4 / w)
+      -- (through a loop, inside a function: g(u) = (u^4)' = 4 u^3)
+      unlines [ "function g(w0):"
+              , "  w := w0 + 0.0"
+              , "  x := w"
+              , "  repeat 2 times:"
+              , "    x <- x^2"
+              , "  g <- diff(x, w)"
+              , "u := 2.0"
+              , "y := g(u)"
+              , "x <- diff(y, u)" ] `gives` 48
+
     it "follow tuples, through functions that give pairs (as SaddleDrop's Hénon step)" $
       unlines [ "step(p, q, c) := (p^2 + c - 0.3 q, p)"
               , "w := 0.2"
