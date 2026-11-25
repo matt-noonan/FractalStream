@@ -40,26 +40,26 @@ spec :: Spec
 spec = do
  describe "a disk viewer's header" $ do
 
-  it "reads `view=disk`" $
-    case parseScript "@viewer \"V\" var=z view=disk\npass\n" of
+  it "reads `on the disk`" $
+    case parseScript "@viewer \"V\" over z on the disk\npass\n" of
       Right [ViewerStanza{..}] -> vsView `shouldBe` DiskView
       _ -> expectationFailure "expected one viewer"
 
   it "rejects real viewers in the disk" $
-    case parseScript "@viewer \"V\" xvar=x yvar=y view=disk\npass\n" of
+    case parseScript "@viewer \"V\" over (x, y) on the disk\npass\n" of
       Left (_, err) -> err `shouldSatisfy` isInfixOf "Only a complex viewer"
       Right _ -> expectationFailure "expected an error"
 
-  it "reads `view=halfplane`, and checks that `center` is above the real axis" $ do
-    case parseScript "@viewer \"V\" var=z view=halfplane\npass\n" of
+  it "reads `on the half-plane`, and checks that `center` is above the real axis" $ do
+    case parseScript "@viewer \"V\" over z on the half-plane\npass\n" of
       Right [ViewerStanza{..}] -> vsView `shouldBe` HalfPlaneView
       _ -> expectationFailure "expected one viewer"
-    checkScript "@viewer \"V\" var=z view=halfplane\ncolor <- if im(z) > 1 then red else blue\n" `shouldBe` Right ()
+    checkScript "@viewer \"V\" over z on the half-plane\ncolor <- if im(z) > 1 then red else blue\n" `shouldBe` Right ()
 
   it "builds a disk viewer, whose pixel size is the local model width" $ do
-    checkScript "@viewer \"V\" var=z view=disk center=\"0.5 + 0.25i\"\ncolor <- if |z| < 0.5 and pixel_size > 0 then red else blue\n"
+    checkScript "@viewer \"V\" over z on the disk\nsetup:\n  center: 0.5 + 0.25i\ncolor <- if |z| < 0.5 and pixel_size > 0 then red else blue\n"
       `shouldBe` Right ()
-    checkScript "@config \"P\"\nC : C := 0\n\n@viewer \"V\" var=C view=disk\nz := 0\niterate z -> z^2 + C until z escapes\n"
+    checkScript "@config \"P\"\nC : C := 0\n\n@viewer \"V\" over C on the disk\nz := 0\niterate z -> z^2 + C until z escapes\n"
       `shouldBe` Right ()
 
  describe "the half-plane, and the disk, as models and displays" $ do
@@ -191,23 +191,23 @@ spec = do
  describe "drawing" $ do
 
   let project view tool = concat
-        [ "@viewer \"V\" ", view, "\ncolor <- grey\n\n@tool \"T\" for=\"V\"\non click:\n  p := click\n", tool ]
+        [ "@viewer \"V\" ", view, "\ncolor <- grey\n\n@tool \"T\" for \"V\"\non click:\n  p := click\n", tool ]
 
   it "draws lines and circles in every kind of viewer, rectangles only on the plane" $ do
-    checkScript (project "view=disk" "  draw line from 0 to p\n  draw circle at p with radius 1\n") `shouldBe` Right ()
-    checkScript (project "view=halfplane" "  draw line from i to p\n") `shouldBe` Right ()
-    checkScript (project "view=sphere" "  draw line from ∞ to p\n  draw circle at ∞ with radius 0.5\n") `shouldBe` Right ()
-    checkScript (project "var=z" "  draw rectangle from 0 to p\n") `shouldBe` Right ()
-    checkScript (project "view=disk" "  draw rectangle from 0 to p\n")
+    checkScript (project "on the disk" "  draw line from 0 to p\n  draw circle at p with radius 1\n") `shouldBe` Right ()
+    checkScript (project "on the half-plane" "  draw line from i to p\n") `shouldBe` Right ()
+    checkScript (project "on the sphere" "  draw line from ∞ to p\n  draw circle at ∞ with radius 0.5\n") `shouldBe` Right ()
+    checkScript (project "over z" "  draw rectangle from 0 to p\n") `shouldBe` Right ()
+    checkScript (project "on the disk" "  draw rectangle from 0 to p\n")
       `shouldSatisfy` either (isInfixOf "can't draw rectangles" . snd) (const False)
-    checkScript (project "view=sphere" "  draw rectangle from 0 to p\n")
+    checkScript (project "on the sphere" "  draw rectangle from 0 to p\n")
       `shouldSatisfy` either (isInfixOf "can't draw rectangles" . snd) (const False)
     -- (`draw geodesic` is gone: every line is the viewer's geodesic)
-    checkScript (project "view=disk" "  draw geodesic from 0 to p\n") `shouldSatisfy` either (const True) (const False)
+    checkScript (project "on the disk" "  draw geodesic from 0 to p\n") `shouldSatisfy` either (const True) (const False)
 
   it "takes a circle's radius in pixels, with `pixels` a word of its own" $ do
-    checkScript (project "var=z" "  draw filled circle at p with radius 6 pixels\n  draw circle at p with radius 2 + 1 pixels\n")
+    checkScript (project "over z" "  draw filled circle at p with radius 6 pixels\n  draw circle at p with radius 2 + 1 pixels\n")
       `shouldBe` Right ()
-    checkScript (project "var=z" "  q := 2\n  draw circle at p with radius q pixels\n") `shouldBe` Right ()
+    checkScript (project "over z" "  q := 2\n  draw circle at p with radius q pixels\n") `shouldBe` Right ()
     -- (not a variable times `pixels`)
-    checkScript (project "var=z" "  write 2 pixels at p\n") `shouldSatisfy` either (const True) (const False)
+    checkScript (project "over z" "  write 2 pixels at p\n") `shouldSatisfy` either (const True) (const False)

@@ -29,18 +29,18 @@ script: |
         t <- t + h
     until (u, v) = (x, y)
 
-  @viewer "Parameter plane" xvar=a yvar=b
+  @viewer "Parameter plane" over (a, b)
   x, y := 0, 0
   flag_color := default_exit_condition_color
   run script(max_iters)
   color <- if stuck then black else shade(flag_color, iterations / 20)
 
-  @viewer "Dynamical plane" xvar=x yvar=y
+  @viewer "Dynamical plane" over (x, y)
   flag_color := default_exit_condition_color
   run script(max_iters)
   color <- if stuck then black else shade(flag_color, iterations / 20)
 
-  @tool "Trace" for="Dynamical plane" shortcut=t
+  @tool "Trace" for "Dynamical plane" with shortcut t
   trace_color : Color as "Trace color" := white
 
   on deactivated:

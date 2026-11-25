@@ -1,14 +1,14 @@
 {-# LANGUAGE OverloadedStrings #-}
--- | A lattice acting on the plane, for a viewer's @lattice=@: the viewer
+-- | A lattice acting on the plane, for a viewer's `modulo the lattice`: the viewer
 -- folds each pixel's point into the lattice's fundamental parallelogram
 -- before its code sees it, so the code works on the torus (the plane
 -- modulo the lattice), and the picture repeats over the plane.
 --
--- The lattice is spanned by two periods: for a complex viewer, @lattice=τ@
--- (the lattice ℤ + τℤ) or @lattice="(ω1, ω2)"@; for a real viewer, two
--- vectors, @lattice="((1, 0), (0, 1))"@. They're expressions over the
+-- The lattice is spanned by two periods: for a complex viewer, @modulo the lattice τ@
+-- (the lattice ℤ + τℤ) or @modulo the lattice "(ω1, ω2)"@; for a real viewer, two
+-- vectors, @modulo the lattice "((1, 0), (0, 1))"@. They're expressions over the
 -- configuration, worked out again when it changes. The fundamental
--- parallelogram is centered at 0, or at @latticeCenter=@: the points
+-- parallelogram is centered at 0, or at @centered at@: the points
 -- @c + s a + t b@ with @s@ and @t@ between -1/2 and 1/2.
 --
 -- Folding is written in the language and put before the viewer's code
@@ -50,7 +50,7 @@ data Lattice = Lattice
   , latCenter :: Complex Double
   } deriving (Eq, Show)
 
--- | A viewer's @lattice=@ and @latticeCenter=@, as expressions: its two
+-- | A viewer's `modulo the lattice` and @centered at@, as expressions: its two
 -- periods and its center, each of the viewer's kind of point (a complex
 -- number, or a pair of reals).
 data LatticeSpec = LatticeSpec
@@ -61,7 +61,7 @@ data LatticeSpec = LatticeSpec
     -- ^ the type of each: 'ComplexT', or a pair of reals
   }
 
--- | A viewer's lattice, from its @lattice=@ (and @latticeCenter=@, if it
+-- | A viewer's lattice, from its `modulo the lattice` (and @centered at@, if it
 -- has one): for a complex viewer, @τ@ (meaning the lattice ℤ + τℤ) or a
 -- pair of periods; for a real viewer, a pair of vectors.
 latticeSpec :: Coordinate -> ParsedValue -> Maybe ParsedValue -> Either String LatticeSpec
@@ -71,7 +71,7 @@ latticeSpec coord periods mcenter = case coord of
     tau -> Right (LatticeSpec (literal "1") tau (center "0") ComplexT)
   RealCoordinates _ _ -> case periods of
     Syn _ (EPair a b) -> Right (LatticeSpec a b (center "(0, 0)") (Pair RealT RealT))
-    _ -> Left "A real viewer's `lattice=` is a pair of vectors, like `lattice=\"((1, 0), (0, 1))\"`."
+    _ -> Left "A real viewer is `modulo the lattice` of a pair of vectors, like `modulo the lattice ((1, 0), (0, 1))`."
   where
     center dflt = fromMaybe (literal dflt) mcenter
     literal s = either (error ("internal error: " ++ s ++ " doesn't parse")) id (parseParsedValue s)
@@ -100,7 +100,7 @@ latticeFoldCode coord LatticeSpec{..} =
              , "lax", "lay", "lbx", "lby", "lcx", "lcy", "lwx", "lwy" ]
 
 -- | Whether a viewer with a lattice or a group shows all of its tiles
--- (@tiled=@, and the viewer's menu), as its code is given it.
+-- (@tiled:@, and the viewer's menu), as its code is given it.
 tiledValueName :: String
 tiledValueName = "[internal] tiled"
 

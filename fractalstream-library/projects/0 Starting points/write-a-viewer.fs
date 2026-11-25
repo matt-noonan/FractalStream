@@ -1,6 +1,8 @@
 format: 1
 script: |
-  @viewer "One-variable complex dynamics" pixelSize=1/100
+  @viewer "One-variable complex dynamics"
+  setup:
+    pixel size: 1/100
   # This script draws in the z-plane, running once per pixel in the view.
   iterate z -> z^2 + i until z escapes
 metadata:

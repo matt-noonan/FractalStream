@@ -20,21 +20,21 @@ project = unlines
   , ""
   -- `n` starts out the same for every pixel, and then each pixel changes
   -- it: no pixel should see another's change
-  , "@viewer \"Each\" var=C"
+  , "@viewer \"Each\" over C"
   , "n := 0"
   , "n <- n + (if re(C) < 1000 then 1 else 2)"
   , "color <- if n = 1 then black else white"
   , ""
   -- a loop that's the same for every pixel leaves its iteration count,
   -- which code for each pixel reads before any loop of its own
-  , "@viewer \"Count\" var=C"
+  , "@viewer \"Count\" over C"
   , "k := 0"
   , "while k < 7:"
   , "  k <- k + 1"
   , "color <- if iterations = 7 and |C| < 1000 then black else white"
   , ""
   -- a value worked out once, from the configuration, colors every pixel
-  , "@viewer \"Config\" var=C"
+  , "@viewer \"Config\" over C"
   , "b := a^2"
   , "color <- rgb(b / 10, re(C) - re(C), 0)"
   ]

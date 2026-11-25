@@ -280,10 +280,10 @@ snapshotUI viewerName outputFile found result seenTitles = UI
       modifyIORef' seenTitles (title :)
       when (title == viewerName) $ do
         writeIORef found True
-        -- (a hidden viewer, its `show_if=` not holding, isn't drawn)
+        -- (a hidden viewer, its `show if:` not holding, isn't drawn)
         shown <- getDynamic (vVisible viewer)
         err <- if shown then renderViewer viewer outputFile
-               else pure (Just ("the viewer " ++ show viewerName ++ " is hidden (its `show_if=` doesn't hold), so it can't be drawn"))
+               else pure (Just ("the viewer " ++ show viewerName ++ " is hidden (its `show if:` doesn't hold), so it can't be drawn"))
         writeIORef result (Just err)
       pure (pure ())
   }

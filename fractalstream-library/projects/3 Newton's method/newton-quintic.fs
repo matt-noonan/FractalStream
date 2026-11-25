@@ -10,14 +10,18 @@ script: |
   # one step of Newton's method
   newton(z) := z - f(z) / f'(z)
 
-  @viewer "Roots of f" colorizer=Autocolor center=0 pixelSize=1/150
+  @viewer "Roots of f"
+  setup:
+    colorizer: Autocolor
+    center: 0
+    pixel size: 1/150
   lastZ := 0
   repeat:
     lastZ <- z
     z <- newton(z)
   until z = lastZ
 
-  @tool "Trace" for="Roots of f" shortcut=t
+  @tool "Trace" for "Roots of f" with shortcut t
   on deactivated:
     erase
   on click:

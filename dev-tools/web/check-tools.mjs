@@ -27,16 +27,16 @@
 //             broken.fs), with its editor open, and its saved value and
 //             window once it's fixed; a starting point, as a new project;
 //             and an error, as a notice to dismiss
-//   group     a viewer with a group (group=modular, dev-tools/web/group.fs):
+//   group     a viewer with a group (modulo the modular group, dev-tools/web/group.fs):
 //             each pixel folded into the modular group's domain (the fold
 //             compiled to WebAssembly), a tool's dot drawn in every tile,
 //             and a drag of the view
-//   lattice   a viewer with a lattice (lattice=τ, dev-tools/web/lattice.fs):
+//   lattice   a viewer with a lattice (modulo the lattice τ, dev-tools/web/lattice.fs):
 //             each pixel folded into the lattice's parallelogram, a tool's
 //             point folded too, its drawings in every tile, a new τ
 //             followed; "Show fundamental domain" (the rest greyed out,
 //             drawings only in the domain), saved and reopened so
-//   disk      a disk viewer (view=disk, dev-tools/web/disk.fs): Navigate's
+//   disk      a disk viewer (on the disk, dev-tools/web/disk.fs): Navigate's
 //             drag moves the view by a hyperbolic translation (the point
 //             under the pointer stays under it); its menu has no "Show on
 //             the sphere", and shows it as the half-plane (the real axis
@@ -97,7 +97,7 @@ import { start, Checks, kinds } from "./harness.mjs";
 //   issues    a render whose script indexes a list out of range
 //             (dev-tools/web/bad-index.fs): magenta pixels, and the viewer
 //             says why; gone with a render that's fine
-//   showif    a viewer with show_if= (dev-tools/web/show-if.fs): hidden,
+//   showif    a viewer with `show if:` (dev-tools/web/show-if.fs): hidden,
 //             and not drawn, until a tool makes it hold; then shown and
 //             drawn; hidden again when it stops holding
 //   viewkind  an edit that changes a viewer's view (dev-tools/web/
@@ -920,7 +920,9 @@ async function editor() {
   await page.locator(".editor-buttons button", { hasText: "Revert" }).click();
   await page.waitForTimeout(400);
   await page.locator(".editor-overlay .cm-content").click();
-  // (= is typed, not the shortcut for the configuration)
+  // (= is typed, not the shortcut for the configuration; at the end of
+  // the script, wherever the click put the cursor)
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+ArrowDown" : "Control+End");
   const drawerOut = () => page.locator(".panel.open").count();
   const wasOut = await drawerOut();
   await page.keyboard.press("=");
@@ -1082,14 +1084,14 @@ async function viewkind() {
   c.check(p.viewers[0].sphere === false, "a plane viewer opens on the plane");
   const rebuilt = async (header) => {
     await app.forgetMessages();
-    await app.send({ type: "rebuild", text: `@viewer "V" center=0 pixelSize=1/64${header}\ncolor <- white\n` });
+    await app.send({ type: "rebuild", text: `@viewer "V"${header}\nsetup:\n  center: 0\n  pixel size: 1/64\ncolor <- white\n` });
     await app.waitForMessage("(m) => (m.type === 'project' && m.rebuilt) || m.type === 'rebuildError'", 30000);
     await page.waitForTimeout(500);
     return (await app.messages("project")).pop();
   };
   // (rebuilding carries a viewer's view over, but not onto another kind)
-  const sphere = await rebuilt(" view=sphere");
-  c.check(sphere?.viewers[0].sphere === true, `rebuilt with view=sphere, it's on the sphere (${sphere?.viewers[0].sphere})`);
+  const sphere = await rebuilt(" on the sphere");
+  c.check(sphere?.viewers[0].sphere === true, `rebuilt on the sphere, it's on the sphere (${sphere?.viewers[0].sphere})`);
   await app.send({ type: "where", viewer: sphere.viewers[0].id });
   await app.waitForMessage("(m) => m.type === 'where'", 10000);
   const w = (await app.messages("where")).pop();
@@ -1106,7 +1108,7 @@ async function showif() {
   const patchesOf = async (id) => (await app.messages("patch")).filter((m) => m.viewer === id).length;
   await page.waitForTimeout(1500);
   c.check(mandel.visible === true && julia.visible === false, `the engine says which are shown (${mandel.visible}, ${julia.visible})`);
-  c.check(!(await displayed()), "a viewer whose show_if= doesn't hold is hidden");
+  c.check(!(await displayed()), "a viewer whose `show if:` doesn't hold is hidden");
   c.check(await patchesOf(julia.id) === 0, `and isn't drawn (${await patchesOf(julia.id)} patches)`);
   // a click with the tool sets selected_C
   await app.forgetMessages();

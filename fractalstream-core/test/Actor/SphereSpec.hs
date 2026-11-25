@@ -1,4 +1,4 @@
--- | Sphere viewers: the geometry of the globe, and @view=sphere@.
+-- | Sphere viewers: the geometry of the globe, and @on the sphere@.
 module Actor.SphereSpec (spec) where
 
 import Test.Hspec
@@ -229,7 +229,7 @@ spec = do
   describe "a sphere viewer's header" $ do
 
     it "reads `view=sphere`, with the plane as the default" $ do
-      case parseScript "@viewer \"V\" var=z view=sphere\npass\n" of
+      case parseScript "@viewer \"V\" over z on the sphere\npass\n" of
         Right [ViewerStanza{..}] -> vsView `shouldBe` SphereView
         _ -> expectationFailure "expected one viewer"
       case parseScript "@viewer \"V\"\npass\n" of
@@ -241,20 +241,20 @@ spec = do
           Right _ -> expectationFailure ("expected an error for " ++ hdr)
 
     it "rejects other views, and real viewers on the sphere" $ do
-      headerError "@viewer \"V\" view=torus" "`plane`, `sphere`, `disk`, or `halfplane`"
-      headerError "@viewer \"V\" xvar=x yvar=y view=sphere" "Only a complex viewer"
+      headerError "@viewer \"V\" on the torus" "not `on the torus`"
+      headerError "@viewer \"V\" over (x, y) on the sphere" "Only a complex viewer"
 
     it "builds a sphere viewer, whose point is a point of Ĉ" $ do
-      checkScript "@viewer \"V\" var=z view=sphere center=\"1 + i\"\nz <- z^2\ncolor <- if z = ∞ then red else blue\n" `shouldBe` Right ()
-      checkScript "@config \"P\"\nC : Ĉ := 0\n\n@viewer \"V\" var=C view=sphere\nz := 0\niterate z -> z^2 + C until z escapes\n"
+      checkScript "@viewer \"V\" over z on the sphere\nsetup:\n  center: 1 + i\nz <- z^2\ncolor <- if z = ∞ then red else blue\n" `shouldBe` Right ()
+      checkScript "@config \"P\"\nC : Ĉ := 0\n\n@viewer \"V\" over C on the sphere\nz := 0\niterate z -> z^2 + C until z escapes\n"
         `shouldBe` Right ()
-      checkScript "@viewer \"V\" var=z view=sphere\nw : C := z\ncolor <- red\n"
+      checkScript "@viewer \"V\" over z on the sphere\nw : C := z\ncolor <- red\n"
         `shouldSatisfy` either (("`z` is a point of the Riemann sphere" `isInfixOf`) . snd) (const False)
-      checkScript "@config \"P\"\nC : C := 0\n\n@viewer \"V\" var=C view=sphere\ncolor <- red\n"
+      checkScript "@config \"P\"\nC : C := 0\n\n@viewer \"V\" over C on the sphere\ncolor <- red\n"
         `shouldSatisfy` either (("declare it `C : Ĉ`" `isInfixOf`) . snd) (const False)
 
     it "gives a sphere viewer's tools points of Ĉ, drawn where they are" $
-      checkScript "@viewer \"V\" var=z view=sphere\ncolor <- red\n\n@tool \"T\" for=\"V\"\non click:\n  z := click\n  w := z^2\n  draw point at w\n  if w = ∞:\n    draw line from z to w\n"
+      checkScript "@viewer \"V\" over z on the sphere\ncolor <- red\n\n@tool \"T\" for \"V\"\non click:\n  z := click\n  w := z^2\n  draw point at w\n  if w = ∞:\n    draw line from z to w\n"
         `shouldBe` Right ()
   where
     -- (dragging loses a little precision near the rim)

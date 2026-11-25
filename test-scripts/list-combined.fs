@@ -5,7 +5,9 @@ script: |
   listB : List of R as "List B" := [-2, 0.5, 1, 3]
   threshold : R as "Threshold" := 5
 
-  @viewer "List Pipeline (join→remove→transform→find)" var=z pixelSize="1/8"
+  @viewer "List Pipeline (join→remove→transform→find)" over z
+  setup:
+    pixel size: 1/8
   combined : List of R := join(listA, listB)
   positives : List of R := remove(combined, x -> x <= 0)
   squared : List of R := transform(positives, x -> x * x)

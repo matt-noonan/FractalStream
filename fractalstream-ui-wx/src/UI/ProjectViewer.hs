@@ -417,7 +417,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
       globe <- getDynamic vGlobe
       Isometry (ar :+ ai) (br :+ bi) <- getDynamic vIsometry
       tiled <- traverse getDynamic vTiled
-      -- (hidden by its `show_if=`, it's still one the user has open:
+      -- (hidden by its `show if:`, it's still one the user has open:
       -- that follows from the configuration, so isn't saved)
       shown <- (||) <$> windowIsShown f <*> (not <$> getDynamic vVisible)
       -- Leave out what's the same as the default anyway, so that a
@@ -654,7 +654,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     -- stays closed (just hidden, as closing it does) until asked for.
     unless (startVisible || reused) (set f [ visible := False ])
 
-    -- A viewer whose `show_if=` doesn't hold is hidden, and shown again
+    -- A viewer whose `show if:` doesn't hold is hidden, and shown again
     -- (where it was, with its view) when it does. (It isn't drawn while
     -- it's hidden: see 'Actor.Viewer.vVisible'.)
     showIfNow <- getDynamic vVisible

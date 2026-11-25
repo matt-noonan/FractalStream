@@ -1,5 +1,5 @@
 {-# language QuasiQuotes #-}
--- | Real viewers: @\@viewer ... xvar=x yvar=y@, with a pair of real
+-- | Real viewers: @\@viewer ... over (x, y)@, with a pair of real
 -- coordinates and pixels that needn't be square.
 module Actor.RealViewerSpec (spec) where
 
@@ -28,7 +28,11 @@ spec = do
 
     it "names its two coordinates, center, and aspect" $
       case parseScript [r|
-@viewer "Plane" xvar=x yvar=y center=(1, -1/2) pixelSize=1/64 aspect=2
+@viewer "Plane" over (x, y)
+setup:
+  center: (1, -1/2)
+  pixel size: 1/64
+  aspect: 2
 color <- if x < y then red else blue
 |] of
         Right [ViewerStanza{..}] -> do
@@ -39,7 +43,7 @@ color <- if x < y then red else blue
         Right other -> expectationFailure ("expected one viewer, got " ++ show (length other) ++ " stanzas")
         Left (_, err) -> expectationFailure err
 
-    it "keeps `var=` (or the default `z`) for a complex viewer" $
+    it "keeps `over z` (or the default `z`) for a complex viewer" $
       case parseScript "@viewer \"V\"\npass\n" of
         Right [ViewerStanza{..}] -> vsCoord `shouldBe` ComplexCoordinate "z"
         _ -> expectationFailure "expected one viewer"
@@ -48,15 +52,12 @@ color <- if x < y then red else blue
           Left (_, err) -> err `shouldSatisfy` isInfixOf needle
           Right _ -> expectationFailure ("expected an error for " ++ hdr)
 
-    it "rejects both `var=` and `xvar=`/`yvar=`" $
-      headerError "@viewer \"V\" var=z xvar=x yvar=y" "not both"
-    it "rejects `xvar=` without `yvar=`, and the other way around" $ do
-      headerError "@viewer \"V\" xvar=x" "also needs `yvar=`"
-      headerError "@viewer \"V\" yvar=y" "also needs `xvar=`"
+    it "rejects both `over z` and `over (x, y)`" $
+      headerError "@viewer \"V\" over z over (x, y)" "not both"
     it "rejects the same variable for both coordinates" $
-      headerError "@viewer \"V\" xvar=x yvar=x" "must be different"
+      headerError "@viewer \"V\" over (x, x)" "two different coordinates"
     it "rejects `aspect=` on a complex viewer" $
-      headerError "@viewer \"V\" var=z aspect=2" "pixels are always square"
+      headerError "@viewer \"V\" over z\nsetup:\n  aspect: 2" "pixels are always square"
 
   describe "building a real viewer" $ do
 
@@ -67,14 +68,14 @@ color <- if x < y then red else blue
 
     it "binds its coordinates as reals, with its pixel width and height" $
       ok [r|
-@viewer "Plane" xvar=x yvar=y
+@viewer "Plane" over (x, y)
 w : R := x + y
 color <- if pixel_height > pixel_width + pixel_size then red else blue
 |]
 
     it "doesn't give a complex viewer a pixel width or height" $
       failsWith [r|
-@viewer "Plane" var=z
+@viewer "Plane" over z
 color <- if pixel_height > 0 then red else blue
 |] "pixel_height"
 
@@ -84,7 +85,7 @@ color <- if pixel_height > 0 then red else blue
 a : R := 1.4
 b : R := 0.3
 
-@viewer "Parameter plane" xvar=a yvar=b
+@viewer "Parameter plane" over (a, b)
 color <- if a > b then red else blue
 |]
 
@@ -94,7 +95,7 @@ color <- if a > b then red else blue
 a : C := 0
 b : R := 0
 
-@viewer "Parameter plane" xvar=a yvar=b
+@viewer "Parameter plane" over (a, b)
 pass
 |] "`a` should be a real number"
 
@@ -103,22 +104,22 @@ pass
 @config "Parameters"
 pixel_height : R := 1
 
-@viewer "Plane" xvar=x yvar=y
+@viewer "Plane" over (x, y)
 pass
 |] "pixel_height"
 
     it "takes a center as a point or a complex number, but not anything else" $ do
-      ok "@viewer \"Plane\" xvar=x yvar=y center=(1, 2)\npass\n"
-      ok "@viewer \"Plane\" xvar=x yvar=y center=\"1 + 2i\"\npass\n"
-      failsWith "@viewer \"Plane\" xvar=x yvar=y center=\"red\"\npass\n" "must be a point"
-      failsWith "@viewer \"Plane\" var=z center=(1, 2)\npass\n" ""
+      ok "@viewer \"Plane\" over (x, y)\nsetup:\n  center: (1, 2)\npass\n"
+      ok "@viewer \"Plane\" over (x, y)\nsetup:\n  center: 1 + 2i\npass\n"
+      failsWith "@viewer \"Plane\" over (x, y)\nsetup:\n  center: red\npass\n" "must be a point"
+      failsWith "@viewer \"Plane\" over z\nsetup:\n  center: (1, 2)\npass\n" ""
 
     it "needs a positive aspect" $
-      failsWith "@viewer \"Plane\" xvar=x yvar=y aspect=-1\npass\n" "must be positive"
+      failsWith "@viewer \"Plane\" over (x, y)\nsetup:\n  aspect: -1\npass\n" "must be positive"
 
     it "gives its tools' events points as pairs" $
       ok [r|
-@viewer "Plane" xvar=x yvar=y
+@viewer "Plane" over (x, y)
 
 pass
 
@@ -141,7 +142,10 @@ on refresh:
 a : R := 1.4
 b : R := 0.3
 
-@viewer "Parameter plane" xvar=a yvar=b center=(1, 0.25) aspect=1/2
+@viewer "Parameter plane" over (a, b)
+setup:
+  center: (1, 0.25)
+  aspect: 1/2
 pass
 |]
       case result of

@@ -25,7 +25,9 @@ script: |
     s := (cos (iterations pi / 10))^2
     color <- if z = lastZ then blend (s, light c, dark c) else black
 
-  @viewer "Parameter plane" var=a vanish=tol
+  @viewer "Parameter plane" over a
+  setup:
+    vanishing radius: tol
   z := 0
   lastZ := 0
   repeat:
@@ -34,7 +36,9 @@ script: |
   while z != lastZ
   run shade
 
-  @viewer "Newton's method dynamics" vanish=tol
+  @viewer "Newton's method dynamics"
+  setup:
+    vanishing radius: tol
   lastZ := 0
   repeat:
     lastZ <- z
@@ -42,7 +46,7 @@ script: |
   while z != lastZ
   run shade
 
-  @tool "Trace" for="Newton's method dynamics" shortcut=t
+  @tool "Trace" for "Newton's method dynamics" with shortcut t
   on deactivated:
     erase
 

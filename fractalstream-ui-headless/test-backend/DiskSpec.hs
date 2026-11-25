@@ -1,4 +1,4 @@
--- | Disk viewers (@view=disk@): the hyperbolic plane in the Poincaré disk,
+-- | Disk viewers (@on the disk@): the hyperbolic plane in the Poincaré disk,
 -- moved by the view (an isometry), end to end.
 --
 -- (Plain strings, not a quasiquote; see "OverlaySpec".)
@@ -13,16 +13,16 @@ import Scenario (parseScenario)
 
 project :: String
 project = unlines
-  [ "@viewer \"D\" view=disk center=0.5 pixelSize=1/250"
+  [ "@viewer \"D\" on the disk\nsetup:\n  center: 0.5\n  pixel size: 1/250"
   -- red around the model's origin, blue around 0.5, grey elsewhere
   , "color <- if |z| < 0.02 then red else if |z - 0.5| < 0.02 then blue else grey"
   , ""
-  , "@viewer \"P\" view=disk center=0.6 pixelSize=1/100"
+  , "@viewer \"P\" on the disk\nsetup:\n  center: 0.6\n  pixel size: 1/100"
   -- the pixel size in the red channel: at the screen's middle, it should be
   -- the local model width there, (1 - |0.6|²) / 100 = 0.0064, so 1/2
   , "color <- rgb(pixel_size / 0.0128, 0, 0)"
   , ""
-  , "@tool \"T\" for=\"D\""
+  , "@tool \"T\" for \"D\""
   , "on click:"
   , "  p := click"
   , "  erase"
@@ -31,7 +31,7 @@ project = unlines
   , "  draw filled circle at 0 with radius 0.05"
   , ""
   -- a marker 10 screen pixels in radius, wherever its point is
-  , "@tool \"M\" for=\"D\""
+  , "@tool \"M\" for \"D\""
   , "on click:"
   , "  p := click"
   , "  erase"
@@ -40,19 +40,19 @@ project = unlines
   , "  draw filled circle at 0 with radius 10 pixels"
   , ""
   -- the half-plane: green near i, red near 2i
-  , "@viewer \"H\" view=halfplane"
+  , "@viewer \"H\" on the half-plane"
   , "color <- if |z - i| < 0.05 then rgb(0, 1, 0) else if |z - 2i| < 0.05 then red else grey"
   , ""
-  , "@viewer \"Q\" view=halfplane pixelSize=1/100"
+  , "@viewer \"Q\" on the half-plane\nsetup:\n  pixel size: 1/100"
   -- the pixel size in the red channel: facing i (1/100 per pixel: i is
   -- 100 pixels up), the screen is the model, so it's 1/100 everywhere:
   -- 1/2 of 1/50
   , "color <- rgb(pixel_size * 50, 0, 0)"
   , ""
-  , "@viewer \"F\" center=0 pixelSize=1/100"
+  , "@viewer \"F\"\nsetup:\n  center: 0\n  pixel size: 1/100"
   , "color <- grey"
   , ""
-  , "@tool \"N\" for=\"F\""
+  , "@tool \"N\" for \"F\""
   , "on click:"
   , "  p := click"
   , "  erase"

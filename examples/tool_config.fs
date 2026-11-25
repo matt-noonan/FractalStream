@@ -14,7 +14,7 @@ script: |
   else:
     color <- blend ((iterations / max_iters)^p, white, dark blue)
 
-  @tool "Demo" for="Julia set" shortcut=x
+  @tool "Demo" for "Julia set" with shortcut x
   R : R as "R =" := 1
   theta : R as "θ =" := pi/4
   on refresh:
@@ -26,7 +26,7 @@ script: |
   on deactivated:
     erase
 
-  @tool "Trace" for="Julia set" shortcut=t
+  @tool "Trace" for "Julia set" with shortcut t
   on click:
     z := click
     prevZ := z

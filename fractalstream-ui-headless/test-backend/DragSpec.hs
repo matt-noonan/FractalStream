@@ -29,7 +29,7 @@ project = unlines
   , "@viewer \"F\""
   , "color <- if start2 = 1 and now2 = 2 + i then rgb(0, 1, 0) else rgb(1, 0, 0)"
   , ""
-  , "@tool \"T\" for=\"V\""
+  , "@tool \"T\" for \"V\""
   , "on drag:"
   , "  p := drag start"
   , "  q := drag end"

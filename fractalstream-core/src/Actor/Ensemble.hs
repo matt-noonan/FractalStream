@@ -728,7 +728,7 @@ ensembleCommonDefs ens = getDynamic (ensembleSourceScript ens) <&> \src ->
 ------------------------------------------------------------
 -- Unified project script -> Ensemble (Layers 3/4)
 --
--- Resolves a parsed script's cross-stanza references (a tool's @for=@
+-- Resolves a parsed script's cross-stanza references (a tool's @for@
 -- target, a viewer's @limit=@\/@escape=@\/@vanish=@ attributes naming a
 -- config variable) and compiles the result into a real 'Ensemble', built
 -- directly out of 'Layout'\/'Configuration'\/'ComplexViewer'\/'Tool'
@@ -795,7 +795,7 @@ buildEnsembleWithColorizers choices0 scriptText = case parseColorized choices0 s
 
 -- | A pure, allocation-free check of a unified project script: parses
 -- it, validates its cross-stanza references (a duplicate @\@viewer@
--- title, a tool's unresolved @for=@ target), validates every
+-- title, a tool's unresolved @for@ target), validates every
 -- @\@config@ declaration's default value against its declared type,
 -- and type-checks every @\@viewer@'s own code against the environment
 -- its declarations would produce -- all
@@ -946,7 +946,7 @@ checkViewer configEnv env myTools ViewerFields{..} = do
   mIterPV <- parseMaybeAttrValue vfIterLimit
   mEscPV  <- parseMaybeAttrValue vfEscape
   mVanPV  <- parseMaybeAttrValue vfVanish
-  -- (`show_if=` is a truth value over the configuration)
+  -- (`show if:` is a truth value over the configuration)
   traverse (showIfExpr vfCommon) vfShowIf >>= mapM_ (\pv ->
     withEnvFromMap (Map.fromList configEnv) $ \cenv -> withEnvironment cenv $
       case showIfValue pv cenv of
@@ -1198,7 +1198,7 @@ data ViewerFields = ViewerFields
   , vfPixelVar  :: Maybe String
   , vfShowIf    :: Maybe String
   , vfCommon    :: CommonDefs
-    -- ^ The @\@common@ definitions its @show_if=@ can use.
+    -- ^ The @\@common@ definitions its @show if:@ can use.
   , vfLattice   :: Maybe String
   , vfLatticeCenter :: Maybe String
   , vfTiled     :: Maybe String
@@ -1252,7 +1252,7 @@ toolFields = \case
 ------------------------------------------------------------
 
 -- | Check up front, before doing any (more expensive) building, that
--- every @\@viewer@ title is unique and every @\@tool@'s @for=@ (or its
+-- every @\@viewer@ title is unique and every @\@tool@'s @for@ (or its
 -- absence) resolves unambiguously.
 checkTitlesAndTargets :: [String] -> [ToolFields] -> Either (SourceRange, String) ()
 checkTitlesAndTargets viewerTitles tools = do
@@ -1264,9 +1264,9 @@ checkTitlesAndTargets viewerTitles tools = do
     Just title | title `notElem` viewerTitles ->
       Left (NoSourceRange, "Tool `" ++ tfName ++ "` targets an unknown viewer `" ++ title ++ "`.")
     Nothing | length viewerTitles /= 1 ->
-      Left (NoSourceRange, "Tool `" ++ tfName ++ "` doesn't specify `for=`, and there " ++
-            (if null viewerTitles then "are no viewers" else "is more than one viewer") ++
-            " to default to.")
+      Left (NoSourceRange, "The tool `" ++ tfName ++ "` doesn't say which viewer it's for, and " ++
+            (if null viewerTitles then "there are no viewers."
+             else "there are several: say `for " ++ intercalate "` or `for " (map show viewerTitles) ++ "` in its header."))
     _ -> pure ()
   forM_ viewerTitles $ \title ->
     when (length [ () | t <- tools, tfOverlay t, toolTargets viewerTitles title t ] > 1) $
@@ -1321,7 +1321,7 @@ reactiveSomeValue env ty initial = do
 parseConstantE :: TypeProxy ty -> String -> Either (SourceRange, String) (HaskellType ty)
 parseConstantE ty s = left (errorLocation &&& unlines . pp) (parseConstant ty s)
 
--- | A viewer's original view, from its @center=@, @pixelSize=@, and
+-- | A viewer's original view, from its @center=@, @pixel size:@, and
 -- @aspect=@ attributes: its center, the width of a pixel, and the
 -- height of a pixel over its width. A complex viewer's center is a
 -- complex number; a real viewer's is a point @(x, y)@, or a complex
@@ -1605,7 +1605,7 @@ buildComplexViewer contextDyn mlattice myTools n ViewerFields{..} =
   parseMaybeAttrValue vfEscape >>=? \mEscPV ->
   parseMaybeAttrValue vfVanish >>=? \mVanPV ->
   traverse (showIfExpr vfCommon) vfShowIf >>=? \mShowIfPV ->
-  -- (`show_if=` must be a truth value over the configuration, as
+  -- (`show if:` must be a truth value over the configuration, as
   -- 'checkViewer' checks too)
   showIfProblem contextDyn mShowIfPV >>= \problem -> (\k -> maybe k (pure . Left . (NoSourceRange,)) problem) $
   -- (and a lattice's periods are the configuration's values)
@@ -1613,7 +1613,7 @@ buildComplexViewer contextDyn mlattice myTools n ViewerFields{..} =
 
     cvTitleP     <- constParsed vfTitle (Right vfTitle)
     -- The view: a complex viewer can show the plane or the sphere, each
-    -- starting from the script's `center=` (and its `pixelSize=`, for
+    -- starting from the script's `center=` (and its `pixel size:`, for
     -- the one `view=` picks).
     -- A viewer of the hyperbolic plane starts with its view showing the
     -- script's `center=` (a point of its model, the disk or the half-plane)
@@ -1621,7 +1621,7 @@ buildComplexViewer contextDyn mlattice myTools n ViewerFields{..} =
     -- window; or i, 1/pixelSize pixels above the real axis, which is
     -- along the window's bottom edge: see 'displayScreen').
     -- On the sphere, the globe fills the window, and the script's
-    -- `pixelSize=` is the size on the sphere of a pixel in the middle,
+    -- `pixel size:` is the size on the sphere of a pixel in the middle,
     -- which the zoom sets (a pixel there is the zoom times the screen's).
     let globePixel = globeScreenPixelSize (600, 600)
         originalGlobe = globeFacingRolled centerVal 0
@@ -1630,7 +1630,7 @@ buildComplexViewer contextDyn mlattice myTools n ViewerFields{..} =
         planePixel = case vfView of
           PlaneView -> pixelVal
           _ -> 1 / 128
-        -- (the script's `pixelSize=` is for the display its `view=` names)
+        -- (the script's `pixel size:` is for the display its `view=` names)
         hyperbolicPixels =
           ( if vfView == DiskView then maybe defaultDiskPixelSize (const pixelVal) vfPixelSize else defaultDiskPixelSize
           , if vfView == HalfPlaneView then maybe defaultHalfPlanePixelSize (const pixelVal) vfPixelSize else defaultHalfPlanePixelSize )
@@ -2037,7 +2037,7 @@ prepareComplexViewer backend autocolorState someContext configArgs ComplexViewer
         -- refreshing it is cheap next to re-rendering the viewer)
         vListenOverlay action = case (cvOverlay, someContext) of
           (Nothing, _) -> pure (pure ())
-          -- (not while the viewer's hidden by its `show_if=`; and once
+          -- (not while the viewer's hidden by its `show if:`; and once
           -- more when it's shown again)
           (Just _, SomeContext ctx) -> do
             let whenShown = getDynamic cvVisible >>= \shown' -> when shown' action
@@ -2243,7 +2243,7 @@ tryNonAsync action = try action >>= \case
 -- Groups (see "Actor.Viewer.Group")
 ------------------------------------------------------------
 
--- | Where a viewer's group (@group=@) comes from: built in, or a table of
+-- | Where a viewer's group (@modulo the group@) comes from: built in, or a table of
 -- the configuration (with the polygon's center).
 data GroupSource = BuiltinGroup Group | TableGroup String (Double, Double)
 
@@ -2257,7 +2257,7 @@ viewerGroupSource ViewerFields{..} = case vfGroup of
       Just src -> do
         c <- (\(x :+ y) -> (x, y)) <$> parseConstantE ComplexType src
         unless (inModel model c) $
-          Left (NoSourceRange, "A viewer's `groupCenter` must be a point of the hyperbolic plane, not `" ++ src ++ "`.")
+          Left (NoSourceRange, "A group's `centered at` must be a point of the hyperbolic plane, not `" ++ src ++ "`.")
         pure (Just c)
     pure $ Just $ case g of
       "modular" -> BuiltinGroup (let gr = modularGroup model in maybe gr (\c -> gr { groupCenter = c }) center)
@@ -2290,9 +2290,9 @@ groupFoldDyn model cache src contextDyn = case src of
           writeIORef cache (Just (version, fd))
           pure fd
 
--- | A viewer's @show_if=@, typed as a truth value in the configuration's
+-- | A viewer's @show if:@, typed as a truth value in the configuration's
 -- environment (with the standard library's functions expanded).
--- | A viewer's @show_if=@, as an expression: what it uses of the
+-- | A viewer's @show if:@, as an expression: what it uses of the
 -- project's @\@common@ (values, and one-line functions) put in place.
 showIfExpr :: CommonDefs -> String -> Either (SourceRange, String) ParsedValue
 showIfExpr defs src = do
@@ -2313,31 +2313,31 @@ showIfExpr defs src = do
         Stmt _ (SFunction f _ _) : _ -> notOneLine f
         Stmt _ (SProc f _ _) : _ -> notOneLine f
         _ : rest -> bindAll funs rest
-      notOneLine f = Left ("`" ++ f ++ "` has a body, and a viewer's `show_if=` is worked out apart from any \
+      notOneLine f = Left ("`" ++ f ++ "` has a body, and a viewer's `show if:` is worked out apart from any \
                            \code, so it can only use @common's values and one-line functions.")
   (funs, e') <- left (NoSourceRange,) (bindAll Map.empty stmts)
   case expandCalls funs e' of
-    TC (Left err) -> Left (NoSourceRange, "A viewer's `show_if=` can't be worked out: " ++ ppError err)
+    TC (Left err) -> Left (NoSourceRange, "A viewer's `show if:` can't be worked out: " ++ ppError err)
     TC (Right x) -> Right x
 
 showIfValue :: forall env. KnownEnvironment env => ParsedValue -> EnvironmentProxy env
             -> Either String (Language.Value.Value '(env, 'BooleanT))
 showIfValue pv _ = case expandStdlibCalls pv >>= \e -> atType e BooleanType of
-  TC (Left err) -> Left ("A viewer's `show_if=` says whether it's shown, from the configuration's \
+  TC (Left err) -> Left ("A viewer's `show if:` says whether it's shown, from the configuration's \
                          \values, so it must be a truth value that only uses them: " ++ ppError err)
   TC (Right v) -> Right v
 
--- | A viewer's lattice (@lattice=@, and @latticeCenter=@), if it has one;
+-- | A viewer's lattice (`modulo the lattice`, and @centered at@), if it has one;
 -- only a viewer of the plane can.
 viewerLattice :: ViewerFields -> Either (SourceRange, String) (Maybe LatticeSpec)
 viewerLattice ViewerFields{..} = case vfLattice of
   Nothing
-    | isJust vfLatticeCenter -> Left (NoSourceRange, "A viewer's `latticeCenter=` is the center of its \
-                                                     \`lattice=`'s parallelogram, so it needs a `lattice=` too.")
+    | isJust vfLatticeCenter -> Left (NoSourceRange, "`centered at` is the center of the lattice's \
+                                                     \parallelogram, so it needs a `modulo the lattice` too.")
     | otherwise -> Right Nothing
   Just src
-    | vfView /= PlaneView -> Left (NoSourceRange, "A viewer's `lattice=` folds the plane, so only a viewer \
-                                                  \of the plane can have one (not `view=" ++ viewName ++ "`).")
+    | vfView /= PlaneView -> Left (NoSourceRange, "`modulo the lattice` folds the plane, so only a viewer \
+                                                  \of the plane can have one (not one `on the " ++ viewName ++ "`).")
     | otherwise -> do
         mpv <- parseMaybeAttrValue (Just src)
         mcenter <- parseMaybeAttrValue vfLatticeCenter
@@ -2347,7 +2347,7 @@ viewerLattice ViewerFields{..} = case vfLattice of
   where viewName = case vfView of
           SphereView -> "sphere"
           DiskView -> "disk"
-          HalfPlaneView -> "halfplane"
+          HalfPlaneView -> "half-plane"
           PlaneView -> "plane"
 
 -- | A viewer, with its lattice's fold (if it has one) before its code
@@ -2366,19 +2366,19 @@ withLatticeFold mspec vf
     fold = maybe [] (latticeFoldCode (vfCoord vf)) mspec
     shade = [fundamentalDomainShade (if isJust mspec then latticeMoved else groupMoved)]
 
--- | Whether a viewer starts out showing all of its tiles (@tiled=@, true
+-- | Whether a viewer starts out showing all of its tiles (@tiled:@, true
 -- by default), if it has a lattice or a group; only those can have one.
 viewerTiled :: ViewerFields -> Either (SourceRange, String) (Maybe Bool)
 viewerTiled ViewerFields{..}
   | isNothing vfLattice && isNothing vfGroup = case vfTiled of
       Nothing -> Right Nothing
-      Just _ -> Left (NoSourceRange, "A viewer's `tiled=` says whether it shows all of its tiles or only its \
-                                     \fundamental domain, so it needs a `lattice=` or a `group=` too.")
+      Just _ -> Left (NoSourceRange, "A viewer's `tiled:` setting says whether it shows all of its tiles or only its \
+                                     \fundamental domain, so it needs a `modulo the lattice` or a `modulo the group` too.")
   | otherwise = case vfTiled of
       Nothing -> Right (Just True)
       Just "true" -> Right (Just True)
       Just "false" -> Right (Just False)
-      Just other -> Left (NoSourceRange, "A viewer's `tiled=` is `true` or `false`, not `" ++ other ++ "`.")
+      Just other -> Left (NoSourceRange, "A viewer's `tiled:` is `true` or `false`, not `" ++ other ++ "`.")
 
 -- | What's wrong with a lattice's periods and center, as values of the
 -- configuration (in its environment), if anything.
@@ -2393,7 +2393,7 @@ latticeProblems LatticeSpec{..} env = [ err | pv <- [lsA, lsB, lsCenter], Left e
 latticeValue :: forall env t. KnownEnvironment env => ParsedValue -> TypeProxy t -> EnvironmentProxy env
              -> Either String (Language.Value.Value '(env, t))
 latticeValue pv ty _ = withKnownType ty $ case expandStdlibCalls pv >>= \e -> atType e ty of
-  TC (Left err) -> Left ("A viewer's `lattice=` (and `latticeCenter=`) are worked out from the configuration's \
+  TC (Left err) -> Left ("A viewer's `modulo the lattice` (and its `centered at`) are worked out from the configuration's \
                          \values, each " ++ (case ty of { ComplexType -> "a complex number"; _ -> "a pair of real numbers" })
                          ++ ": " ++ ppError err)
   TC (Right v) -> Right v
@@ -2439,7 +2439,7 @@ latticeFoldingDispatcher latD dispatch dims event = folded <$ dispatch dims even
         Just r -> startHandlerRun r flag
         Nothing -> pure (pure ())
 
--- | What's wrong with a viewer's @show_if=@, as the configuration is now,
+-- | What's wrong with a viewer's @show if:@, as the configuration is now,
 -- if anything (see 'showIfValue').
 showIfProblem :: Dynamic (Either String (SomeContext DynamicValue)) -> Maybe ParsedValue -> IO (Maybe String)
 showIfProblem contextDyn = \case
@@ -2449,7 +2449,7 @@ showIfProblem contextDyn = \case
       withEnvironment env (either Just (const Nothing) (showIfValue pv env))
     Left _ -> Nothing
 
--- | Whether a viewer with this @show_if=@ is shown, as the configuration's
+-- | Whether a viewer with this @show if:@ is shown, as the configuration's
 -- values change. (A problem with the configuration, reported as such,
 -- leaves it shown.)
 showIfDynamic :: ParsedValue -> Dynamic (Either String (SomeContext DynamicValue)) -> Dynamic Bool

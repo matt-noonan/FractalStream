@@ -1,10 +1,12 @@
 format: 1
 script: |
-  @viewer "Mandelbrot set with smooth coloring" var=C colorizer=Smooth
-  coloring:
-    palette <- "Two colors"
-    color1 <- red
-    period <- 100
+  @viewer "Mandelbrot set with smooth coloring" over C
+  setup:
+    colorizer: Smooth
+    coloring:
+      palette <- "Two colors"
+      color1 <- red
+      period <- 100
   z ≔ 0
   iterate z ⟼ z² + C until z escapes
 metadata:

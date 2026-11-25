@@ -59,8 +59,8 @@ spec = describe "normalizing scripts" $ do
     normalize "w : Cinf := 0\np : P1 := [1 : 0]" `shouldBe` "w : Ĉ ≔ 0\np : ℙ¹ ≔ [1 : 0]"
 
   it "leaves stanza headers, comments, and strings alone" $
-    normalize "@viewer \"a -> b\" var=C\nwrite \"x <- 1\" at z  # z <- z^2"
-      `shouldBe` "@viewer \"a -> b\" var=C\nwrite \"x <- 1\" at z  # z <- z^2"
+    normalize "@viewer \"a -> b\" over C\nwrite \"x <- 1\" at z  # z <- z^2"
+      `shouldBe` "@viewer \"a -> b\" over C\nwrite \"x <- 1\" at z  # z <- z^2"
 
   it "doesn't change what any project script means" $ do
     scripts <- projectScripts

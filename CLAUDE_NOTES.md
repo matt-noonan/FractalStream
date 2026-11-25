@@ -1436,11 +1436,11 @@ script: |
   @config "Configuration"
   C : C as "C =" := -0.11 + 0.78i
 
-  @viewer "Julia set" var=z
+  @viewer "Julia set" over z
   iterate z -> z^2 + C until z escapes
   color <- if stuck then black else rainbow(iterations / 20)
 
-  @tool "Trace" for="Julia set" shortcut=t
+  @tool "Trace" for "Julia set" with shortcut t
   on click:
     erase
     draw point at click

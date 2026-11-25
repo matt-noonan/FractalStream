@@ -4,7 +4,10 @@ script: |
   xsize : R as "Cell width" := 0.035
   shift : R as "Parameter shift" := -0.05
 
-  @viewer "Mandelbrot set throwback" var=w center=-0.75 pixelSize=1/220
+  @viewer "Mandelbrot set throwback" over w
+  setup:
+    center: -0.75
+    pixel size: 1/220
   ysize := 1.66 xsize
 
   C := xsize * floor(re w / xsize) + i * ysize * floor(im w / ysize)

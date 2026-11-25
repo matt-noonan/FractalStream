@@ -8,10 +8,14 @@ script: |
   @common
   f(z) := λ z / (z^2 + t z + 1)
 
-  @viewer "λ-plane" var=λ pixelSize=1/250
+  @viewer "λ-plane" over λ
+  setup:
+    pixel size: 1/250
   color <- if |λ| < 1 then (if re(λ) * im(λ) > 0 then light grey else white) else black
 
-  @viewer "t-plane" var=t vanish=custom_vanishing_radius
+  @viewer "t-plane" over t
+  setup:
+    vanishing radius: custom_vanishing_radius
   # follow both critical points, 1 and -1
   z := 1
   iterate z -> f(z) until z vanishes
@@ -32,11 +36,13 @@ script: |
   if crit2_went_to_0:
     color <- ice(iters2 / 20)
 
-  @viewer "Dynamics" vanish=custom_vanishing_radius
+  @viewer "Dynamics"
+  setup:
+    vanishing radius: custom_vanishing_radius
   iterate z -> f(z) until z vanishes
   color <- if stuck then black else rainbow(iterations / 20)
 
-  @tool "Trace" for=Dynamics shortcut=t
+  @tool "Trace" for "Dynamics" with shortcut t
   on refresh:
     erase
 

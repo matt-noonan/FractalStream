@@ -15,10 +15,10 @@ import Scenario (parseScenario)
 
 project :: String
 project = unlines
-  [ "@viewer \"Z\" center=0 pixelSize=1/128"
+  [ "@viewer \"Z\"\nsetup:\n  center: 0\n  pixel size: 1/128"
   , "color <- if pixel_size = 1/128 then rgb(0, 1, 0) else rgb(1, 0, 0)"
   , ""
-  , "@viewer \"R\" xvar=x yvar=y center=(0, 0) pixelSize=1/64 aspect=2"
+  , "@viewer \"R\" over (x, y)\nsetup:\n  center: (0, 0)\n  pixel size: 1/64\n  aspect: 2"
   , "color <- if pixel_width = 1/64 and pixel_height = 1/32 then rgb(0, 1, 0) else rgb(1, 0, 0)"
   ]
 

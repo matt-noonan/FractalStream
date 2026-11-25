@@ -4,7 +4,10 @@
 # x's, y fixed, captured near a marked point or not within 500 steps.
 format: 1
 script: |
-  @viewer "Fate" var=x center="0.4 + 0.2i" pixelSize="4/600"
+  @viewer "Fate" over x
+  setup:
+    center: 0.4 + 0.2i
+    pixel size: 4/600
   y : C := 0.3 + 0.2i
   w := (x + y - 1) / (x - 1)
   s := x + w

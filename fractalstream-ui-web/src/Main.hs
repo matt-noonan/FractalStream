@@ -882,7 +882,7 @@ startProject how projectTitle fileName rebuilt carried ensemble = do
       Nothing -> applySavedView viewer saved title
     smooth <- newIORef (maybe defaultSmooth cSmooth before)
     history <- newIORef (if sameView then cHistory =<< before else Nothing)
-    -- (the first frame; for a viewer hidden by its `show_if=`, when it's
+    -- (the first frame; for a viewer hidden by its `show if:`, when it's
     -- first shown: see 'onParameterChanges')
     shownAtFirst <- getDynamic (vVisible viewer)
     signal <- if shownAtFirst then newMVar () else newEmptyMVar
@@ -903,7 +903,7 @@ startProject how projectTitle fileName rebuilt carried ensemble = do
     -- (as the desktop app does, the overlay's refreshed when any
     -- configuration value changes, whether or not the viewer re-renders)
     unlisten <- vListenOverlay viewer (void (tryPutMVar draw ()))
-    -- (the page hides the window while the viewer's `show_if=` doesn't
+    -- (the page hides the window while the viewer's `show if:` doesn't
     -- hold, and shows it again when it does)
     unshow <- watchDynamic (vVisible viewer) $ \shown ->
       post $ Aeson.object [ "type" .= ("visible" :: Text.Text), "viewer" .= k, "on" .= shown ]

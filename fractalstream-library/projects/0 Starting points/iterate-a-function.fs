@@ -6,7 +6,7 @@ script: |
   @viewer "Simple complex dynamics"
   iterate z -> f(z) until z escapes
 
-  @tool "Trace" shortcut=t
+  @tool "Trace" with shortcut t
   on refresh:
     erase
   on deactivated:

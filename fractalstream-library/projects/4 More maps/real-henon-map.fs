@@ -15,7 +15,11 @@ script: |
   define step:
     x, y <- 1 - a x² + y, b x
 
-  @viewer "Parameter plane" xvar=a yvar=b center=(0.6, 0) pixelSize=1/250 aspect=1/2
+  @viewer "Parameter plane" over (a, b)
+  setup:
+    center: (0.6, 0)
+    pixel size: 1/250
+    aspect: 1/2
   # Follow the orbit of (0, 0) until it settles down; then look for the
   # period of the cycle it has settled onto.
   x, y := 0, 0
@@ -35,11 +39,15 @@ script: |
       # periods 1, 2, 4, 8, ... a sixth of the way around the color wheel apart
       color <- rainbow(log(iterations) / log(2) / 6)
 
-  @viewer "Dynamical plane" xvar=x yvar=y center=(0, 0) pixelSize=1/200 aspect=1/2
+  @viewer "Dynamical plane" over (x, y)
+  setup:
+    center: (0, 0)
+    pixel size: 1/200
+    aspect: 1/2
   iterate (x, y) -> (1 - a x² + y, b x) until (x, y) escapes
   color <- if stuck then black else cycle(iterations / 10, white, dark blue)
 
-  @tool "Attractor" for="Dynamical plane" shortcut=a
+  @tool "Attractor" for "Dynamical plane" with shortcut a
   points : Z as "Points" := 5000
   on refresh:
     erase
@@ -56,7 +64,7 @@ script: |
   on deactivated:
     erase
 
-  @tool "Orbit" for="Dynamical plane" shortcut=o
+  @tool "Orbit" for "Dynamical plane" with shortcut o
   orbit_length : Z as "Orbit length" := 1000
   on click:
     (x, y) := click

@@ -107,7 +107,7 @@ export class App {
   }
 
   /** Wait for a project to open, and every viewer that's shown to have a
-      frame (one hidden by its show_if= isn't drawn); give its "project"
+      frame (one hidden by its `show if:` isn't drawn); give its "project"
       message. (Slow ones take a while on CI's machines: the forced
       pendulum, 45 to 60 s.) */
   async opened(timeout = 180000) {

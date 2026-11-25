@@ -4,7 +4,9 @@ script: |
   myList : List of C as "Points" := [0, 1, -1, i, -i]
   idx : Z as "Index (1-based)" := 1
 
-  @viewer "List Index" var=z pixelSize="1/48"
+  @viewer "List Index" over z
+  setup:
+    pixel size: 1/48
   n : Z := length(myList)
   # Direct index (1-based): light up point at 'idx'
   chosen : C := myList @ idx

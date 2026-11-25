@@ -1,6 +1,8 @@
 format: 1
 script: |
-  @viewer "List Transform" var=z pixelSize="1/48"
+  @viewer "List Transform" over z
+  setup:
+    pixel size: 1/48
   pts : List of C := [1, i, -1, -i]
   squared : List of C := transform(pts, w -> w^2)
   closest : R := 1000

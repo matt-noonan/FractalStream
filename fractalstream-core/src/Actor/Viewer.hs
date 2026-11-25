@@ -239,7 +239,7 @@ data Viewer = Viewer
   , vOriginalCenter    :: (Double, Double)
   , vOriginalPixelSize :: Double
   , vOriginalAspect    :: Double
-    -- ^ The view the script's own @center=@\/@pixelSize=@\/@aspect=@
+    -- ^ The view the script's own @center=@\/@pixel size:@\/@aspect=@
     -- attributes describe (or the defaults, without them). 'vCenter',
     -- 'vPixelSize', and 'vAspect' start out here too, unless a frontend
     -- restores a saved view over them; either way, a frontend's
@@ -267,7 +267,7 @@ data Viewer = Viewer
     -- ^ The pixel sizes a hyperbolic viewer's displays start with: the
     -- disk's, and the half-plane's
   , vGroup :: Maybe (Dynamic FoldData)
-    -- ^ A hyperbolic viewer's group (@group=@), ready to fold with: its
+    -- ^ A hyperbolic viewer's group (@modulo the group@), ready to fold with: its
     -- code sees points folded into the group's polygon (see
     -- "Actor.Viewer.Group")
   , vOriginalPlaneView :: ((Double, Double), Double)
@@ -285,16 +285,16 @@ data Viewer = Viewer
   , vTools     :: Dynamic [Tool]
   , vTiled     :: Maybe (Variable Bool)
     -- ^ With a lattice or a group, whether it shows all of its tiles
-    -- (@tiled=@, and its menu), or only its fundamental domain, the rest
+    -- (@tiled:@, and its menu), or only its fundamental domain, the rest
     -- greyed out: its tools' drawings aren't copied into other tiles then,
     -- and its view isn't reduced (see 'viewReductionFor').
   , vOriginalTiled :: Maybe Bool
-    -- ^ What its script's @tiled=@ starts 'vTiled' with.
+    -- ^ What its script's @tiled:@ starts 'vTiled' with.
   , vLattice   :: Maybe (Dynamic (Maybe Lattice))
-    -- ^ Its lattice (@lattice=@), if it has one: its tools' drawings are
+    -- ^ Its lattice (`modulo the lattice`), if it has one: its tools' drawings are
     -- repeated in each tile on the screen (see 'overlayProjections').
   , vVisible   :: Dynamic Bool
-    -- ^ Whether the viewer is shown (its @show_if=@): a hidden one's
+    -- ^ Whether the viewer is shown (its @show if:@): a hidden one's
     -- window is hidden, and it isn't drawn (see 'vListen').
   , vSelectTool :: Maybe Tool
     -- ^ The built-in "Select ..." tool (also in 'vTools'), when the

@@ -21,7 +21,7 @@ project = unlines
   , "@viewer \"V\""
   , "color <- grey"
   , ""
-  , "@tool \"T\" for=\"V\""
+  , "@tool \"T\" for \"V\""
   , "on click:"
   , "  p := click"
   , "  k <- autocolor(0, p)"

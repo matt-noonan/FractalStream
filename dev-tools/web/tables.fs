@@ -6,11 +6,13 @@ script: |
   T : Table 2 of C
   C : C := 0
 
-  @viewer "V" var=C pixelSize=1/100
+  @viewer "V" over C
+  setup:
+    pixel size: 1/100
   (w, h) := table_size(T)
   color <- if w = 0 then black else rgb(re(T @ point C) / 600, im(T @ point C) / 600, 0.5)
 
-  @tool "Fill" for="V"
+  @tool "Fill" for "V"
   on click:
     reset T to (viewer_width, viewer_height)
     for each j in range(1, viewer_width):

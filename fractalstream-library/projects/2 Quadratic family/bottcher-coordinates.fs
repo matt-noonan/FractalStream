@@ -110,7 +110,10 @@ script: |
     if dim_invalid and not valid:
       color <- blend(0.35, grey, color)
 
-  @viewer "Dynamical plane" center=0 pixelSize=1/150
+  @viewer "Dynamical plane"
+  setup:
+    center: 0
+    pixel size: 1/150
   # The critical level G(0) = G(C) / 2; zero if C doesn't escape (C is in
   # M, as far as max_iters can tell). This doesn't depend on the pixel, so
   # it runs once per render.
@@ -129,7 +132,10 @@ script: |
   else:
     color <- inside
 
-  @viewer "Parameter plane" var=C center=-0.5 pixelSize=1/150
+  @viewer "Parameter plane" over C
+  setup:
+    center: -0.5
+    pixel size: 1/150
   phi : C := 0
   grad : R := 1
   found := false
@@ -139,7 +145,7 @@ script: |
   else:
     color <- inside
 
-  @tool overlay for="Parameter plane"
+  @tool overlay for "Parameter plane"
   on refresh:
     erase
     use white for stroke
@@ -147,7 +153,7 @@ script: |
     use black for stroke
     draw circle at C with radius 5 pixel_size
 
-  @tool "Böttcher coordinate" for="Dynamical plane" shortcut=b
+  @tool "Böttcher coordinate" for "Dynamical plane" with shortcut b
   text "Click in the dynamical plane to update these values"
   saved_angle : R as "θ =" := 0
   saved_G : R as "G =" := 0
@@ -175,7 +181,7 @@ script: |
   on deactivated:
     erase
 
-  @tool "Trace orbit" for="Dynamical plane" shortcut=t
+  @tool "Trace orbit" for "Dynamical plane" with shortcut t
   on click:
     w := click
     erase

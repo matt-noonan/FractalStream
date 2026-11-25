@@ -71,7 +71,7 @@ shaders script = do
 
 mandelbrot :: String
 mandelbrot = unlines
-  [ "@viewer \"M\" var=C center=-0.75 pixelSize=1/50"
+  [ "@viewer \"M\" over C\nsetup:\n  center: -0.75\n  pixel size: 1/50"
   , "z := 0", "k := 0"
   , "while |z| < 10 and k < 100:", "  z <- z^2 + C", "  k <- k + 1"
   , "color <- rgb(k / 100, 0.5, 1 - k / 100)" ]
@@ -93,7 +93,7 @@ spec = describe "the GPU backends" $ do
 
   it "compile the functions of real and complex numbers" $ do
     results <- shaders $ unlines
-      [ "@viewer \"F\" var=z center=0 pixelSize=1/50"
+      [ "@viewer \"F\" over z\nsetup:\n  center: 0\n  pixel size: 1/50"
       , "w := exp(z) + log(z) + sin(z) + cos(z) + tan(z) + sinh(z) + cosh(z) + tanh(z) + z^(1/3) + sqrt(z)"
       , "t := exp(re z) + log(|z|) + arg(w) + asin(0.5) + acos(0.5) + atan(re z)"
       , "u := asinh(re z) + acosh(2) + atanh(0.5) + mod(re z, 0.3) + (re z)^(im z)"
@@ -104,7 +104,7 @@ spec = describe "the GPU backends" $ do
     results <- shaders $ unlines
       [ "@config \"C\""
       , "ws : List of C := [1, i, -1]"
-      , "@viewer \"L\" var=z center=0 pixelSize=1/50"
+      , "@viewer \"L\" over z\nsetup:\n  center: 0\n  pixel size: 1/50"
       , "xs : List of C := [z, 2 z]"
       , "for each k in range(1, 5):"
       , "  xs <- append(xs, z^k)"
@@ -123,7 +123,7 @@ spec = describe "the GPU backends" $ do
       [ "@config \"C\""
       , "T : Table 2 of C"
       , "U : Table 3 of R x Z"
-      , "@viewer \"T\" var=z center=0 pixelSize=1/50"
+      , "@viewer \"T\" over z\nsetup:\n  center: 0\n  pixel size: 1/50"
       , "w := T @ point z else 0"
       , "(r, k) := U @ (point z, 1) else (0, 0)"
       , "(nx, ny) := table_size(T)"
@@ -135,7 +135,7 @@ spec = describe "the GPU backends" $ do
 
   it "compile autocolor, in each of its modes" $ do
     results <- shaders $ unlines
-      [ "@viewer \"A\" var=z center=0 pixelSize=1/50"
+      [ "@viewer \"A\" over z\nsetup:\n  center: 0\n  pixel size: 1/50"
       , "a := autocolor(0, z)"
       , "b := nearest_autocolor(1, z)"
       , "color <- blend(0.5, blend(0.5, get_autocolor(0, z), b), a)" ]
@@ -147,13 +147,13 @@ spec = describe "the GPU backends" $ do
 
   describe "decline" $ do
     it "text" $ declines (unlines
-      [ "@viewer \"X\" var=z center=0 pixelSize=1/50"
+      [ "@viewer \"X\" over z\nsetup:\n  center: 0\n  pixel size: 1/50"
       , "s := text(\"z = \", z)"
       , "color <- if length([s]) > 1 then white else black" ]) "not on the GPU yet: text"
 
     it "numbers past single precision's range (but for double precision)" $ do
       results <- shaders (unlines
-        [ "@viewer \"N\" var=z center=0 pixelSize=1/50"
+        [ "@viewer \"N\" over z\nsetup:\n  center: 0\n  pixel size: 1/50"
         , "color <- if |z| < 0.00000000000000000000000000000000000000000001 then white else black" ])
       forM_ results $ \(b, r) -> case (b, r) of
         (GpuF64, Right src) -> src `shouldSatisfy` ("rbits(0x" `isInfixOf`)

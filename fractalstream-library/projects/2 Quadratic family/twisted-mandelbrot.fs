@@ -31,16 +31,20 @@ script: |
     r0 : R as "Inner radius" := 0.2
     r1 : R as "Outer radius" := 0.5
 
-  @viewer "Parameter space" var=C colorizer="Binary decomposition"
+  @viewer "Parameter space" over C
+  setup:
+    colorizer: Binary decomposition
   z ≔ 0
   until z escapes:
     run twist_step
 
-  @viewer "Twisted dynamical plane" colorizer="Binary decomposition"
+  @viewer "Twisted dynamical plane"
+  setup:
+    colorizer: Binary decomposition
   until z escapes:
     run twist_step
 
-  @tool "Trace" for="Twisted dynamical plane" shortcut=t
+  @tool "Trace" for "Twisted dynamical plane" with shortcut t
   on deactivated:
     erase
   on click:
@@ -53,7 +57,7 @@ script: |
       run twist_step
       draw line from z to prevZ
 
-  @tool "Dehn twist" for="Twisted dynamical plane" shortcut=d
+  @tool "Dehn twist" for "Twisted dynamical plane" with shortcut d
   on activated:
     run draw_twist
   on deactivated:

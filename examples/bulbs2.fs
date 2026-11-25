@@ -3,7 +3,7 @@ script: |
   @common
   f(z, c) := z^2 + c
 
-  @viewer "Mandelbrot set" var=C
+  @viewer "Mandelbrot set" over C
   z := 0
   iterate z -> f(z, C) until z escapes
 
@@ -12,7 +12,7 @@ script: |
   else:
     color <- black
 
-  @tool "Bulb info" for="Mandelbrot set" shortcut=b
+  @tool "Bulb info" for "Mandelbrot set" with shortcut b
   text "Click on points of the Mandelbrot set to find the period of the attracting cycle."
   text "Points outside of the Mandelbrot set will result in \"X\""
   text "Cycles exceeding the maximum period will result in \"?\""

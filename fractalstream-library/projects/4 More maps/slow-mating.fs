@@ -123,17 +123,22 @@ script: |
       if show_equator and 1 - g < 1.5 px dg:
         color <- red
 
-  @viewer "Slow mating" view=sphere center=1
+  @viewer "Slow mating" on the sphere
+  setup:
+    center: 1
   run mating
 
   # Its coordinate is c1, so its built-in "Select c1" tool (shortcut S)
   # picks c1 by clicking; "Select c2" below picks c2.
-  @viewer "Mandelbrot set" var=c1 center=-0.6 pixelSize=1/180
+  @viewer "Mandelbrot set" over c1
+  setup:
+    center: -0.6
+    pixel size: 1/180
   z := 0
   iterate z -> z^2 + c1 until z escapes
 
   # c1 and c2, always marked
-  @tool overlay for="Mandelbrot set"
+  @tool overlay for "Mandelbrot set"
   on refresh:
     erase
     use black for stroke
@@ -144,7 +149,7 @@ script: |
     draw filled circle at c2 with radius 5 pixel_size
     draw circle at c2 with radius 5 pixel_size
 
-  @tool "Select c2" for="Mandelbrot set" shortcut=2
+  @tool "Select c2" for "Mandelbrot set" with shortcut 2
   on click:
     w := click
     c2 <- w

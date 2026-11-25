@@ -6,7 +6,10 @@
 # is worked out before the render.
 format: 1
 script: |
-  @viewer "Euclidean mod" var=z center=0 pixelSize=1/20
+  @viewer "Euclidean mod" over z
+  setup:
+    center: 0
+    pixel size: 1/20
   # (0 at every pixel, but not known to be before the render)
   s := if re z > 1000000 then 1 else 0
   ok := true

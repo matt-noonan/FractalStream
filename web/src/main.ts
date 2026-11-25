@@ -703,7 +703,7 @@ function showProject(title: string, panel: Layout, infos: ViewerInfo[], views: S
                            menu: () => v.menu(), titleExtra: v.toolChooser ?? undefined });
     win.addEventListener("pointerdown", () => activate(v), { capture: true });
     v.window = win;
-    // (hidden while its script's `show_if=` doesn't hold)
+    // (hidden while its script's `show if:` doesn't hold)
     if (!info.visible) win.style.display = "none";
     // (where it goes on a wide screen: as saved; else, if it's been placed
     // on one, there; tiled to begin with, nowhere yet)

@@ -1,5 +1,5 @@
 -- | Groups acting on the hyperbolic plane (a hyperbolic viewer's
--- @group=@): folding into the fundamental polygon, reducing views, and the
+-- @modulo the group@): folding into the fundamental polygon, reducing views, and the
 -- tiles a drawing is repeated in.
 module Actor.GroupSpec (spec) where
 
@@ -113,23 +113,23 @@ spec = do
 
  describe "a viewer's header" $ do
 
-  it "takes `group=` only in the hyperbolic plane" $ do
-    case parseScript "@viewer \"V\" var=z group=modular\npass\n" of
+  it "takes `modulo the group` only in the hyperbolic plane" $ do
+    case parseScript "@viewer \"V\" over z modulo the modular group\npass\n" of
       Left (_, err) -> err `shouldSatisfy` isInfixOf "Only a viewer of the hyperbolic plane"
       Right _ -> expectationFailure "expected an error"
-    case parseScript "@viewer \"V\" var=z view=disk groupCenter=0.1\npass\n" of
-      Left (_, err) -> err `shouldSatisfy` isInfixOf "needs a `group` too"
+    case parseScript "@viewer \"V\" over z on the disk centered at 0.5\npass\n" of
+      Left (_, err) -> err `shouldSatisfy` isInfixOf "comes with one of those"
       Right _ -> expectationFailure "expected an error"
 
   it "gives a grouped viewer's code side_distance, side_index and fold_count" $
-    checkScript "@viewer \"V\" view=halfplane group=modular\n\
+    checkScript "@viewer \"V\" on the half-plane modulo the modular group\n\
                 \color <- if side_distance < 0.1 and side_index > 0 and fold_count = 0 then red else blue\n"
       `shouldBe` Right ()
 
   it "checks that a group's table is a `Table 2 of C`" $ do
-    checkScript "@config \"G\"\nT : Table 2 of C\n\n@viewer \"V\" view=disk group=T\ncolor <- red\n"
+    checkScript "@config \"G\"\nT : Table 2 of C\n\n@viewer \"V\" on the disk modulo the group T\ncolor <- red\n"
       `shouldBe` Right ()
-    checkScript "@config \"G\"\nT : Table 1 of C\n\n@viewer \"V\" view=disk group=T\ncolor <- red\n"
+    checkScript "@config \"G\"\nT : Table 1 of C\n\n@viewer \"V\" on the disk modulo the group T\ncolor <- red\n"
       `shouldSatisfy` either (isInfixOf "must be a `Table 2 of C`" . snd) (const False)
-    checkScript "@viewer \"V\" view=disk group=nothing\ncolor <- red\n"
+    checkScript "@viewer \"V\" on the disk modulo the group nothing\ncolor <- red\n"
       `shouldSatisfy` either (isInfixOf "is `modular`, or the name of a `Table 2 of C`" . snd) (const False)

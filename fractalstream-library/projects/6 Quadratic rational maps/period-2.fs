@@ -115,27 +115,40 @@ script: |
     else:
       color <- black
 
-  @viewer "Parameter plane" var=c center=0.1 pixelSize=1/150 limit=iters
+  @viewer "Parameter plane" over c
+  setup:
+    center: 0.1
+    pixel size: 1/150
+    iteration limit: iters
   z := 0
   iterate z -> f(z) until z escapes
   run shadeP
 
-  @viewer "Julia set" center=0 pixelSize=1/150 limit=iters
+  @viewer "Julia set"
+  setup:
+    center: 0
+    pixel size: 1/150
+    iteration limit: iters
   iterate z -> f(z) until z escapes
   run shadeP
 
-  @viewer "Plane in Milnor's 1/a (Z/3)" var=b center=0 pixelSize=1/300 limit=iters escape=esc
+  @viewer "Plane in Milnor's 1/a (Z/3)" over b
+  setup:
+    center: 0
+    pixel size: 1/300
+    iteration limit: iters
+    escape radius: esc
   z := -2 b
   iterate z -> g(z) until z escapes
   run shadeM
 
-  @tool overlay for="Parameter plane"
+  @tool overlay for "Parameter plane"
   on refresh:
     erase
     use white for stroke
     draw circle at c with radius 3 pixel_size
 
-  @tool "Trace orbit" for="Julia set" shortcut=t
+  @tool "Trace orbit" for "Julia set" with shortcut t
   on click:
     w := click
     erase

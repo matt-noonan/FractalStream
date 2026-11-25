@@ -18,7 +18,10 @@ script: |
       s <- s + 1 / (z - r)
     z <- z - 1 / s
 
-  @viewer "Newton basins" center=0 pixelSize=1/150
+  @viewer "Newton basins"
+  setup:
+    center: 0
+    pixel size: 1/150
   converged := false
   repeat:
     old := z
@@ -39,7 +42,7 @@ script: |
 
   # Click to add a root at the clicked point; double-click to remove the
   # root nearest to it.
-  @tool "Edit roots" for="Newton basins" shortcut=r
+  @tool "Edit roots" for "Newton basins" with shortcut r
   on refresh:
     erase
     use white for stroke

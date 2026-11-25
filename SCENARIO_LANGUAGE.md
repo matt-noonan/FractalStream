@@ -128,10 +128,10 @@ draws. Tools always run on the CPU.
 | `resize viewer to <W>x<H>` | Change the viewer's pixel dimensions (`WxH`, e.g. `800x600`; viewers start at `600x600`). |
 | `set viewer center to <point>` | Change the model-space point the view is centered on. |
 | `set viewer pixel size to <value-expr>` | Change the model-space size of one pixel (zoom level): its width, in a real viewer. |
-| `set viewer view to disk` (or `halfplane`) | Show a viewer of the hyperbolic plane as the disk (or the half-plane), keeping the view. (A viewer shows the plane or the sphere for good, as its script's `view=` says. On the sphere, `set viewer center to <point>` turns the globe to face the point, and `set viewer pixel size to` sets the size of a pixel in the middle of the globe, measured on the sphere (whose radius is 1): the globe always fills the window, so this sets its zoom.) |
-| `set viewer tiled to false` (or `true`) | Show only the fundamental domain of a viewer with a `lattice=` or a `group=`, the rest of the plane greyed out (or show all of its tiles again), as its menu's "Show fundamental domain" does. Its tools' drawings are only drawn in the domain then, and a group viewer's view isn't reduced as it moves. An error for any other viewer. |
-| `set viewer screen center to <point>` | The point of the drawing at the middle of the window. In a disk viewer (`view=disk`), it's on the disk's drawing, in units of its radius (what scrolling to zoom moves), while `set viewer center` moves the view of the hyperbolic plane; on the plane, it's the same as `set viewer center`. An error on the sphere, whose globe stays in the middle. |
-| `drag view from <point> to <point>` | Move the view as the Navigate tool's drag would, so that the first (model) point ends up where the second is shown now: on the plane, a pan; on the sphere, a turn of the globe; in the disk (`view=disk`), the hyperbolic translation that keeps the point under the pointer. Both points must be visible. In the disk, `set viewer center to <point>` moves the view to show the point in the middle of the disk. |
+| `set viewer view to disk` (or `halfplane`) | Show a viewer of the hyperbolic plane as the disk (or the half-plane), keeping the view. (A viewer shows the plane or the sphere for good, as its script's header says. On the sphere, `set viewer center to <point>` turns the globe to face the point, and `set viewer pixel size to` sets the size of a pixel in the middle of the globe, measured on the sphere (whose radius is 1): the globe always fills the window, so this sets its zoom.) |
+| `set viewer tiled to false` (or `true`) | Show only the fundamental domain of a viewer `modulo` a lattice or a group, the rest of the plane greyed out (or show all of its tiles again), as its menu's "Show fundamental domain" does. Its tools' drawings are only drawn in the domain then, and a group viewer's view isn't reduced as it moves. An error for any other viewer. |
+| `set viewer screen center to <point>` | The point of the drawing at the middle of the window. In a disk viewer (`on the disk`), it's on the disk's drawing, in units of its radius (what scrolling to zoom moves), while `set viewer center` moves the view of the hyperbolic plane; on the plane, it's the same as `set viewer center`. An error on the sphere, whose globe stays in the middle. |
+| `drag view from <point> to <point>` | Move the view as the Navigate tool's drag would, so that the first (model) point ends up where the second is shown now: on the plane, a pan; on the sphere, a turn of the globe; in the disk (`on the disk`), the hyperbolic translation that keeps the point under the pointer. Both points must be visible. In the disk, `set viewer center to <point>` moves the view to show the point in the middle of the disk. |
 | `set viewer aspect to <value-expr>` | Change a real viewer's aspect ratio: the height of a pixel over its width (positive). It's an error in a complex viewer, whose pixels are always square. |
 
 ### Synthetic input (current viewer/tool)
@@ -150,7 +150,7 @@ drag:` (and `on drag-finished:`) handler gets `drag start` = A and
 `drag end` = B; a tool with only `on click:` gets them in that, with
 `click` where the pointer is.
 
-On a sphere viewer (`view=sphere`), a click's or a drag's point can be any
+On a sphere viewer (`on the sphere`), a click's or a drag's point can be any
 point of `Ĉ`, ∞ included (`click at ∞`), which the tool is given exactly,
 as a point of the sphere; elsewhere, it's a point of the plane.
 
@@ -200,7 +200,7 @@ untrue later.
 | `record viewer "<name>" to "<file>" frames <N> fps <F> [loop] [base] using "<script>"` | Record a movie of the named viewer (see "Recording movies" below): before each of the `N` frames, run the script's `animate` block with the time, going from 0 to 1. |
 | `record viewer "<name>" to "<file>" frames <N> fps <F> [loop] [base] [inset "<viewer>" [at <corner>]] moving <var> along <point>, <point>, ...` | The same, but moving the complex configuration variable `var` along the path through the given points, at a steady speed (by length in model coordinates). `moving (<x>, <y>) along ...` moves a pair of real configuration variables instead, `x` along the points' first coordinates and `y` along their second. With `inset`, the named viewer (a parameter plane, say) is shown in a corner of each frame (`at top left`, `top right`, `bottom left`, or `bottom right`, the default), with a crosshair at the path's current point. |
 
-A viewer whose `show_if=` doesn't hold is hidden in the apps, so a
+A viewer whose `show if:` doesn't hold is hidden in the apps, so a
 `capture`, `assert` or `record` of it (and `fsrun snapshot` of it) is an
 error that says it's hidden, rather than a picture nobody would see.
 

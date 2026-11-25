@@ -65,10 +65,14 @@ script: |
   @common
   f(z) := z^2 + C
 
-  @viewer "Dynamical plane" center=0 pixelSize=1/150 colorizer=Smooth
+  @viewer "Dynamical plane"
+  setup:
+    center: 0
+    pixel size: 1/150
+    colorizer: Smooth
   iterate z -> f(z) until z escapes
 
-  @tool "Trace" for="Dynamical plane" shortcut=t
+  @tool "Trace" for "Dynamical plane" with shortcut t
   on click:
     w := click
     erase
@@ -113,8 +117,8 @@ script: |
   tuple by its length. For more than that, write an `until c:` loop with
   a body.
 - In tools, without `at w` a click binds the viewer's own coordinate
-  name; on a parameter-plane viewer (`var=C` where `C` is in `@config`,
-  or `xvar=a yvar=b` with real `a`, `b` there) that **sets the
+  name; on a parameter-plane viewer (`over C` where `C` is in `@config`,
+  or `over (a, b)` with real `a`, `b` there) that **sets the
   parameter(s)** to the clicked point. Use `at w` unless
   that's the point of the tool.
 - Lists are 1-based. `xs @ k` binds like multiplication: `xs @ k + 1` is
@@ -124,7 +128,7 @@ script: |
   in a tool's declarations (a `@config` button is an error).
 - `text(...)` needs at least two arguments: `text("n = ", n)`.
 - A viewer whose body never assigns `color` is colored by its colorizer
-  (`Rainbow` unless `colorizer=` says otherwise); assigning `color`
+  (`Rainbow` unless `colorizer:` setting says otherwise); assigning `color`
   anywhere switches it to `Manual`. Don't hand-write escape-time
   coloring a built-in colorizer already does (reference.md lists them).
 
@@ -132,7 +136,7 @@ script: |
 
 - **Complex polynomial / rational map.** `@config` for the parameters, the
   map as `f(z) := ...` in `@common`, a dynamical-plane viewer, and if
-  the map has a parameter, a parameter-plane viewer with `var=<param>`
+  the map has a parameter, a parameter-plane viewer with `over <param>`
   starting at the critical point (`z := 0` for z^2 + C; in general, the
   critical point as a function of the parameter). Don't write a tool for
   picking the parameter: a viewer whose coordinate is a `@config`
@@ -147,7 +151,7 @@ script: |
 - **Distance estimation, potentials, smooth coloring.** See
   `examples/distance-estimate.fs` and the smooth-coloring `define shade`
   in `examples/mandelbrot-julia.fs`. Use a large escape radius
-  (`escape=` attribute) when the formula assumes one, and `pixel_size` for
+  (`escape radius:` setting) when the formula assumes one, and `pixel_size` for
   pixel-relative thresholds.
 - **Basins of attraction / root finding.** Iterate until two successive
   iterates agree (`until z stops`, which compares within
@@ -155,15 +159,15 @@ script: |
   reached (`rainbow(arg z / (2 pi))` or by an index), shaded by
   `iterations`. See `examples/newton-roots.fs` (roots in a configurable
   list, edited by clicking). When the roots aren't known in closed form,
-  leave `color` unset and use `colorizer=Autocolor` (it reads the viewer's
+  leave `color` unset and use `colorizer: Autocolor` (it reads the viewer's
   `z`), which gives each root a color the first time it's seen (library
   project `3 Newton's method/newton-quintic.fs`); in a parameter plane, set
   `allow_new <- false` in a `coloring:` block so it reuses the dynamical
   plane's colors (`newton-cubic-parameter-plane.fs`). LLVM only, and the
   colors depend on the order points are seen until the project is saved.
-- **Real maps and real 2-D systems.** Use a real viewer, `@viewer "..."
-  xvar=x yvar=y center=(0, 0)`, and loop over both coordinates (add
-  `aspect=` when the axes need different scales; read `pixel_height`
+- **Real maps and real 2-D systems.** Use a real viewer, `@viewer "..." over (x, y)`
+  (with `center: (0, 0)` in its `setup:`), and loop over both coordinates (add
+  an `aspect:` setting when the axes need different scales; read `pixel_height`
   for the vertical pixel size). Tools can bind `at (x, y)` and draw at
   `(x, y)`. See `examples/real-map.fs`. A 1-D real family can be
   a bifurcation-style picture with the parameter on one axis (library

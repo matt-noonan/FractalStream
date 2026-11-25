@@ -23,12 +23,18 @@ script: |
     else:
       color <- inside
 
-  @viewer "Parameter plane" var=C center=-0.5 pixelSize=1/150
+  @viewer "Parameter plane" over C
+  setup:
+    center: -0.5
+    pixel size: 1/150
   z := 0
   iterate z -> f(z) until z escapes
   run shade
 
-  @viewer "Julia set" center=0 pixelSize=1/150
+  @viewer "Julia set"
+  setup:
+    center: 0
+    pixel size: 1/150
   iterate z -> f(z) until z escapes
   run shade
 
@@ -36,7 +42,7 @@ script: |
   # a built-in "Select C" tool (shortcut S) that sets C by clicking; no
   # tool needs to be written for that.
 
-  @tool "Trace orbit" for="Julia set" shortcut=t
+  @tool "Trace orbit" for "Julia set" with shortcut t
   on click:
     w := click
     erase

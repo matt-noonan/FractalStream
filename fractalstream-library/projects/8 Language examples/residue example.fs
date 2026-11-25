@@ -12,7 +12,7 @@ script: |-
   w ≔ f(z)
   color ⟵ hsl(1/2 + ((arg(w) + 3 π / 2)/ (2 π)), 1, 2 arctan(|w|) / π)
 
-  @tool overlay for="z plane"
+  @tool overlay for "z plane"
   on refresh:
     erase
     res ≔ residue(f, z0, r, steps)

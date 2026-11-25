@@ -4,7 +4,9 @@ script: |
   size : R as "Julia set size" := 0.05
   scale : R as "Julia set zoom level" := 2.5
 
-  @viewer "Mandelbrot set tiled by Julia sets" var=w colorizer=Smooth
+  @viewer "Mandelbrot set tiled by Julia sets" over w
+  setup:
+    colorizer: Smooth
   x := mod(re w, size)
   y := mod(im w, size)
 

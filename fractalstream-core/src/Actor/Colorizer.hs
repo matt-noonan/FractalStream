@@ -114,7 +114,9 @@ builtinColorizers =
       , colorizerCode = Nothing
       }
   , builtin $ unlines
-      [ "@colorizer \"Rainbow\" description=\"Escaping points will cycle through \
+      [ "@colorizer \"Rainbow\""
+      , "setup:"
+      , "  description: \"Escaping points will cycle through \
         \the rainbow by iteration count; the rest are black.\""
       , "color_speed : R as \"Iterations per color cycle:\" := 20"
       , "use_arenberg : Boolean as \"Use Arenberg rainbow\" := false"
@@ -125,7 +127,9 @@ builtinColorizers =
       , "    color <- if use_arenberg then arenberg(t) else rainbow(t)"
       ]
   , builtin $ unlines $
-      [ "@colorizer \"Escape time\" description=\"Bands of color by iteration count, \
+      [ "@colorizer \"Escape time\""
+      , "setup:"
+      , "  description: \"Bands of color by iteration count, \
         \from a choice of palettes.\""
       , paletteDecl
       , "period : R as \"Iterations per color cycle:\" := 20"
@@ -141,7 +145,9 @@ builtinColorizers =
       , "      color <- cycle(iterations / period, light color, dark color)"
       ]
   , builtin $ unlines $
-      [ "@colorizer \"Smooth\" description=\"Continuous color by escape time, \
+      [ "@colorizer \"Smooth\""
+      , "setup:"
+      , "  description: \"Continuous color by escape time, \
         \without bands, from a choice of palettes. Its argument is the variable \
         \that escapes.\""
       , paletteDecl
@@ -159,7 +165,9 @@ builtinColorizers =
       , "    color <- " ++ paletteExpr
       ]
   , builtin $ unlines
-      [ "@colorizer \"Binary decomposition\" description=\"Smooth color by escape \
+      [ "@colorizer \"Binary decomposition\""
+      , "setup:"
+      , "  description: \"Smooth color by escape \
         \time, in different colors when the escaping variable ends up in the upper \
         \or lower half-planes. Its argument is the variable that escapes.\""
       , "period : R as \"Iterations per color cycle:\" := 10"
@@ -182,7 +190,9 @@ builtinColorizers =
       , "    color <- if im z > 0 then cycle(s / period, upper2, upper1) else cycle(s / period, lower2, lower1)"
       ]
   , builtin $ unlines
-      [ "@colorizer \"Autocolor\" description=\"Gives each point its argument ends up \
+      [ "@colorizer \"Autocolor\""
+      , "setup:"
+      , "  description: \"Gives each point its argument ends up \
         \at a color of its own, the first time it's seen.\
         \Viewers using it share its colors, using autocolor group 0.\
         \When locked, a point near none of the autocolor points\
@@ -206,7 +216,9 @@ builtinColorizers =
       , "      color <- cycle(iterations / period, light color, dark color)"
       ]
   , builtin $ unlines $
-      [ "@colorizer \"Glow\" description=\"Blends between two colors by how close \
+      [ "@colorizer \"Glow\""
+      , "setup:"
+      , "  description: \"Blends between two colors by how close \
         \the iteration count came to the iteration limit.\""
       , "brightness : R as \"Brightness exponent:\" := 0.5"
       , "row:"
@@ -349,7 +361,7 @@ applyColorizers choices stanzas = do
             , Set.fromList (coordinateNames vsCoord ++ maybeToList vsPixelVar ++ realPixelVars vsCoord)
             , topLevelNames vsCode ]
           resolve = resolveChoice available vsFunctions scope
-      defaultChoice <- left (\err -> (NoSourceRange, "The `colorizer=` attribute of the viewer "
+      defaultChoice <- left (\err -> (NoSourceRange, "The `colorizer:` setting of the viewer "
                                        ++ show vsTitle ++ " can't be used: " ++ err))
                             (resolve fallback)
       let (choice, warnings) = case Map.lookup vsTitle choices of

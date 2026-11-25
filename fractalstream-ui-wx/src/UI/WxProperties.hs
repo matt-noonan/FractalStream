@@ -5,7 +5,7 @@
 -- is, whether it can be resized or is hidden, and what part of the
 -- model it is currently looking at -- plus where the configuration
 -- window sits. None of this belongs to the script: the script's own
--- @center=@\/@pixelSize=@ only give a viewer's /original/ view, which
+-- @center=@\/@pixel size:@ only give a viewer's /original/ view, which
 -- its "Original view" action returns to.
 --
 -- A 'WxLayout' is one session's record of all of this. It holds the
@@ -98,7 +98,7 @@ data ViewerProperties = ViewerProperties
     -- pixel size are then on the disk's screen plane.
   , vpTiled     :: Maybe Bool
     -- ^ With a lattice or a group, whether it shows all of its tiles,
-    -- when that isn't what its script's @tiled=@ starts it with.
+    -- when that isn't what its script's @tiled:@ starts it with.
   }
 
 instance FromJSON ViewerProperties where

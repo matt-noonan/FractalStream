@@ -1,6 +1,8 @@
 format: 1
 script: |
-  @viewer "Arena overflow test" var=z pixelSize="1/128"
+  @viewer "Arena overflow test" over z
+  setup:
+    pixel size: 1/128
   # Arena overflow visual test
   # ─────────────────────────
   # Arena capacity : 1 MB = 1 048 576 bytes

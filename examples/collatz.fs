@@ -9,7 +9,9 @@ script: |
   # a complex extension of the Collatz map, z/2 or 3z + c depending on parity
   step(z, c) := (z/2) (cos (pi z / 2))^2 + (3z + c) (sin (pi z / 2))^2
 
-  @viewer "Collatz sequence" escape=collatz_escape_radius
+  @viewer "Collatz sequence"
+  setup:
+    escape radius: collatz_escape_radius
   iterate z -> step(z, C) until z = 1 or z = 0 or z = -1 or z = -5 or z = -17 or z escapes
   color <- black
   if z = 1:
@@ -27,7 +29,7 @@ script: |
   if not stuck:
     color <- cycle(iterations/20, dark color, light color)
 
-  @tool "Trace" for="Collatz sequence" shortcut=t
+  @tool "Trace" for "Collatz sequence" with shortcut t
   on click:
     z := click
     prevZ := z

@@ -1,4 +1,4 @@
--- | A sphere viewer's tools (@view=sphere@), end to end: their events and
+-- | A sphere viewer's tools (@on the sphere@), end to end: their events and
 -- their drawings are at points of the Riemann sphere, ∞ included, as
 -- homogeneous coordinates, exactly.
 --
@@ -18,10 +18,10 @@ import Data.List (isInfixOf)
 -- its rim, 0.46 of the window (276 pixels) in radius.
 project :: String -> String
 project tool = unlines $
-  [ "@viewer \"S\" view=sphere center=1000000000"
+  [ "@viewer \"S\" on the sphere\nsetup:\n  center: 1000000000"
   , "color <- grey"
   , ""
-  , "@tool \"T\" for=\"S\""
+  , "@tool \"T\" for \"S\""
   , "on click:"
   , "  p := click"
   , "  erase"

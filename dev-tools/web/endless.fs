@@ -15,7 +15,7 @@ script: |
   @viewer "W"
   color <- grey
 
-  @tool overlay for="W"
+  @tool overlay for "W"
   on refresh:
     erase
     x : R := 0
@@ -24,7 +24,7 @@ script: |
         x <- x + 1
     draw point at 0
 
-  @tool "Loop" for="V" shortcut=l
+  @tool "Loop" for "V" with shortcut l
   on click:
     count <- 100
     x : R := 0
@@ -33,11 +33,11 @@ script: |
         x <- x + 1
     draw point at 0
 
-  @tool "Count" for="V" shortcut=c
+  @tool "Count" for "V" with shortcut c
   on click:
     count <- count + 1
 
-  @tool "Slow refresh" for="V" shortcut=s
+  @tool "Slow refresh" for "V" with shortcut s
   on refresh:
     x : R := 0
     while x >= 0 up to 2000000000 times:

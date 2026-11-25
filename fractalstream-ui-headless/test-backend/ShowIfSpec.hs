@@ -1,6 +1,6 @@
--- | A viewer's @show_if=@, in a scenario: a hidden viewer can't be drawn
+-- | A viewer's @show if:@, in a scenario: a hidden viewer can't be drawn
 -- (a capture or assert of it says why), and once a tool makes its
--- @show_if=@ hold, it's drawn as usual.
+-- @show if:@ hold, it's drawn as usual.
 --
 -- (Plain strings, not a quasiquote; see "OverlaySpec".)
 module ShowIfSpec (spec) where
@@ -20,16 +20,16 @@ project = unlines
   , "C : C := 0"
   , "selected_C : Bool := false"
   , ""
-  , "@viewer \"Mandelbrot set\" var=C"
+  , "@viewer \"Mandelbrot set\" over C"
   , "z := 0"
   , "iterate z -> z^2 + C until z escapes"
   , "color <- if z escaped then white else black"
   , ""
-  , "@viewer \"Julia set\" show_if=selected_C"
+  , "@viewer \"Julia set\"\nsetup:\n  show if: selected_C"
   , "iterate z -> z^2 + C until z escapes"
   , "color <- if z escaped then white else black"
   , ""
-  , "@tool \"Pick C\" for=\"Mandelbrot set\""
+  , "@tool \"Pick C\" for \"Mandelbrot set\""
   , "on click:"
   , "  C <- click"
   , "  selected_C <- true"

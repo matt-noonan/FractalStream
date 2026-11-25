@@ -1,6 +1,9 @@
 format: 1
 script: |
-  @viewer "List Literal — Integer" var=z center="1.5 + 1.5i" pixelSize="1/64"
+  @viewer "List Literal — Integer" over z
+  setup:
+    center: 1.5 + 1.5i
+    pixel size: 1/64
   ns : List of Z := [0, 1, 2, 3]
   n : Z := length(ns)
   closest : R := 1000

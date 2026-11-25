@@ -222,7 +222,7 @@ writeSpec = describe "tables, in a tool" $ do
     let src = unlines
           [ "@config \"P\"", "T : Table 2 of R", ""
           , "@viewer \"V\"", "T @ (1, 1) <- 1", "color <- red", ""
-          , "@tool \"Fill\" for=\"V\"", "on click:"
+          , "@tool \"Fill\" for \"V\"", "on click:"
           , "  reset T to (viewer_width, viewer_height)"
           , "  T @ (1, 1) <- 2" ]
     builds src >>= (`shouldSatisfy` either ("Only a tool" `isInfixOf`) (const False))

@@ -3,5 +3,8 @@
 # CSS pixels wide on any screen, as on the desktop.
 format: 1
 script: |
-  @viewer "V" center=0 pixelSize=1/128
+  @viewer "V"
+  setup:
+    center: 0
+    pixel size: 1/128
   color <- if |re z| < 2 pixel_size then black else white

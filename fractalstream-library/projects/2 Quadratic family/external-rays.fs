@@ -3,24 +3,32 @@ script: |
   @config "Configuration"
   C : C as "f(z) = z² +" := -0.11 + 0.78i
 
-  @viewer "Dynamical plane" center=0 pixelSize=1/128 colorizer="Binary decomposition"
-  coloring:
-    period <- 1
-    smooth <- false
-    upper2 <- rgb(0.067, 0.502, 0.008)
-    lower2 <- rgb(0.502, 0.000, 0.502)
+  @viewer "Dynamical plane"
+  setup:
+    center: 0
+    pixel size: 1/128
+    colorizer: Binary decomposition
+    coloring:
+      period <- 1
+      smooth <- false
+      upper2 <- rgb(0.067, 0.502, 0.008)
+      lower2 <- rgb(0.502, 0.000, 0.502)
   iterate z ⟼ z² + C until z escapes
 
-  @viewer "Parameter plane" var=C center=0 pixelSize=1/128 colorizer="Binary decomposition"
-  coloring:
-    period <- 1
-    smooth <- false
-    upper2 <- rgb(0.067, 0.502, 0.008)
-    lower2 <- rgb(0.502, 0.000, 0.502)
+  @viewer "Parameter plane" over C
+  setup:
+    center: 0
+    pixel size: 1/128
+    colorizer: Binary decomposition
+    coloring:
+      period <- 1
+      smooth <- false
+      upper2 <- rgb(0.067, 0.502, 0.008)
+      lower2 <- rgb(0.502, 0.000, 0.502)
   z ≔ 0
   iterate z ⟼ z² + C until z escapes
 
-  @tool "Parameter plane external rays" for="Parameter plane" shortcut=r
+  @tool "Parameter plane external rays" for "Parameter plane" with shortcut r
   row:
     ps : List of Z as "Numerators: " := [0, 1, 2]
     q : Z as "Denominator: " := 3
@@ -68,7 +76,7 @@ script: |
   on deactivated:
     erase
 
-  @tool "Dynamical plane external rays" for="Dynamical plane" shortcut=r
+  @tool "Dynamical plane external rays" for "Dynamical plane" with shortcut r
   row:
     ps : List of Z as "Numerators:" := [1, 2, 4]
     q : Z as "Denominator:" := 7
