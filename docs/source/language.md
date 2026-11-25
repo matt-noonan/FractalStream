@@ -862,6 +862,15 @@ Lines and circles are drawn in the geometry of the tool's viewer:
 On a sphere viewer, the points are points of `Ĉ`, so a tool can draw at `∞`, or draw a line
 through it.
 
+The text a tool writes can be built from parts with `text`, which writes its arguments one after
+another: `write text("C = ", C) at C`. Inside quoted text, write `\"` for a quotation mark, `\\`
+for a backslash, `\n` for a line break, and `\t` for a tab.
+
+A circle's radius is measured in the viewer's geometry, so a circle drawn as a marker gets larger
+and smaller as the view zooms; give the radius in `pixels` for a marker that's always the same size.
+In a viewer whose scale varies across the window (the sphere, or the hyperbolic plane),
+`pixel_size_at(p)` is the size of a screen pixel at the point `p`, in the viewer's own units.
+
 ### Script fragments
 
 Sometimes different scripts in a project want to share some code in common. In those cases, the
