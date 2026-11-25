@@ -435,6 +435,45 @@ scientific color maps); and `ice`, `fire`, `wheat`, `rose`, `forest`, `ocean`, `
 `summer` and `fall`, which go out through five colors and back. For example,
 `color <- rainbow(iterations / 20)` goes once around the rainbow every 20 iterations.
 
+(autocolor)=
+#### Automatic colors
+
+`autocolor(n, p)` gives each distinct point `p` a color of its own, the first time it sees that
+point. It's for coloring by points you don't know in advance, like the root Newton's method finds:
+
+```{code-block} fs
+---
+caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=NYxRCoJAEIbfPcWPLyok5UMvUtEJOkJg24hLqyO7Y8LSS4fqQp2kUehhmI-Pj79l3zdSo0qC8XZUeiXA2XDf86A05rFAfUS87lEi6lXJEjwtzeSRXmgWHrKAnqTjO1r2iN_35x-nGlsh3wgt4rTadXSLMVv-NIh1qoPwGLQ27HTjUMK26ibzgHQ04OYaRXKB0EzCa5XvNohF8gM)
+---
+@common
+p(z) := z^5 - z - 1
+
+@viewer "Newton's method for z⁵ - z - 1"
+iterate z -> z - p(z) / p'(z) until z stops
+color <- if stuck then black else autocolor(0, z)
+```
+
+Points are kept in numbered *groups*: `n` is the group's number, written as a number
+(`autocolor(0, z)`, not `autocolor(k, z)`). Viewers that use the same group share its colors, so a
+parameter plane and a dynamical plane can agree on what color each root is. A point gets the color
+of the nearest point already in its group, if there's one within the group's tolerance (0.001 to
+begin with), and otherwise a new color. Two other functions look a point up the same way, but never
+add one:
+
+| Function | For a point near none of the group's points |
+| -------- | ------------------------------------------- |
+| `nearest_autocolor(n, p)` | the group's "miss" color (grey, to begin with) |
+| `get_autocolor(n, p)` | a blend of all the group's colors, the nearer points weighing more |
+
+`get_autocolor` is the one for a viewer that should only use colors other viewers found, like a
+parameter plane, whose points are all different. A group stops adding points once it's locked, or
+once it has 256 of them.
+
+Which point gets which color depends on the order the points are first seen in, which can differ
+each time a project is drawn from scratch; saving the project saves its groups' colors, and then
+they stay put. The "Autocolor settings" page of the configuration window's "Color settings" shows
+each group's points and colors, and can change, add, delete or lock them.
+
 
 ### List and table indexing
 

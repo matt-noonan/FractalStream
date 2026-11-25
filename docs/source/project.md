@@ -360,6 +360,105 @@ on button "Erase":
   erase
 ```
 
+(colorizers)=
 ## Colorizers
 
-**TODO**
+A viewer's script often only says what to compute, like `iterate z -> z^2 + C until z escapes`,
+and leaves the coloring to a *colorizer*: a small piece of script that runs at the end of the
+viewer's code and sets `color`. Each viewer has one, which can be changed from its menu (under
+"Colorizer"), and which is saved with the project. When nothing says which colorizer a viewer
+uses, it gets `Manual` (which does nothing) if its script sets `color` itself, and `Rainbow` if it
+doesn't. A viewer names its own with a `colorizer:` setting, and changes the colorizer's settings
+from their defaults with a `coloring:` block, both in its `setup:`:
+
+```{code-block} fs
+---
+caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=TY9Bi8JADIXv_RWPuS7VVvBSVATPgrB7FsY26sB0UjKjLsUfb9qieAgkX15ekjNLa1OFMou1uE6zZwZsaw5nd4E5WLEtJZJoFO9QDbFGkQ2iu6MHCczehob8STghUjLgu9KdKrS6dZUmQE1BXSrkxWw5gs79k0d0Peny-aIoJhl7FmWq_G2Z0_WLhstkpbPWU0qEVQ7z9-CpP174UZdDU6h5T5A4bgZWjpv66QvA6VVWrXrkG_THBX70w1tIziuiWNuOYvYC)
+---
+@config "Parameters"
+C : C := 0
+
+@viewer "Mandelbrot set" over C
+setup:
+  center: -0.5
+  pixel size: 1/200
+  colorizer: Smooth
+  coloring:
+    palette <- "Two colors"
+    color1 <- red
+    period <- 100
+z := 0
+iterate z -> z^2 + C until z escapes
+```
+
+FractalStream's own colorizers are:
+
+| Colorizer | Arguments | What it does |
+| --------- | --------- | ------------ |
+| `Manual` | | Nothing: the viewer's script sets `color`. |
+| `Rainbow` | `t = iterations / color_speed` | Points that escape cycle through the rainbow; the rest are black. |
+| `Escape time` | `t = iterations / period` | Like `Rainbow`, with a choice of palettes (or two colors of your own). |
+| `Smooth` | `z` | Continuous color by escape time, without bands, from a choice of palettes. |
+| `Binary decomposition` | `z` | Color by escape time, different where `z` ends up in the upper and lower half-planes, which outlines the external rays. |
+| `Glow` | | Blends between two colors by how close the iteration count came to the iteration limit. |
+| `Autocolor` | `z` | A color for each point `z` ends up at, by {ref}`autocolor`: the basins of Newton's method, without knowing its roots. |
+
+Each colorizer's settings (like `Rainbow`'s "Iterations per color cycle") appear on the viewer's
+page of the configuration window's "Color settings", and each viewer has its own copy of them. In
+a `coloring:` block, a setting with a list of choices (like `palette` above) is given its choice's
+name in quotes.
+
+### Arguments
+
+Some colorizers have parameters, given as arguments in parentheses after the name. A parameter
+without an argument uses its default value, if it has one, and otherwise the viewer's variable of
+the same name: so `Smooth` uses the viewer's `z`, and `Smooth(w)` uses `w` instead. An argument can
+be any expression, using the viewer's variables and functions. For example, `Rainbow` colors by
+iteration count, and `Rainbow(arg z / (2π))` colors by the angle of `z`, which shows the basins of
+Newton's method:
+
+```{code-block} fs
+---
+caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=FYoxDoJAEEV7TvFDI1sYA3QUxhNYcACSFUfdBBgyO7jJxsIbeiWH5v-f_96DZfbaoS7iKGG19SmAyztQIkF5paS8HCJm0hffS2ORdFs7G8DIE0vIJB16H5Ybp8rLExknVM3v65xZQUm8kp3H8x6o8tBa1W63WuShcdgWDZPRqLzG4g8)
+---
+@viewer "Newton's method"
+setup:
+  colorizer: Rainbow(arg z / (2π))
+iterate z -> z - (z^3 - 1) / (3 z^2) until z stops
+```
+
+### Writing a colorizer
+
+A project can define colorizers of its own, with `@colorizer` stanzas. A `@colorizer` stanza has
+its settings, declared like a `@config` stanza's, then its code, as a block called `colorize`:
+
+```{code-block} fs
+---
+caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=XVHLasMwELz7KwafbJqnoRREWwI9tcf2nqLY62SJIhlJrqnJoX_YX6pkpTnkIqTdmWFm1Bp7kl5gnbnachdu5wzY1EYZyyNZ5B8nY_wBeysbJu3zsHbk-06EC9BQ4rHR4oqd2NiRH4g0_GDSxC0iuSPLpoHAO6RD_jJh0zCHeEK1CiDWjhsKoLSOwFftI8gmrQm6U7I-Zll00bIm_LsuxjK54xYjgkPZUZMmwCkyOWjJaNrhDmvMocweRTzO4xnL6Zl4nzF378rLsLqopIiP8-CBdFPUxhW_P0F7eYlSbqsZFO8PHt-klBlmaKQ9BnhP5aRBypG4VUu5Y6TNF9MQ-3_rFctY-U3z1y8SuPmi2N-Uj0L6-TPGbRUSrhbrKoRdLR7uwei1Z3Utx2V_)
+---
+@colorizer "Smooth gradient"
+setup:
+  description: "Smooth color between two colors."
+period : R as "Color period" := 20
+inside : Color as "Interior color" := black
+
+define colorize(z):
+  if z escaped:
+    m := iterations + 1 - log (log |z| / log escape_radius) / log 2
+    color <- blend(cos(π m / period)^2, light yellow, dark blue)
+  else:
+    color <- inside
+
+@viewer "Julia set"
+setup:
+  colorizer: Smooth gradient
+iterate z -> z^2 - 0.12 + 0.75 i until z escapes
+```
+
+Its code runs at the end of the viewer's code, so it can use the viewer's `iterations` and `stuck`,
+the configuration, and `@common`'s definitions; the viewer's own variables come to it as
+arguments. Its parameters can have default values, which can use its settings and its earlier
+parameters: `define colorize(t = iterations / period):`. The names a colorizer declares are its
+own, so they can't clash with the viewer's. A `@colorizer` with the same name as one of
+FractalStream's own is used instead of it.
+
