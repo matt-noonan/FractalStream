@@ -116,7 +116,7 @@ librarySections =
     projects = [ (dir, (name, contents))
                | (path, contents) <- embeddedLibrary
                , [dir, name] <- [splitDirectories path]
-               , takeExtension name == ".fs" ]
+               , takeExtension name `elem` [".fs", ".fsz"] ]
 
 -- | Where a user's own projects go by default: a @FractalStream@ folder
 -- in their documents folder (which needn't exist yet).

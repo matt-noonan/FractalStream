@@ -54,6 +54,7 @@ import Data.Aeson
 import Data.Aeson.Types (parseEither)
 import qualified Data.Aeson.KeyMap as KM
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Internal as BSI
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as BL8
 import qualified Data.Map as Map
@@ -62,6 +63,9 @@ import Control.Exception (SomeException, try)
 import Numeric (showHex)
 import Data.Char (isAlphaNum)
 import qualified Data.Yaml as YAML
+import Codec.Picture
+import qualified Data.Vector.Storable as VS
+import Foreign.ForeignPtr (castForeignPtr)
 
 -- | One saved table.
 data SavedTable = SavedTable
@@ -77,19 +81,30 @@ data SavedTable = SavedTable
 
 type SavedTables = Map String SavedTable
 
+data TableEncoding = RawTable | PngTable | JpegTable
+
+instance FromJSON TableEncoding where
+  parseJSON = withText "encoding" $ \case
+    "raw"    -> pure RawTable
+    "png"    -> pure PngTable
+    "jpeg"   -> pure JpegTable
+    encoding -> fail ("its encoding is " ++ show encoding ++ ", which this version of " ++
+                      "FractalStream can't read")
+
 -- | A table's description: what's in its file, and where that is
 -- (beside the description).
 data TableInfo = TableInfo
-  { tiFile :: FilePath, tiType :: String, tiSize :: [Int]
+  { tiFile :: FilePath
+  , tiEncoding :: TableEncoding
+  , tiType :: String
+  , tiSize :: [Int]
   , tiOrigin :: (Double, Double), tiStep :: (Double, Double), tiSha256 :: Maybe String }
 
 instance FromJSON TableInfo where
-  parseJSON = withObject "table" $ \o -> do
-    encoding <- o .:? "encoding" .!= ("raw" :: String)
-    unless (encoding == "raw") $
-      fail ("its encoding is " ++ show encoding ++ ", which this version of FractalStream can't read")
-    TableInfo <$> o .: "file" <*> o .: "type" <*> o .: "size" <*> o .: "origin" <*> o .: "step"
-              <*> o .:? "sha256"
+  parseJSON = withObject "table" $ \o ->
+    TableInfo <$> o .: "file" <*> (o .:? "encoding" .!= RawTable) <*> o .: "type"
+              <*> o .: "size" <*> o .: "origin"
+              <*> o .: "step" <*> o .:? "sha256"
 
 -- | The tables a project's @manifest:@ says it has (each by its
 -- description's path), from its archive's files (by path); and a warning
@@ -114,11 +129,22 @@ readTableAt files path = do
   TableInfo{..} <- either (\e -> Left ("its description can't be read: " ++ show e)) Right
                      (YAML.decodeEither' (BL.toStrict described))
   let file = folderOf path ++ tiFile
-  bytes <- maybe (Left ("its file " ++ show file ++ " isn't there")) Right (Map.lookup file files)
+  bytes0 <- maybe (Left ("its file " ++ show file ++ " isn't there")) Right (Map.lookup file files)
+  bytes <- convertBytes tiEncoding bytes0
   pure (SavedTable tiType tiSize tiOrigin tiStep bytes tiSha256)
   where
     -- (archive paths: always with /, whatever the platform)
     folderOf p = reverse (dropWhile (/= '/') (reverse p))
+
+convertBytes :: TableEncoding -> BL.ByteString -> Either String BL.ByteString
+convertBytes enc bs = case enc of
+    RawTable  -> pure bs
+    PngTable  -> imgToBytes <$> decodePng (BL.toStrict bs)
+    JpegTable -> imgToBytes <$> decodeJpeg (BL.toStrict bs)
+  where
+    imgToBytes img =
+      let (fptr, offset, len) = VS.unsafeToForeignPtr (imageData $ convertRGB8 img)
+      in BL.fromStrict $ BSI.fromForeignPtr (castForeignPtr fptr) offset len
 
 -- | A table's two files, @<base>.yaml@ (its description) and @<base>.bin@
 -- (its elements), @base@ a path with /. The description is written a
@@ -211,7 +237,7 @@ loadSavedTable elemTy st = do
     Right (Right t) -> do
       actual <- hex . SHA256.finalize <$> readIORef hash
       if maybe False (/= actual) (stSha256 st)
-        then pure (Left "its data isn't what its description says (its checksum doesn't match)")
+        then pure (Left $ "its data isn't what its description says (its checksum doesn't match)")
         else Right t <$ freezeTable t
 
 -- | A table's name, size, and how many bytes its data takes before
