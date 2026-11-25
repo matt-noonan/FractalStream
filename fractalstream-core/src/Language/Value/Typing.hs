@@ -28,6 +28,7 @@ module Language.Value.Typing
   , tupleParts
   , tableIndexParts
   , check
+  , asPlanePoint
   , coercible
   , joinType
   , anType
@@ -193,6 +194,23 @@ check env ty e = case pushdown env ty e of
       case r of
         Right t | coercible (exprType t) ty -> pure t
         _ -> fallback
+
+-- | A point of the plane, for a table's place in it: a complex number, or
+-- a pair of real numbers @(x, y)@ (as a real viewer's points are), which
+-- is the complex number @x + y i@.
+asPlanePoint :: TypeEnv -> Expr -> TC Expr
+asPlanePoint env p@(Syn sr _) = synth env p <&> \t -> case exprType t of
+  Pair a b | realish a && realish b ->
+    let n = "[internal] plane point " ++ show sr
+        v = Syn sr (EVar n)
+        part isSecond = Syn sr (EProj isSecond v)
+        im = Syn sr (ELit "i" (SomeHaskellType ComplexType (0 :+ 1)))
+    in Syn sr (ELet n p (Syn sr (EBin OpAdd (part False) (Syn sr (EBin OpMul (part True) im)))))
+  _ -> p
+  where realish t = t `elem` [IntegerT, RealT]
+
+checkPlanePoint :: TypeEnv -> Expr -> TC TExpr
+checkPlanePoint env p = asPlanePoint env p >>= check env ComplexT
 
 mismatch :: TExpr -> FSType -> TCError
 mismatch t ty =
@@ -465,7 +483,7 @@ synth env (Syn sr node) = case node of
         | cyc -> advise sr "A table can't be indexed cyclically (with `@@`): use `@`."
         | otherwise -> do
             (mp, rest) <- tableIndexParts sr (fromIntegral d) ix
-            mp' <- traverse (check env ComplexT) mp
+            mp' <- traverse (checkPlanePoint env) mp
             rest' <- mapM (traverse (check env IntegerT)) rest
             case (length (filter isNothing rest'), mp') of
               (0, Nothing) -> done it (ETableIndex lst' (catMaybes rest'))
@@ -506,7 +524,7 @@ synth env (Syn sr node) = case node of
     tbl' <- synth env tbl
     case exprType tbl' of
       TableT d _ | d >= 2 -> do
-        p' <- check env ComplexT p
+        p' <- checkPlanePoint env p
         done BooleanT (ETableHas tbl' p')
       TableT _ _ -> advise sr "A 1-dimensional table has no points."
       _ -> advise sr "`z in T` asks whether a point is on a table: `T` should be a table."
@@ -515,7 +533,7 @@ synth env (Syn sr node) = case node of
     tbl' <- synth env tbl
     case exprType tbl' of
       TableT d _ | d >= 2 -> do
-        p' <- check env ComplexT p
+        p' <- checkPlanePoint env p
         done (tableSizeType 2) (ETableCell tbl' p')
       TableT _ _ -> advise sr "A 1-dimensional table has no points."
       _ -> advise sr "The first argument to `table_cell` should be a table."

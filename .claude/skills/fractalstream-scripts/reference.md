@@ -555,6 +555,12 @@ from pixel to neighboring pixel, which a viewer can't):
 - Slices: `*` for every index of a dimension. With exactly one `*` it's a
   List: `T @ (point z, *)` (z in each layer), `T @ (j, *)` (a column),
   `T @ *` (all of a 1-D table). Two or more `*`s only as a copy (below).
+- A point may be complex or a real pair: `T @ point (x, y)` = `T @ point (x + y i)`,
+  likewise `(x, y) in T`, `table_cell(T, (x, y))`, writes, and `reset ... from
+  (x0, y0) to (x1, y1)`. Geometry: cell (1, 1) is the TOP LEFT cell, columns go
+  right, rows go DOWN; `from p to q` are the outer corners (top left, bottom right).
+  Saved-table yaml `origin` = center of cell (1, 1): 250×250 over [0,1]² is
+  `origin: [0.002, 0.998]`, `step: [0.004, 0.004]` (see PROJECT_FILES.md).
 - `z in T` (2-D or more): whether the point z is on the table.
 - `table_cell(T, z)` (2-D or more): the cell z is in, as `(j, k)`, even off
   the table (indices may then be < 1 or > the size): `(j, k) := table_cell(T, z)`.

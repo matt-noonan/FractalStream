@@ -1915,7 +1915,12 @@ dimensions takes `n` integers, written as a tuple (`T @ k` for a
 a list: the pixel is drawn magenta, or a tool's changes are discarded.
 
 Every table also has a place in the plane (see "Filling in a table"), so
-`T @ point z` is the value in the cell that the point `z` is in. Each
+`T @ point z` is the value in the cell that the point `z` is in. A point
+can be a complex number or, as in a real viewer, a pair of real numbers:
+`T @ point (x, y)` is the same as `T @ point (x + y i)`, and so it is
+everywhere a table takes a point (`(x, y) in T`, `table_cell(T, (x, y))`,
+writing `T @ point (x, y) <- v`, and the corners of `reset ... from
+(x0, y0) to (x1, y1)`). `table_point` gives a complex number either way. Each
 cell covers a small rectangle, so the cells of a table laid over a
 viewer's window are its pixels. A point outside the table is an error,
 like reading out of range.
@@ -2030,6 +2035,12 @@ reset T to (200, 100) from -2 + i to 2 - i
 ```
 
 (The size must be in parentheses here, or be a single name or number.)
+The corners are the outer corners of the table's corner cells, so here
+the 200 columns split the width 4 evenly, and the 100 rows the height 2.
+Cell `(1, 1)` is the top left one; columns go to the right, and rows go
+*down* the plane, as a picture's do. So cell `(1, 1)` is centered at
+`-2 + i` plus half a cell, `-1.99 + 0.99 i`, and `table_point(T, (1, 1))`
+says so.
 A table with layers is reset the same way, with one more size for
 each further dimension: `reset crit to (viewer_width,
 viewer_height, 4)` lays 4 layers over the window.

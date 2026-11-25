@@ -21,7 +21,7 @@ import Language.Value
 import Language.Typecheck
 import Language.Value.Typecheck (atType, internalIterationLimit, InternalIterations, InternalStuck)
 import Language.Value.Syntax
-import Language.Value.Typing (TypeEnv(..), synth, typeEnvOf, surfaceTypeEnvOf, tupleParts, tableIndexParts)
+import Language.Value.Typing (TypeEnv(..), synth, typeEnvOf, surfaceTypeEnvOf, tupleParts, tableIndexParts, asPlanePoint)
 import qualified GHC.TypeNats as TN
 import Language.Code
 import Language.Code.Syntax
@@ -103,7 +103,7 @@ elab funs env stmt@(Stmt sr node) = case node of
             ixs <- mapM (\p -> value funs env p IntegerType) (catMaybes rest)
             cell <- case mp of
               Nothing -> pure (CellAt ixs)
-              Just p -> CellNear <$> value funs env p ComplexType <*> pure ixs
+              Just p -> CellNear <$> planePoint funs env p <*> pure ixs
             TableWrite pf name d ety cell <$> value funs env v ety
           1 -> TableWriteSlice pf name d ety <$> sliceAt mp rest <*> value funs env v (ListType ety)
           stars -> case v of
@@ -125,7 +125,7 @@ elab funs env stmt@(Stmt sr node) = case node of
                                         ++ n ++ " @ (*, *, k) <- U @ (*, *, m)`."))
       _ -> throwError (Surprise sr n (an $ SomeType ty) (Expected "a table"))
     where
-      sliceAt mp rest = SliceAt <$> traverse (\p -> value funs env p ComplexType) mp
+      sliceAt mp rest = SliceAt <$> traverse (planePoint funs env) mp
                                 <*> mapM (traverse (\p -> value funs env p IntegerType)) rest
 
   SResize n sz fill -> do
@@ -155,7 +155,7 @@ elab funs env stmt@(Stmt sr node) = case node of
                                             ++ show dims ++ " integers: `reset " ++ n ++ " to "
                                             ++ example dims ++ "`."))
         (p, q) <- case corners of
-          Just (p, q) -> (,) <$> value funs env p ComplexType <*> value funs env q ComplexType
+          Just (p, q) -> (,) <$> planePoint funs env p <*> planePoint funs env q
           Nothing -> case viewerCorners sr env of
             Just (p, q) -> (,) <$> value funs env p ComplexType <*> value funs env q ComplexType
             Nothing -> throwError (Advice sr ("Only a viewer's tool knows its window: give the table's corners, `reset "
@@ -259,6 +259,15 @@ elabStmts funs env = \case
 ------------------------------------------------------
 -- Values
 ------------------------------------------------------
+
+-- | A point of the plane, for a table's place in it: a complex number, or
+-- a pair of real numbers (see 'Language.Value.Typing.asPlanePoint').
+planePoint :: forall env. KnownEnvironment env
+           => Funs -> EnvironmentProxy env -> Expr -> TC (Value '(env, 'ComplexT))
+planePoint funs env p = do
+  p' <- expandCalls funs p
+  p'' <- asPlanePoint (typeEnvOf env) p'
+  atType p'' ComplexType
 
 value :: forall env ty. (KnownEnvironment env, KnownType ty)
       => Funs -> EnvironmentProxy env -> Expr -> TypeProxy ty -> TC (Value '(env, ty))
