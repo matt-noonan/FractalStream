@@ -501,6 +501,66 @@ on button "Erase":
   erase
 ```
 
+### Timers, and a tool's setup
+
+A tool's `on timer "NAME" every N ms:` block runs every `N` milliseconds while the tool is selected:
+an easy way to animate a parameter. This tool moves `C` around a circle:
+
+```{code-block} fs
+---
+caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=VVDBasMwDL3nKx4-rXQtWUdZKd0Y9LbT6A67FYyrNIIkDpbSbmUfPzntDjsYS0_vPfm5iqn1usZDISFxb9VPAbyG2FV8hHv3ybeklMQZvMU6n2eU80fQ_q6cL8GTIgtOTGdKcG9Dwx5CmvlsQq-EC2YvuOwXmJp86JQbg0iC70lGtcbYwH303DlU8Z8Nzqw1pI5Jw6AQoyt9KdxnzQ1BaxaMcruFGgpKh3tbc4wk8CkO3QEegVNoaJ4flfyBB7EkO3iB242tu6Z6Wq2WRvHd0awzI6MGxA7Kbc4nSr0DnSh9Y1milbWN_xSb2a2Ymle5GCfbjN522pfxlTEpfgE)
+---
+@config "Parameters"
+C : C := 0.3 e^(0.5 i)
+
+@viewer "Julia set"
+iterate z -> z^2 + C until z escapes
+
+@tool "Spin" for "Julia set" with shortcut s
+text "While this tool is selected, C goes around a circle."
+radius : R as "Radius" := 0.7885
+angle : R := 0
+on timer "step" every 50 ms:
+  angle <- angle + 0.02
+  C <- radius e^(i angle)
+```
+
+A tool can have a `setup:` block right after its header, like a viewer's, with a `draw layer:` (a
+whole number: tools with higher layers draw over those with lower ones) and an `icon:`.
+
+### Overlays
+
+A viewer can have one *overlay*: drawings that are always shown over the viewer, whichever tool is
+selected (or none), below every tool's own drawings. It's written as a tool named with the bare
+word `overlay`, with only an `on refresh:` block:
+
+```{code-block} fs
+---
+caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=ZZBBa8MwDIXv-RUPnza2dmkhDAIdg5wH-wUDz1FWgRsH2WnasB8_2TnuYHj60JOePAS52NTiUEUnPKn6rYB3F8aBf2A-rdgLJZJoFHdo8zthV-8PRzyh3r82XGXDlWkhgfmwY0_-W0JCpGQQrko77dBqnloVgKNRJ7Z5SlPAxDfyiLySBnk51rXSNe_JgrXXJlKwe8P6ldd2mMfEXhFFZyeKJUIKwZd93t4xhP9htCmMEBqE4nmLoqMjFTVHwp28D0vxDux94b3YpVTUw7E4T7BJEyyczhDb8xzRbBfEYlhEEyPRLT2YDieYZ3SPmyd_2KEBV38)
+---
+@config "Parameters"
+C : C := -0.12 + 0.75i
+
+@viewer "Mandelbrot set" over C
+setup:
+  center: -0.5
+  pixel size: 1/200
+z := 0
+iterate z -> z^2 + C until z escapes
+
+@tool overlay for "Mandelbrot set"
+on refresh:
+  erase
+  use yellow for fill
+  draw filled circle at C with radius 5 pixels
+  write text("C = ", C) at C + 0.15 i
+```
+
+Its `on refresh:` block runs when the project opens, whenever the viewer's view changes, and whenever
+any configuration value changes, so what it draws follows the parameters, wherever they're changed
+from. An overlay's header only says which viewer it's for (it's never selected, so it has no
+shortcut), and it has no settings of its own.
+
 (colorizers)=
 ## Colorizers
 
