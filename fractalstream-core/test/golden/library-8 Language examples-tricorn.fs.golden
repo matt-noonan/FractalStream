@@ -1,0 +1,170 @@
+=== viewer 0: Tricorn
+--- once per render
+let `color` = Color 128 128 128 in:
+  let `[internal] dy` = 0.0 in:
+    let `[internal] dx` = 0.0 in:
+      let `[internal] y` = 0.0 in:
+        let `[internal] x` = 0.0 in:
+          let `[internal] vanishing radius` = vanishing_radius in:
+            let `[internal] escape radius` = escape_radius in:
+              let `[internal] iteration limit` = max_iters in:
+                let `[internal] stuck` = False in:
+                  let `[internal] iteration count` = 0 in:
+                    block:
+                      let `d z/d c` = 0:R:C in:
+                        block:
+                          let `dbar z/d c` = 0:R:C in:
+                            block:
+                              let `z` = 0:R:C in:
+                                block:
+                                  let `distance` = 0.0 in:
+                                    block:
+                                      set `[hoisted] d z/d c` := d z/d c
+                                      set `[hoisted] dbar z/d c` := dbar z/d c
+                                      set `[hoisted] z` := z
+                                      set `[hoisted] distance` := distance
+
+--- body
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          block:
+            set `c` := ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C))
+            let `pixel_size` = [internal] dx in:
+              block:
+                let `d z/d c` = [hoisted] d z/d c in:
+                  block:
+                    let `dbar z/d c` = [hoisted] dbar z/d c in:
+                      block:
+                        let `z` = [hoisted] z in:
+                          block:
+                            let `distance` = [hoisted] distance in:
+                              block:
+                                let `[internal] fresh #32` = 0 in:
+                                  let `[internal] fresh #33` = [internal] iteration limit in:
+                                    block:
+                                      if (!([internal] escape radius < |z|) and ([internal] fresh #32 < [internal] fresh #33)) then:
+                                        do-while (!([internal] escape radius < |z|) and ([internal] fresh #32 < [internal] fresh #33)):
+                                          block:
+                                            block:
+                                              block:
+                                                let `[internal] dbar z/d c` = ((2:R:C * bar(z)) * bar(d z/d c)) in:
+                                                  block:
+                                                    set `d z/d c` := (((2:R:C * bar(z)) * bar(dbar z/d c)) + 1:R:C)
+                                                    set `dbar z/d c` := [internal] dbar z/d c
+                                              set `z` := ((bar(z) ^ 2:R:C) + c)
+                                            set `[internal] fresh #32` := ([internal] fresh #32 + 1)
+                                      else:
+                                        no-op
+                                      set `[internal] iteration count` := [internal] fresh #32
+                                      set `[internal] stuck` := ([internal] fresh #32 = [internal] fresh #33)
+                                if ([internal] escape radius < |z|) then:
+                                  block:
+                                    let `d` = d z/d c in:
+                                      block:
+                                        let `dbar` = bar(bar(dbar z/d c)) in:
+                                          block:
+                                            let `gradient` = (|((bar(z) * d) + (z * bar(dbar)))| / (|z| ^ 2:R)) in:
+                                              block:
+                                                set `distance` := (log(|z|) / gradient)
+                                else:
+                                  no-op
+                                let `[colorizer] Tricorn: distance` = distance in:
+                                  block:
+                                    if [internal] stuck then:
+                                      block:
+                                        set `color` := [colorizer] Tricorn: inside
+                                    else:
+                                      if ([colorizer] Tricorn: distance < ([colorizer] Tricorn: width * pixel_size)) then:
+                                        block:
+                                          set `color` := [colorizer] Tricorn: line
+                                      else:
+                                        block:
+                                          set `color` := let [internal] [std] cycle.t #1 = ([internal] iteration count:R / 20:R) in let [internal] [std] cycle.c1 #1 = Color 128 128 128 in let [internal] [std] cycle.c2 #1 = let [internal] [std] dark.c #0 = Color 128 128 128 in blend(0.333, [internal] [std] dark.c #0, Color 0 0 0) in let [internal] [std] cycle_at.s #2 = ([internal] [std] cycle.t #1 mod 1.0) in let [internal] [std] cycle_at.c1 #2 = [internal] [std] cycle.c1 #1 in let [internal] [std] cycle_at.c2 #2 = [internal] [std] cycle.c2 #1 in blend(if ([internal] [std] cycle_at.s #2 < 0.5) then (2:R * [internal] [std] cycle_at.s #2) else (2:R - (2:R * [internal] [std] cycle_at.s #2)), [internal] [std] cycle_at.c1 #2, [internal] [std] cycle_at.c2 #2)
+
+
+=== viewer 1: Julia set
+--- once per render
+let `color` = Color 128 128 128 in:
+  let `[internal] dy` = 0.0 in:
+    let `[internal] dx` = 0.0 in:
+      let `[internal] y` = 0.0 in:
+        let `[internal] x` = 0.0 in:
+          let `[internal] vanishing radius` = vanishing_radius in:
+            let `[internal] escape radius` = escape_radius in:
+              let `[internal] iteration limit` = max_iters in:
+                let `[internal] stuck` = False in:
+                  let `[internal] iteration count` = 0 in:
+                    block:
+                      let `d w/d z` = 1:R:C in:
+                        block:
+                          let `dbar w/d z` = 0:R:C in:
+                            block:
+                              let `distance` = 0.0 in:
+                                block:
+                                  set `[hoisted] d w/d z` := d w/d z
+                                  set `[hoisted] dbar w/d z` := dbar w/d z
+                                  set `[hoisted] distance` := distance
+
+--- body
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] dx in:
+              block:
+                let `d w/d z` = [hoisted] d w/d z in:
+                  block:
+                    let `dbar w/d z` = [hoisted] dbar w/d z in:
+                      block:
+                        let `distance` = [hoisted] distance in:
+                          block:
+                            let `w` = z in:
+                              block:
+                                let `[internal] fresh #32` = 0 in:
+                                  let `[internal] fresh #33` = [internal] iteration limit in:
+                                    block:
+                                      if (!([internal] escape radius < |w|) and ([internal] fresh #32 < [internal] fresh #33)) then:
+                                        do-while (!([internal] escape radius < |w|) and ([internal] fresh #32 < [internal] fresh #33)):
+                                          block:
+                                            block:
+                                              block:
+                                                let `[internal] dbar w/d z` = ((2:R:C * bar(w)) * bar(d w/d z)) in:
+                                                  block:
+                                                    set `d w/d z` := ((2:R:C * bar(w)) * bar(dbar w/d z))
+                                                    set `dbar w/d z` := [internal] dbar w/d z
+                                              set `w` := ((bar(w) ^ 2:R:C) + c)
+                                            set `[internal] fresh #32` := ([internal] fresh #32 + 1)
+                                      else:
+                                        no-op
+                                      set `[internal] iteration count` := [internal] fresh #32
+                                      set `[internal] stuck` := ([internal] fresh #32 = [internal] fresh #33)
+                                if ([internal] escape radius < |w|) then:
+                                  block:
+                                    let `d` = d w/d z in:
+                                      block:
+                                        let `dbar` = bar(bar(dbar w/d z)) in:
+                                          block:
+                                            let `gradient` = (|((bar(w) * d) + (w * bar(dbar)))| / (|w| ^ 2:R)) in:
+                                              block:
+                                                set `distance` := (log(|w|) / gradient)
+                                else:
+                                  no-op
+                                let `[colorizer] Julia set: distance` = distance in:
+                                  block:
+                                    if [internal] stuck then:
+                                      block:
+                                        set `color` := [colorizer] Julia set: inside
+                                    else:
+                                      if ([colorizer] Julia set: distance < ([colorizer] Julia set: width * pixel_size)) then:
+                                        block:
+                                          set `color` := [colorizer] Julia set: line
+                                      else:
+                                        block:
+                                          set `color` := let [internal] [std] cycle.t #1 = ([internal] iteration count:R / 20:R) in let [internal] [std] cycle.c1 #1 = Color 128 128 128 in let [internal] [std] cycle.c2 #1 = let [internal] [std] dark.c #0 = Color 128 128 128 in blend(0.333, [internal] [std] dark.c #0, Color 0 0 0) in let [internal] [std] cycle_at.s #2 = ([internal] [std] cycle.t #1 mod 1.0) in let [internal] [std] cycle_at.c1 #2 = [internal] [std] cycle.c1 #1 in let [internal] [std] cycle_at.c2 #2 = [internal] [std] cycle.c2 #1 in blend(if ([internal] [std] cycle_at.s #2 < 0.5) then (2:R * [internal] [std] cycle_at.s #2) else (2:R - (2:R * [internal] [std] cycle_at.s #2)), [internal] [std] cycle_at.c1 #2, [internal] [std] cycle_at.c2 #2)
+
+

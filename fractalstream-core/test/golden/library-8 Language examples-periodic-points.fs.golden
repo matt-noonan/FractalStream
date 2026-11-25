@@ -1,0 +1,525 @@
+=== viewer 0: Newton's method for fⁿ(z) = z
+--- once per render
+let `color` = Color 128 128 128 in:
+  let `[internal] dy` = 0.0 in:
+    let `[internal] dx` = 0.0 in:
+      let `[internal] y` = 0.0 in:
+        let `[internal] x` = 0.0 in:
+          let `[internal] vanishing radius` = vanishing_radius in:
+            let `[internal] escape radius` = escape_radius in:
+              let `[internal] iteration limit` = max_iters in:
+                let `[internal] stuck` = False in:
+                  let `[internal] iteration count` = 0 in:
+                    block:
+                      let `[internal] [std] full_newton_root.iterations #1` = [internal] iteration count in:
+                        block:
+                          let `[internal] [std] full_newton_root.stuck #1` = [internal] stuck in:
+                            block:
+                              let `[internal] [std] full_newton_root.N #1` = max_iters in:
+                                block:
+                                  set `[hoisted] [internal] [std] full_newton_root.iterations #1` := [internal] [std] full_newton_root.iterations #1
+                                  set `[hoisted] [internal] [std] full_newton_root.stuck #1` := [internal] [std] full_newton_root.stuck #1
+                                  set `[hoisted] [internal] [std] full_newton_root.N #1` := [internal] [std] full_newton_root.N #1
+
+--- body
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] dx in:
+              block:
+                let `[internal] [std] full_newton_root.iterations #1` = [hoisted] [internal] [std] full_newton_root.iterations #1 in:
+                  block:
+                    let `[internal] [std] full_newton_root.stuck #1` = [hoisted] [internal] [std] full_newton_root.stuck #1 in:
+                      block:
+                        let `[internal] [std] full_newton_root.N #1` = [hoisted] [internal] [std] full_newton_root.N #1 in:
+                          block:
+                            let `[internal] [std] newton_root #0` = (False, 0.0 :+ 0.0) in:
+                              block:
+                                let `[internal] [std] newton_root.x #0` = z in:
+                                  block:
+                                    let `[internal] [std] full_newton_root #1` = (False, 0.0 :+ 0.0) in:
+                                      block:
+                                        let `[internal] [std] full_newton_root.x0 #1` = [internal] [std] newton_root.x #0 in:
+                                          block:
+                                            let `[internal] [std] full_newton_root.x #1` = ([internal] [std] full_newton_root.x0 #1 + 0.0:C) in:
+                                              block:
+                                                let `[internal] [std] full_newton_root.[internal] previous.x #0 #1` = [internal] [std] full_newton_root.x #1 in:
+                                                  block:
+                                                    let `[internal] fresh #32` = 0 in:
+                                                      let `[internal] fresh #33` = [internal] [std] full_newton_root.N #1 in:
+                                                        block:
+                                                          do-while (!let [internal] [std] full_newton_root #1.x @28:17 = [internal] [std] full_newton_root.x #1 in let [internal] [std] full_newton_root #1.y @28:17 = [internal] [std] full_newton_root.[internal] previous.x #0 #1 in (|([internal] [std] full_newton_root #1.x @28:17 - [internal] [std] full_newton_root #1.y @28:17)| < [internal] vanishing radius) and ([internal] fresh #32 < [internal] fresh #33)):
+                                                            block:
+                                                              block:
+                                                                set `[internal] [std] full_newton_root.[internal] previous.x #0 #1` := [internal] [std] full_newton_root.x #1
+                                                                block:
+                                                                  let `d [internal] lifted #2/d [internal] [std] full_newton_root.x #1` = 1:R:C in:
+                                                                    block:
+                                                                      let `[internal] lifted #2` = [internal] [std] full_newton_root.x #1 in:
+                                                                        block:
+                                                                          let `d [internal] fn #3/d [internal] [std] full_newton_root.x #1` = 0:R:C in:
+                                                                            block:
+                                                                              let `[internal] fn #3` = 0.0 :+ 0.0 in:
+                                                                                block:
+                                                                                  block:
+                                                                                    let `d [internal] fn.w #3/d [internal] [std] full_newton_root.x #1` = d [internal] lifted #2/d [internal] [std] full_newton_root.x #1 in:
+                                                                                      block:
+                                                                                        let `[internal] fn.w #3` = [internal] lifted #2 in:
+                                                                                          block:
+                                                                                            block:
+                                                                                              let `d [internal] [std] compose #4/d [internal] [std] full_newton_root.x #1` = 0:R:C in:
+                                                                                                block:
+                                                                                                  let `[internal] [std] compose #4` = 0.0 :+ 0.0 in:
+                                                                                                    block:
+                                                                                                      let `[internal] [std] compose.iterations #4` = [internal] iteration count in:
+                                                                                                        block:
+                                                                                                          let `[internal] [std] compose.stuck #4` = [internal] stuck in:
+                                                                                                            block:
+                                                                                                              block:
+                                                                                                                let `[internal] [std] compose.N #4` = n in:
+                                                                                                                  block:
+                                                                                                                    let `d [internal] [std] compose.x #4/d [internal] [std] full_newton_root.x #1` = d [internal] fn.w #3/d [internal] [std] full_newton_root.x #1 in:
+                                                                                                                      block:
+                                                                                                                        let `[internal] [std] compose.x #4` = [internal] fn.w #3 in:
+                                                                                                                          block:
+                                                                                                                            block:
+                                                                                                                              let `[internal] fresh #47` = 0 in:
+                                                                                                                                let `[internal] fresh #48` = [internal] [std] compose.N #4 in:
+                                                                                                                                  block:
+                                                                                                                                    if (True and ([internal] fresh #47 < [internal] fresh #48)) then:
+                                                                                                                                      do-while (True and ([internal] fresh #47 < [internal] fresh #48)):
+                                                                                                                                        block:
+                                                                                                                                          block:
+                                                                                                                                            set `d [internal] [std] compose.x #4/d [internal] [std] full_newton_root.x #1` := let [internal] f.z #0 = [internal] [std] compose.x #4 in ((2:R:C * [internal] f.z #0) * d [internal] [std] compose.x #4/d [internal] [std] full_newton_root.x #1)
+                                                                                                                                            set `[internal] [std] compose.x #4` := let [internal] f.z #0 = [internal] [std] compose.x #4 in (([internal] f.z #0 ^ 2:R:C) + C)
+                                                                                                                                          set `[internal] fresh #47` := ([internal] fresh #47 + 1)
+                                                                                                                                    else:
+                                                                                                                                      no-op
+                                                                                                                                    set `[internal] iteration count` := [internal] fresh #47
+                                                                                                                                    set `[internal] stuck` := ([internal] fresh #47 = [internal] fresh #48)
+                                                                                                                              set `d [internal] [std] compose #4/d [internal] [std] full_newton_root.x #1` := d [internal] [std] compose.x #4/d [internal] [std] full_newton_root.x #1
+                                                                                                                              set `[internal] [std] compose #4` := [internal] [std] compose.x #4
+                                                                                                              set `[internal] iteration count` := [internal] [std] compose.iterations #4
+                                                                                                              set `[internal] stuck` := [internal] [std] compose.stuck #4
+                                                                                                              set `d [internal] fn #3/d [internal] [std] full_newton_root.x #1` := d [internal] [std] compose #4/d [internal] [std] full_newton_root.x #1
+                                                                                                              set `[internal] fn #3` := [internal] [std] compose #4
+                                                                                  let `d [internal] [std] full_newton_root.y #1/d [internal] [std] full_newton_root.x #1` = (d [internal] fn #3/d [internal] [std] full_newton_root.x #1 - d [internal] lifted #2/d [internal] [std] full_newton_root.x #1) in:
+                                                                                    block:
+                                                                                      let `[internal] [std] full_newton_root.y #1` = ([internal] fn #3 - [internal] lifted #2) in:
+                                                                                        block:
+                                                                                          set `[internal] [std] full_newton_root.x #1` := ([internal] [std] full_newton_root.x #1 - ([internal] [std] full_newton_root.y #1 / d [internal] [std] full_newton_root.y #1/d [internal] [std] full_newton_root.x #1))
+                                                              set `[internal] fresh #32` := ([internal] fresh #32 + 1)
+                                                          set `[internal] iteration count` := [internal] fresh #32
+                                                          set `[internal] stuck` := ([internal] fresh #32 = [internal] fresh #33)
+                                                    set `[internal] [std] full_newton_root #1` := (![internal] stuck, [internal] [std] full_newton_root.x #1)
+                                                    set `[internal] iteration count` := [internal] [std] full_newton_root.iterations #1
+                                                    set `[internal] stuck` := [internal] [std] full_newton_root.stuck #1
+                                                    set `[internal] [std] newton_root #0` := [internal] [std] full_newton_root #1
+                                                    let `[internal] tuple #0` = [internal] [std] newton_root #0 in:
+                                                      block:
+                                                        let `found` = (1st [internal] tuple #0) in:
+                                                          block:
+                                                            let `root` = (2nd [internal] tuple #0) in:
+                                                              block:
+                                                                set `color` := if found then autocolor(0, root) else Color 0 0 0
+
+
+--- tool Cycle
+  -- on click
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `[internal] click` = [internal] point a in:
+            let `pixel_size` = [internal] px in:
+              block:
+                erase
+                let `[internal] [std] newton_root #0` = (False, 0.0 :+ 0.0) in:
+                  block:
+                    block:
+                      let `[internal] [std] newton_root.x #0` = [internal] click in:
+                        block:
+                          block:
+                            let `[internal] [std] full_newton_root #1` = (False, 0.0 :+ 0.0) in:
+                              block:
+                                let `[internal] [std] full_newton_root.iterations #1` = [internal] iteration count in:
+                                  block:
+                                    let `[internal] [std] full_newton_root.stuck #1` = [internal] stuck in:
+                                      block:
+                                        block:
+                                          let `[internal] [std] full_newton_root.x0 #1` = [internal] [std] newton_root.x #0 in:
+                                            block:
+                                              let `[internal] [std] full_newton_root.N #1` = max_iters in:
+                                                block:
+                                                  block:
+                                                    let `[internal] [std] full_newton_root.x #1` = ([internal] [std] full_newton_root.x0 #1 + 0.0:C) in:
+                                                      block:
+                                                        block:
+                                                          let `[internal] [std] full_newton_root.[internal] previous.x #0 #1` = [internal] [std] full_newton_root.x #1 in:
+                                                            block:
+                                                              let `[internal] fresh #26` = 0 in:
+                                                                let `[internal] fresh #27` = [internal] [std] full_newton_root.N #1 in:
+                                                                  block:
+                                                                    do-while (!let [internal] [std] full_newton_root #1.x @41:16 = [internal] [std] full_newton_root.x #1 in let [internal] [std] full_newton_root #1.y @41:16 = [internal] [std] full_newton_root.[internal] previous.x #0 #1 in (|([internal] [std] full_newton_root #1.x @41:16 - [internal] [std] full_newton_root #1.y @41:16)| < [internal] vanishing radius) and ([internal] fresh #26 < [internal] fresh #27)):
+                                                                      block:
+                                                                        block:
+                                                                          set `[internal] [std] full_newton_root.[internal] previous.x #0 #1` := [internal] [std] full_newton_root.x #1
+                                                                          block:
+                                                                            let `d [internal] lifted #2/d [internal] [std] full_newton_root.x #1` = 1:R:C in:
+                                                                              block:
+                                                                                let `[internal] lifted #2` = [internal] [std] full_newton_root.x #1 in:
+                                                                                  block:
+                                                                                    let `d [internal] fn #3/d [internal] [std] full_newton_root.x #1` = 0:R:C in:
+                                                                                      block:
+                                                                                        let `[internal] fn #3` = 0.0 :+ 0.0 in:
+                                                                                          block:
+                                                                                            block:
+                                                                                              let `d [internal] fn.w #3/d [internal] [std] full_newton_root.x #1` = d [internal] lifted #2/d [internal] [std] full_newton_root.x #1 in:
+                                                                                                block:
+                                                                                                  let `[internal] fn.w #3` = [internal] lifted #2 in:
+                                                                                                    block:
+                                                                                                      block:
+                                                                                                        let `d [internal] [std] compose #4/d [internal] [std] full_newton_root.x #1` = 0:R:C in:
+                                                                                                          block:
+                                                                                                            let `[internal] [std] compose #4` = 0.0 :+ 0.0 in:
+                                                                                                              block:
+                                                                                                                let `[internal] [std] compose.iterations #4` = [internal] iteration count in:
+                                                                                                                  block:
+                                                                                                                    let `[internal] [std] compose.stuck #4` = [internal] stuck in:
+                                                                                                                      block:
+                                                                                                                        block:
+                                                                                                                          let `[internal] [std] compose.N #4` = n in:
+                                                                                                                            block:
+                                                                                                                              let `d [internal] [std] compose.x #4/d [internal] [std] full_newton_root.x #1` = d [internal] fn.w #3/d [internal] [std] full_newton_root.x #1 in:
+                                                                                                                                block:
+                                                                                                                                  let `[internal] [std] compose.x #4` = [internal] fn.w #3 in:
+                                                                                                                                    block:
+                                                                                                                                      block:
+                                                                                                                                        let `[internal] fresh #41` = 0 in:
+                                                                                                                                          let `[internal] fresh #42` = [internal] [std] compose.N #4 in:
+                                                                                                                                            block:
+                                                                                                                                              if (True and ([internal] fresh #41 < [internal] fresh #42)) then:
+                                                                                                                                                do-while (True and ([internal] fresh #41 < [internal] fresh #42)):
+                                                                                                                                                  block:
+                                                                                                                                                    block:
+                                                                                                                                                      set `d [internal] [std] compose.x #4/d [internal] [std] full_newton_root.x #1` := let [internal] f.z #0 = [internal] [std] compose.x #4 in ((2:R:C * [internal] f.z #0) * d [internal] [std] compose.x #4/d [internal] [std] full_newton_root.x #1)
+                                                                                                                                                      set `[internal] [std] compose.x #4` := let [internal] f.z #0 = [internal] [std] compose.x #4 in (([internal] f.z #0 ^ 2:R:C) + C)
+                                                                                                                                                    set `[internal] fresh #41` := ([internal] fresh #41 + 1)
+                                                                                                                                              else:
+                                                                                                                                                no-op
+                                                                                                                                              set `[internal] iteration count` := [internal] fresh #41
+                                                                                                                                              set `[internal] stuck` := ([internal] fresh #41 = [internal] fresh #42)
+                                                                                                                                        set `d [internal] [std] compose #4/d [internal] [std] full_newton_root.x #1` := d [internal] [std] compose.x #4/d [internal] [std] full_newton_root.x #1
+                                                                                                                                        set `[internal] [std] compose #4` := [internal] [std] compose.x #4
+                                                                                                                        set `[internal] iteration count` := [internal] [std] compose.iterations #4
+                                                                                                                        set `[internal] stuck` := [internal] [std] compose.stuck #4
+                                                                                                                        set `d [internal] fn #3/d [internal] [std] full_newton_root.x #1` := d [internal] [std] compose #4/d [internal] [std] full_newton_root.x #1
+                                                                                                                        set `[internal] fn #3` := [internal] [std] compose #4
+                                                                                            let `d [internal] [std] full_newton_root.y #1/d [internal] [std] full_newton_root.x #1` = (d [internal] fn #3/d [internal] [std] full_newton_root.x #1 - d [internal] lifted #2/d [internal] [std] full_newton_root.x #1) in:
+                                                                                              block:
+                                                                                                let `[internal] [std] full_newton_root.y #1` = ([internal] fn #3 - [internal] lifted #2) in:
+                                                                                                  block:
+                                                                                                    set `[internal] [std] full_newton_root.x #1` := ([internal] [std] full_newton_root.x #1 - ([internal] [std] full_newton_root.y #1 / d [internal] [std] full_newton_root.y #1/d [internal] [std] full_newton_root.x #1))
+                                                                        set `[internal] fresh #26` := ([internal] fresh #26 + 1)
+                                                                    set `[internal] iteration count` := [internal] fresh #26
+                                                                    set `[internal] stuck` := ([internal] fresh #26 = [internal] fresh #27)
+                                                        set `[internal] [std] full_newton_root #1` := (![internal] stuck, [internal] [std] full_newton_root.x #1)
+                                        set `[internal] iteration count` := [internal] [std] full_newton_root.iterations #1
+                                        set `[internal] stuck` := [internal] [std] full_newton_root.stuck #1
+                                        set `[internal] [std] newton_root #0` := [internal] [std] full_newton_root #1
+                    let `[internal] tuple #0` = [internal] [std] newton_root #0 in:
+                      block:
+                        let `found` = (1st [internal] tuple #0) in:
+                          block:
+                            let `w` = (2nd [internal] tuple #0) in:
+                              block:
+                                if found then:
+                                  block:
+                                    let `[internal] lifted #7` = w in:
+                                      block:
+                                        let `d [internal] fn #8/d [internal] lifted #7` = 0:R:C in:
+                                          block:
+                                            let `[internal] fn #8` = 0.0 :+ 0.0 in:
+                                              block:
+                                                block:
+                                                  let `d [internal] fn.w #8/d [internal] lifted #7` = 1:R:C in:
+                                                    block:
+                                                      let `[internal] fn.w #8` = [internal] lifted #7 in:
+                                                        block:
+                                                          block:
+                                                            let `d [internal] [std] compose #9/d [internal] lifted #7` = 0:R:C in:
+                                                              block:
+                                                                let `[internal] [std] compose #9` = 0.0 :+ 0.0 in:
+                                                                  block:
+                                                                    let `[internal] [std] compose.iterations #9` = [internal] iteration count in:
+                                                                      block:
+                                                                        let `[internal] [std] compose.stuck #9` = [internal] stuck in:
+                                                                          block:
+                                                                            block:
+                                                                              let `[internal] [std] compose.N #9` = n in:
+                                                                                block:
+                                                                                  let `d [internal] [std] compose.x #9/d [internal] lifted #7` = d [internal] fn.w #8/d [internal] lifted #7 in:
+                                                                                    block:
+                                                                                      let `[internal] [std] compose.x #9` = [internal] fn.w #8 in:
+                                                                                        block:
+                                                                                          block:
+                                                                                            let `[internal] fresh #33` = 0 in:
+                                                                                              let `[internal] fresh #34` = [internal] [std] compose.N #9 in:
+                                                                                                block:
+                                                                                                  if (True and ([internal] fresh #33 < [internal] fresh #34)) then:
+                                                                                                    do-while (True and ([internal] fresh #33 < [internal] fresh #34)):
+                                                                                                      block:
+                                                                                                        block:
+                                                                                                          set `d [internal] [std] compose.x #9/d [internal] lifted #7` := let [internal] f.z #0 = [internal] [std] compose.x #9 in ((2:R:C * [internal] f.z #0) * d [internal] [std] compose.x #9/d [internal] lifted #7)
+                                                                                                          set `[internal] [std] compose.x #9` := let [internal] f.z #0 = [internal] [std] compose.x #9 in (([internal] f.z #0 ^ 2:R:C) + C)
+                                                                                                        set `[internal] fresh #33` := ([internal] fresh #33 + 1)
+                                                                                                  else:
+                                                                                                    no-op
+                                                                                                  set `[internal] iteration count` := [internal] fresh #33
+                                                                                                  set `[internal] stuck` := ([internal] fresh #33 = [internal] fresh #34)
+                                                                                            set `d [internal] [std] compose #9/d [internal] lifted #7` := d [internal] [std] compose.x #9/d [internal] lifted #7
+                                                                                            set `[internal] [std] compose #9` := [internal] [std] compose.x #9
+                                                                            set `[internal] iteration count` := [internal] [std] compose.iterations #9
+                                                                            set `[internal] stuck` := [internal] [std] compose.stuck #9
+                                                                            set `d [internal] fn #8/d [internal] lifted #7` := d [internal] [std] compose #9/d [internal] lifted #7
+                                                                            set `[internal] fn #8` := [internal] [std] compose #9
+                                                set `multiplier` := d [internal] fn #8/d [internal] lifted #7
+                                                use Color 255 255 255 for line
+                                                use Color 255 255 255 for line
+                                                block:
+                                                  let `[internal] previous.w #1` = w in:
+                                                    block:
+                                                      let `[internal] fresh #25` = 0 in:
+                                                        let `[internal] fresh #26` = n in:
+                                                          block:
+                                                            if (True and ([internal] fresh #25 < [internal] fresh #26)) then:
+                                                              do-while (True and ([internal] fresh #25 < [internal] fresh #26)):
+                                                                block:
+                                                                  block:
+                                                                    set `[internal] previous.w #1` := w
+                                                                    block:
+                                                                      draw filled circle at (w, 1.0 :+ 0.0) with radius 4:R pixels
+                                                                      set `w` := let [internal] f.z #0 = w in (([internal] f.z #0 ^ 2:R:C) + C)
+                                                                      draw line from ([internal] previous.w #1, 1.0 :+ 0.0) to (w, 1.0 :+ 0.0)
+                                                                  set `[internal] fresh #25` := ([internal] fresh #25 + 1)
+                                                            else:
+                                                              no-op
+                                                            set `[internal] iteration count` := [internal] fresh #25
+                                                            set `[internal] stuck` := ([internal] fresh #25 = [internal] fresh #26)
+                                else:
+                                  no-op
+
+  -- on drag
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `[internal] click` = [internal] point a in:
+            let `[unused] drag start` = [internal] old point a in:
+              let `pixel_size` = [internal] px in:
+                block:
+                  erase
+                  let `[internal] [std] newton_root #0` = (False, 0.0 :+ 0.0) in:
+                    block:
+                      block:
+                        let `[internal] [std] newton_root.x #0` = [internal] click in:
+                          block:
+                            block:
+                              let `[internal] [std] full_newton_root #1` = (False, 0.0 :+ 0.0) in:
+                                block:
+                                  let `[internal] [std] full_newton_root.iterations #1` = [internal] iteration count in:
+                                    block:
+                                      let `[internal] [std] full_newton_root.stuck #1` = [internal] stuck in:
+                                        block:
+                                          block:
+                                            let `[internal] [std] full_newton_root.x0 #1` = [internal] [std] newton_root.x #0 in:
+                                              block:
+                                                let `[internal] [std] full_newton_root.N #1` = max_iters in:
+                                                  block:
+                                                    block:
+                                                      let `[internal] [std] full_newton_root.x #1` = ([internal] [std] full_newton_root.x0 #1 + 0.0:C) in:
+                                                        block:
+                                                          block:
+                                                            let `[internal] [std] full_newton_root.[internal] previous.x #0 #1` = [internal] [std] full_newton_root.x #1 in:
+                                                              block:
+                                                                let `[internal] fresh #29` = 0 in:
+                                                                  let `[internal] fresh #30` = [internal] [std] full_newton_root.N #1 in:
+                                                                    block:
+                                                                      do-while (!let [internal] [std] full_newton_root #1.x @41:16 = [internal] [std] full_newton_root.x #1 in let [internal] [std] full_newton_root #1.y @41:16 = [internal] [std] full_newton_root.[internal] previous.x #0 #1 in (|([internal] [std] full_newton_root #1.x @41:16 - [internal] [std] full_newton_root #1.y @41:16)| < [internal] vanishing radius) and ([internal] fresh #29 < [internal] fresh #30)):
+                                                                        block:
+                                                                          block:
+                                                                            set `[internal] [std] full_newton_root.[internal] previous.x #0 #1` := [internal] [std] full_newton_root.x #1
+                                                                            block:
+                                                                              let `d [internal] lifted #2/d [internal] [std] full_newton_root.x #1` = 1:R:C in:
+                                                                                block:
+                                                                                  let `[internal] lifted #2` = [internal] [std] full_newton_root.x #1 in:
+                                                                                    block:
+                                                                                      let `d [internal] fn #3/d [internal] [std] full_newton_root.x #1` = 0:R:C in:
+                                                                                        block:
+                                                                                          let `[internal] fn #3` = 0.0 :+ 0.0 in:
+                                                                                            block:
+                                                                                              block:
+                                                                                                let `d [internal] fn.w #3/d [internal] [std] full_newton_root.x #1` = d [internal] lifted #2/d [internal] [std] full_newton_root.x #1 in:
+                                                                                                  block:
+                                                                                                    let `[internal] fn.w #3` = [internal] lifted #2 in:
+                                                                                                      block:
+                                                                                                        block:
+                                                                                                          let `d [internal] [std] compose #4/d [internal] [std] full_newton_root.x #1` = 0:R:C in:
+                                                                                                            block:
+                                                                                                              let `[internal] [std] compose #4` = 0.0 :+ 0.0 in:
+                                                                                                                block:
+                                                                                                                  let `[internal] [std] compose.iterations #4` = [internal] iteration count in:
+                                                                                                                    block:
+                                                                                                                      let `[internal] [std] compose.stuck #4` = [internal] stuck in:
+                                                                                                                        block:
+                                                                                                                          block:
+                                                                                                                            let `[internal] [std] compose.N #4` = n in:
+                                                                                                                              block:
+                                                                                                                                let `d [internal] [std] compose.x #4/d [internal] [std] full_newton_root.x #1` = d [internal] fn.w #3/d [internal] [std] full_newton_root.x #1 in:
+                                                                                                                                  block:
+                                                                                                                                    let `[internal] [std] compose.x #4` = [internal] fn.w #3 in:
+                                                                                                                                      block:
+                                                                                                                                        block:
+                                                                                                                                          let `[internal] fresh #44` = 0 in:
+                                                                                                                                            let `[internal] fresh #45` = [internal] [std] compose.N #4 in:
+                                                                                                                                              block:
+                                                                                                                                                if (True and ([internal] fresh #44 < [internal] fresh #45)) then:
+                                                                                                                                                  do-while (True and ([internal] fresh #44 < [internal] fresh #45)):
+                                                                                                                                                    block:
+                                                                                                                                                      block:
+                                                                                                                                                        set `d [internal] [std] compose.x #4/d [internal] [std] full_newton_root.x #1` := let [internal] f.z #0 = [internal] [std] compose.x #4 in ((2:R:C * [internal] f.z #0) * d [internal] [std] compose.x #4/d [internal] [std] full_newton_root.x #1)
+                                                                                                                                                        set `[internal] [std] compose.x #4` := let [internal] f.z #0 = [internal] [std] compose.x #4 in (([internal] f.z #0 ^ 2:R:C) + C)
+                                                                                                                                                      set `[internal] fresh #44` := ([internal] fresh #44 + 1)
+                                                                                                                                                else:
+                                                                                                                                                  no-op
+                                                                                                                                                set `[internal] iteration count` := [internal] fresh #44
+                                                                                                                                                set `[internal] stuck` := ([internal] fresh #44 = [internal] fresh #45)
+                                                                                                                                          set `d [internal] [std] compose #4/d [internal] [std] full_newton_root.x #1` := d [internal] [std] compose.x #4/d [internal] [std] full_newton_root.x #1
+                                                                                                                                          set `[internal] [std] compose #4` := [internal] [std] compose.x #4
+                                                                                                                          set `[internal] iteration count` := [internal] [std] compose.iterations #4
+                                                                                                                          set `[internal] stuck` := [internal] [std] compose.stuck #4
+                                                                                                                          set `d [internal] fn #3/d [internal] [std] full_newton_root.x #1` := d [internal] [std] compose #4/d [internal] [std] full_newton_root.x #1
+                                                                                                                          set `[internal] fn #3` := [internal] [std] compose #4
+                                                                                              let `d [internal] [std] full_newton_root.y #1/d [internal] [std] full_newton_root.x #1` = (d [internal] fn #3/d [internal] [std] full_newton_root.x #1 - d [internal] lifted #2/d [internal] [std] full_newton_root.x #1) in:
+                                                                                                block:
+                                                                                                  let `[internal] [std] full_newton_root.y #1` = ([internal] fn #3 - [internal] lifted #2) in:
+                                                                                                    block:
+                                                                                                      set `[internal] [std] full_newton_root.x #1` := ([internal] [std] full_newton_root.x #1 - ([internal] [std] full_newton_root.y #1 / d [internal] [std] full_newton_root.y #1/d [internal] [std] full_newton_root.x #1))
+                                                                          set `[internal] fresh #29` := ([internal] fresh #29 + 1)
+                                                                      set `[internal] iteration count` := [internal] fresh #29
+                                                                      set `[internal] stuck` := ([internal] fresh #29 = [internal] fresh #30)
+                                                          set `[internal] [std] full_newton_root #1` := (![internal] stuck, [internal] [std] full_newton_root.x #1)
+                                          set `[internal] iteration count` := [internal] [std] full_newton_root.iterations #1
+                                          set `[internal] stuck` := [internal] [std] full_newton_root.stuck #1
+                                          set `[internal] [std] newton_root #0` := [internal] [std] full_newton_root #1
+                      let `[internal] tuple #0` = [internal] [std] newton_root #0 in:
+                        block:
+                          let `found` = (1st [internal] tuple #0) in:
+                            block:
+                              let `w` = (2nd [internal] tuple #0) in:
+                                block:
+                                  if found then:
+                                    block:
+                                      let `[internal] lifted #7` = w in:
+                                        block:
+                                          let `d [internal] fn #8/d [internal] lifted #7` = 0:R:C in:
+                                            block:
+                                              let `[internal] fn #8` = 0.0 :+ 0.0 in:
+                                                block:
+                                                  block:
+                                                    let `d [internal] fn.w #8/d [internal] lifted #7` = 1:R:C in:
+                                                      block:
+                                                        let `[internal] fn.w #8` = [internal] lifted #7 in:
+                                                          block:
+                                                            block:
+                                                              let `d [internal] [std] compose #9/d [internal] lifted #7` = 0:R:C in:
+                                                                block:
+                                                                  let `[internal] [std] compose #9` = 0.0 :+ 0.0 in:
+                                                                    block:
+                                                                      let `[internal] [std] compose.iterations #9` = [internal] iteration count in:
+                                                                        block:
+                                                                          let `[internal] [std] compose.stuck #9` = [internal] stuck in:
+                                                                            block:
+                                                                              block:
+                                                                                let `[internal] [std] compose.N #9` = n in:
+                                                                                  block:
+                                                                                    let `d [internal] [std] compose.x #9/d [internal] lifted #7` = d [internal] fn.w #8/d [internal] lifted #7 in:
+                                                                                      block:
+                                                                                        let `[internal] [std] compose.x #9` = [internal] fn.w #8 in:
+                                                                                          block:
+                                                                                            block:
+                                                                                              let `[internal] fresh #36` = 0 in:
+                                                                                                let `[internal] fresh #37` = [internal] [std] compose.N #9 in:
+                                                                                                  block:
+                                                                                                    if (True and ([internal] fresh #36 < [internal] fresh #37)) then:
+                                                                                                      do-while (True and ([internal] fresh #36 < [internal] fresh #37)):
+                                                                                                        block:
+                                                                                                          block:
+                                                                                                            set `d [internal] [std] compose.x #9/d [internal] lifted #7` := let [internal] f.z #0 = [internal] [std] compose.x #9 in ((2:R:C * [internal] f.z #0) * d [internal] [std] compose.x #9/d [internal] lifted #7)
+                                                                                                            set `[internal] [std] compose.x #9` := let [internal] f.z #0 = [internal] [std] compose.x #9 in (([internal] f.z #0 ^ 2:R:C) + C)
+                                                                                                          set `[internal] fresh #36` := ([internal] fresh #36 + 1)
+                                                                                                    else:
+                                                                                                      no-op
+                                                                                                    set `[internal] iteration count` := [internal] fresh #36
+                                                                                                    set `[internal] stuck` := ([internal] fresh #36 = [internal] fresh #37)
+                                                                                              set `d [internal] [std] compose #9/d [internal] lifted #7` := d [internal] [std] compose.x #9/d [internal] lifted #7
+                                                                                              set `[internal] [std] compose #9` := [internal] [std] compose.x #9
+                                                                              set `[internal] iteration count` := [internal] [std] compose.iterations #9
+                                                                              set `[internal] stuck` := [internal] [std] compose.stuck #9
+                                                                              set `d [internal] fn #8/d [internal] lifted #7` := d [internal] [std] compose #9/d [internal] lifted #7
+                                                                              set `[internal] fn #8` := [internal] [std] compose #9
+                                                  set `multiplier` := d [internal] fn #8/d [internal] lifted #7
+                                                  use Color 255 255 255 for line
+                                                  use Color 255 255 255 for line
+                                                  block:
+                                                    let `[internal] previous.w #1` = w in:
+                                                      block:
+                                                        let `[internal] fresh #28` = 0 in:
+                                                          let `[internal] fresh #29` = n in:
+                                                            block:
+                                                              if (True and ([internal] fresh #28 < [internal] fresh #29)) then:
+                                                                do-while (True and ([internal] fresh #28 < [internal] fresh #29)):
+                                                                  block:
+                                                                    block:
+                                                                      set `[internal] previous.w #1` := w
+                                                                      block:
+                                                                        draw filled circle at (w, 1.0 :+ 0.0) with radius 4:R pixels
+                                                                        set `w` := let [internal] f.z #0 = w in (([internal] f.z #0 ^ 2:R:C) + C)
+                                                                        draw line from ([internal] previous.w #1, 1.0 :+ 0.0) to (w, 1.0 :+ 0.0)
+                                                                    set `[internal] fresh #28` := ([internal] fresh #28 + 1)
+                                                              else:
+                                                                no-op
+                                                              set `[internal] iteration count` := [internal] fresh #28
+                                                              set `[internal] stuck` := ([internal] fresh #28 = [internal] fresh #29)
+                                  else:
+                                    no-op
+
+  -- on deactivated
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `pixel_size` = [internal] px in:
+            block:
+              erase
+
+
+=== viewer 1: (f ∘ f)(z) - z
+--- body
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] dx in:
+              block:
+                set `color` := let [internal] [std] domain_color.z #6 = (let [internal] [internal] ∘.composition #0.[internal] f.z #1 @34:23 = z in let [internal] [internal] ∘.applied #3.[internal] f.z #2 @34:23 = let [internal] f.z #4 = [internal] [internal] ∘.composition #0.[internal] f.z #1 @34:23 in (([internal] f.z #4 ^ 2:R:C) + C) in let [internal] f.z #5 = [internal] [internal] ∘.applied #3.[internal] f.z #2 @34:23 in (([internal] f.z #5 ^ 2:R:C) + C) - z) in let #hue-arg = (((arg([internal] [std] domain_color.z #6) / (2:R * 3.141592653589793)) + (1:R / 3:R)), (1:R, ((|[internal] [std] domain_color.z #6| ^ 2:R) / (1:R + (|[internal] [std] domain_color.z #6| ^ 2:R))))) in let #hue-parts = ((6.0 * ((1st #hue-arg) mod 1.0)), (if ((1st (2nd #hue-arg)) < 0.0) then 0.0 else if (1.0 < (1st (2nd #hue-arg))) then 1.0 else (1st (2nd #hue-arg)), if ((2nd (2nd #hue-arg)) < 0.0) then 0.0 else if (1.0 < (2nd (2nd #hue-arg))) then 1.0 else (2nd (2nd #hue-arg)))) in rgb(((2nd (2nd #hue-parts)) + (((1.0 - |((2.0 * (2nd (2nd #hue-parts))) - 1.0)|) * (1st (2nd #hue-parts))) * (if ((|((1st #hue-parts) - 3.0)| - 1.0) < 0.0) then 0.0 else if (1.0 < (|((1st #hue-parts) - 3.0)| - 1.0)) then 1.0 else (|((1st #hue-parts) - 3.0)| - 1.0) - (1.0 / 2.0)))), ((2nd (2nd #hue-parts)) + (((1.0 - |((2.0 * (2nd (2nd #hue-parts))) - 1.0)|) * (1st (2nd #hue-parts))) * (if ((2.0 - |((1st #hue-parts) - 2.0)|) < 0.0) then 0.0 else if (1.0 < (2.0 - |((1st #hue-parts) - 2.0)|)) then 1.0 else (2.0 - |((1st #hue-parts) - 2.0)|) - (1.0 / 2.0)))), ((2nd (2nd #hue-parts)) + (((1.0 - |((2.0 * (2nd (2nd #hue-parts))) - 1.0)|) * (1st (2nd #hue-parts))) * (if ((2.0 - |((1st #hue-parts) - 4.0)|) < 0.0) then 0.0 else if (1.0 < (2.0 - |((1st #hue-parts) - 4.0)|)) then 1.0 else (2.0 - |((1st #hue-parts) - 4.0)|) - (1.0 / 2.0)))))
+
+
