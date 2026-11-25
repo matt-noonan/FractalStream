@@ -167,7 +167,7 @@ Inequality can be tested with the `!=` /  `=/=` / `≠` operator.
 - Functions that work for complex numbers only: `re` / `Re`, `im` / `Im`, `arg` / `Arg`, `conj` / `bar` / `Conj` / `Bar`.
 - Rounding functions: `round`, `floor`, `ceiling` / `ceil`.
 - Functions for points of the Riemann sphere: `affine`, `chart`, `chordal` (see {ref}`riemann-sphere`).
-- Derivatives: `diff`, `partial` (see {ref}`derivatives`).
+- Derivatives: `diff`, `diff_bar`, `partial` (see {ref}`derivatives`).
 - From the standard library (see {ref}`standard-library`): `min`, `max`, `clamp`, `compose`,
   `newton_root`, `find_cycle`, `S`, `riemann_sum`, `residue`, `winding_number`, and color
   functions like `cycle` and `rainbow`.
@@ -195,13 +195,28 @@ distance := |w| log |w| / |diff(w, z)|
 ```
 
 A few rules apply:
-- An `if` isn't differentiated: the derivative is the derivative of the branch that was taken.
+- The derivative is taken wherever it exists. An `if` isn't differentiated: the derivative is the
+  derivative of the branch that was taken. In the same way, `round`, `floor`, `ceiling` and `//`,
+  which only jump, have derivative 0, as does an integer computed from the variable. `mod` has the
+  derivative of its definition, $a \bmod b = a - |b| \lfloor a / |b| \rfloor$, and `|x|` has
+  derivative 0 at 0. (Newton's method won't move on a function that is flat like this.)
 - The variable you differentiate with respect to can't change between the moment another variable
   is computed and the `diff`. That's why the example above iterates a copy `w` of `z`, instead of
   iterating `z` itself.
-- Something that has no derivative is an error, not zero: an item of a list or table, `floor`,
-  `round`, `mod`, `//`, and, with respect to a complex variable, `|w|`, `re`, `im`, `conj` and
-  `arg`.
+- An item of a list or table can't be followed: that's an error.
+
+With respect to a complex variable $z = x + i y$, `diff` is the *Wirtinger derivative*
+$\partial = \frac{1}{2}\left(\frac{\partial}{\partial x} - i \frac{\partial}{\partial y}\right)$.
+Where the expression is holomorphic, that is the usual complex derivative, so `diff(z^3 - 1, z)` is
+still `3 z^2`. But it is defined for the rest too, such as `|z|`, `re`, `im`, `conj` and `arg`:
+`diff(|z|^2, z)` is `conj(z)`, and `diff(conj(z), z)` is 0.
+
+`diff_bar(EXPRESSION, VARIABLE)` is the other Wirtinger derivative,
+$\bar\partial = \frac{1}{2}\left(\frac{\partial}{\partial x} + i \frac{\partial}{\partial y}\right)$.
+It is 0 exactly where the expression is holomorphic, and `diff_bar(|z|^2, z)` is `z`. Together,
+the two give the whole derivative of a map of the plane. For example, the Jacobian determinant of
+`w` as a function of `z` is `|diff(w, z)|^2 - |diff_bar(w, z)|^2`. Newton's method uses the complex
+derivative, so it only makes sense where the function is holomorphic.
 
 `diff(EXPRESSION, x, 2)` is the second derivative, and so on.
 
@@ -226,8 +241,7 @@ dC := diff(f(z), C)
 # dz is now equal to 2 z, and dC is equal to 1
 ```
 
-In the case where a user-defined function has exactly one argument, you can also use the
-prime notation for the derivative. For example, here is a script to run Newton's method
+For a user-defined function, you can also use the prime notation for the derivative. For example, here is a script to run Newton's method
 on a cubic polynomial:
 
 ```{code-block} fs
@@ -244,6 +258,12 @@ Higher derivatives may be denoted with additional primes: `f''(z)` is the second
 The prime works on any function of one value: a function with a body (see {ref}`functions`), a
 parameter that has been given a function, and a composition, as in `(f ∘ g)'(z)` (see
 {ref}`composition`).
+
+On a function with several arguments, the prime is the derivative in its *first* argument:
+`g'(z, c)` means the derivative of `g(w, c)` with respect to `w`, at `w = z`. That's how
+$\wp'(z)$ is written for the Weierstrass function of a lattice (see {ref}`elliptic`). It is a
+FractalStream convention, though: on paper, a prime on a function of several variables would
+usually need to say which variable it is for. To differentiate in another argument, use `diff`.
 
 The Schwarzian derivative $S_f(x)$ can be computed by the built-in function `S(f, x)`. For
 example, `S(z -> z^3, z)` is equal to `-4 / z^2`.
@@ -488,7 +508,7 @@ means.
 | `find_cycle(f, z, warmup, max_period, same, χ)` | Finding an attracting cycle (see {ref}`cycles`) |
 | `S(f, x)` | The Schwarzian derivative of `f` at `x` |
 | `riemann_sum(γ, f, N)`, `residue(f, z, r, N)`, `winding_number(γ, z0, N)` | Contour integrals (see {ref}`integration`) |
-| `theta1(z, τ)` .. `theta4(z, τ)`, `wp(z, ω1, ω2)`, `wp_prime(z, ω1, ω2)`, `g2(ω1, ω2)`, `g3(ω1, ω2)`, `klein_j(τ)` | Elliptic functions (see {ref}`elliptic`) |
+| `theta1(z, τ)` .. `theta4(z, τ)`, `wp(z, ω1, ω2)` / `℘(z, ω1, ω2)`, `wp_prime(z, ω1, ω2)`, `g2(ω1, ω2)`, `g3(ω1, ω2)`, `klein_j(τ)` | Elliptic functions (see {ref}`elliptic`) |
 | `cycle(t, c1, c2)` | A color going back and forth between `c1` (at whole numbers) and `c2` (halfway between) |
 | `rgb255(r, g, b)` | A color from red, green and blue components from 0 to 255 |
 | `rainbow(t)`, `arenberg(t)`, ... | Color wheels with period 1 (see {ref}`colors-and-gradients`) |
@@ -503,8 +523,8 @@ The standard library has the Jacobi theta functions and the Weierstrass ℘ func
 | Function | Is |
 | -------- | -- |
 | `theta1(z, τ)` .. `theta4(z, τ)` | The Jacobi theta functions $\theta_1$ .. $\theta_4$ of `z`, with the nome $q = e^{i \pi \tau}$ (and $\operatorname{Im} \tau > 0$), as in [DLMF §20](https://dlmf.nist.gov/20) and Mathematica's `EllipticTheta`, so that $\theta_1(z + \pi) = -\theta_1(z)$ |
-| `wp(z, ω1, ω2)` | The Weierstrass $\wp$ function of the lattice $\omega_1 \mathbb{Z} + \omega_2 \mathbb{Z}$ |
-| `wp_prime(z, ω1, ω2)` | Its derivative, $\wp'$ |
+| `wp(z, ω1, ω2)`, or `℘(z, ω1, ω2)` | The Weierstrass $\wp$ function of the lattice $\omega_1 \mathbb{Z} + \omega_2 \mathbb{Z}$ (in the editor, type `\wp` for `℘`) |
+| `wp_prime(z, ω1, ω2)` | Its derivative, $\wp'$, the same as `℘'(z, ω1, ω2)` |
 | `g2(ω1, ω2)`, `g3(ω1, ω2)` | The lattice's invariants, with $\wp'^2 = 4 \wp^3 - g_2 \wp - g_3$ |
 | `klein_j(τ)` | Klein's $j$-invariant, with `klein_j(i)` equal to 1728 |
 
@@ -520,8 +540,9 @@ color <- domain_color(wp(z, 1, 0.3 + 1.1 i))
 $\tau = \omega_2 / \omega_1$ has $\operatorname{Im} \tau \ge \sqrt{3}/2$), and move `z` into the
 parallelogram around 0, so that their series converge in a few terms. The theta functions
 themselves sum their series as they're given, which is fastest when $\operatorname{Im} \tau$ is
-large and $\operatorname{Im} z$ is small. Because `wp` moves `z` with `round`, `diff` can't follow
-`z` through it: use `wp_prime` for its derivative.
+large and $\operatorname{Im} z$ is small. `diff` follows `z` through `wp` too (the `round` it uses
+has derivative 0), so `℘'(z, ω1, ω2)` and `diff(wp(z, ω1, ω2), z)` give $\wp'$, the same as
+`wp_prime` up to rounding.
 
 Functions with a body, like `compose` and `newton_root`, can be called anywhere a function with a
 body can (see {ref}`functions`). The standard library's source is
