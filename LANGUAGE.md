@@ -314,11 +314,7 @@ first time it sees that point. It's for coloring by points you don't
 know in advance, such as the root a Newton's method converges to:
 
 ```
-lastZ ≔ 0
-repeat:
-  lastZ ⭠ z
-  z ⭠ z - p(z) / p'(z)
-until z = lastZ
+iterate z ⟼ z - p(z) / p'(z) until z stops
 color ⭠ if stuck then black else autocolor(0, z)
 ```
 
@@ -357,9 +353,8 @@ its color, add or delete points, clear the group, lock it, change its
 tolerance or the color it gives points it doesn't have, or choose whether
 it blends its colors for those points.
 
-Only the LLVM backend (the default) can compute `autocolor`,
-`nearest_autocolor`, and `get_autocolor`. They can be used in viewers and
-in tools.
+`autocolor`, `nearest_autocolor`, and `get_autocolor` can be used in
+viewers and in tools, on every backend.
 
 ## Script commands
 
@@ -1064,7 +1059,7 @@ setup:
   show if: show_parameters
   colorizer: Smooth
   coloring:
-    color_speed <- 3
+    period <- 30
 z := 0
 iterate z -> z^2 + C until z escapes
 ```
@@ -1269,7 +1264,7 @@ with `on the disk`:
 @viewer "Hyperbolic plane" over z on the disk
 setup:
   center: 0.5
-r := 2 atanh(|z|)      -- the hyperbolic distance from 0
+r := 2 atanh(|z|)      # the hyperbolic distance from 0
 color <- if mod(floor(2 r), 2) = 0 then light grey else dark grey
 ```
 
@@ -1306,7 +1301,7 @@ disk viewer can't be shown on the plane or the sphere.
 A script can work in the upper half-plane instead, with `on the half-plane`:
 `z` is then a point with a positive imaginary part. The half-plane is drawn
 with its real axis along the window's bottom edge, and `center:` (by
-default `i`) shown 1/`pixelSize` pixels above it (by default 150), halfway
+default `i`) shown 1/`pixel size` pixels above it (by default 150), halfway
 across, or in the middle of the window if that's lower. So for
 `center: i`, `pixel size:` is the width of a pixel at `i`. In the
 half-plane, a pixel's hyperbolic size is `pixel_size / im(z)`.
@@ -1441,11 +1436,7 @@ method:
 @viewer "Newton's method"
 setup:
   colorizer: Rainbow(arg z / (2π))
-lastZ := 0
-repeat:
-  lastZ ⭠ z
-  z ⭠ z - (z³ - 1) / (3 z²)
-until z = lastZ
+iterate z ⟼ z - (z³ - 1) / (3 z²) until z stops
 ```
 
 Arguments can be any expressions, using any of the viewer's variables
@@ -1460,9 +1451,9 @@ arguments of the colorizer in use.
 #### Colorizer settings
 
 A colorizer's settings (like `Rainbow`'s "Iterations per color cycle")
-appear in a tab of the configuration window, and each viewer has its own
-copy of them. A viewer can change their defaults with a `coloring:`
-block at the start of its script:
+appear on the viewer's page of the configuration window's "Color
+settings", and each viewer has its own copy of them. A viewer can change
+their defaults with a `coloring:` block inside its `setup:`:
 
 ```
 @viewer "Mandelbrot set" over C
