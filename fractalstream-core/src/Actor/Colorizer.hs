@@ -579,9 +579,9 @@ missingArguments scope Colorizer{colorizerParams = params, colorizerDefaults = d
 
 -- | How to ask for a colorizer's arguments, for a viewer with these names
 -- in scope, starting from the ones written (as 'choiceArguments' gives
--- them): for each parameter, its name, a note about it (its default, or
--- that the viewer has no variable of its name), and its text to start
--- with. An empty answer means the parameter's default, or else the
+-- them): for each parameter, its name, a note about it (a sentence for
+-- its hover text: what leaving it empty means, or that it's needed), and
+-- its text to start with. An empty answer means the parameter's default, or else the
 -- viewer's variable of its name (see 'choiceWithArguments').
 argumentFields :: Set String -> Colorizer -> String -> [(String, String, String)]
 argumentFields scope Colorizer{colorizerParams = params, colorizerDefaults = defaults} written =
@@ -594,10 +594,11 @@ argumentFields scope Colorizer{colorizerParams = params, colorizerDefaults = def
       _ | Map.member param defaults -> ""
         | inScope param -> param
         | otherwise -> ""
+    -- (what an empty field means: shown as the field's hover text)
     note param = case Map.lookup param defaults of
-      Just (_, src) -> "(default: " ++ src ++ ")"
-      Nothing | inScope param -> ""
-              | otherwise -> "(this viewer has no " ++ param ++ ")"
+      Just (_, src) -> "Empty means the default, " ++ src
+      Nothing | inScope param -> "Empty means the viewer's variable " ++ param
+              | otherwise -> "Needed: this viewer has no variable " ++ param
 
 -- | A colorizer chosen with these answers (one a parameter, as
 -- 'argumentFields' asks): the arguments that come to the parameter's

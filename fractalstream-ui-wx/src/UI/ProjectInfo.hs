@@ -35,8 +35,8 @@ editProjectInfo owner currentEnsemble markUnsaved = do
 
   background <- get p bgcolor
   previewWidget <- case mdPreview md >>= previewImage background of
-    Nothing -> fmap widget . staticText p $ [ text :=
-      "No preview yet. To make one, choose \"Use this as preview\" from a viewer's menu." ]
+    Nothing -> fmap widget . staticText p $ [ text := "No preview"
+      , tooltip := "To make one, choose \"Use this as preview\" from a viewer's menu" ]
     Just (w, h, makeImage) -> do
       img <- makeImage
       imagePanel <- panel p [ on paint := \dc _ -> drawImage dc img (WX.pt 0 0) [] ]

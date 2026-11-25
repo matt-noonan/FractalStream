@@ -58,10 +58,11 @@ export function showPreferences() {
 
 // --- Editor
 
-function check(label: string, get: (p: Preferences) => boolean, set: (on: boolean) => Partial<Preferences>): HTMLElement {
+function check(label: string, get: (p: Preferences) => boolean, set: (on: boolean) => Partial<Preferences>,
+               help = ""): HTMLElement {
   const box = el("input", { type: "checkbox", checked: get(preferences()) });
   box.addEventListener("change", () => setPreferences(set(box.checked)));
-  return el("label", { className: "prefs-check" }, box, el("span", { textContent: label }));
+  return el("label", { className: "prefs-check", title: help }, box, el("span", { textContent: label }));
 }
 
 function editorTab(): HTMLElement {
@@ -88,13 +89,13 @@ function editorTab(): HTMLElement {
   return el("div", { className: "prefs-pane" },
     el("div", { className: "prefs-label", textContent: "Font for scripts:" }),
     el("div", { className: "prefs-row" }, font, size, el("span", { textContent: "pt" }), usual, list),
-    check("Write scripts with mathematical symbols (⟵, ℝ, z², …) as they're edited",
-          (q) => q.mathSymbols, (on) => ({ mathSymbols: on })),
+    check("Mathematical symbols", (q) => q.mathSymbols, (on) => ({ mathSymbols: on }),
+          "Write scripts with mathematical symbols (⟵, ℝ, z², …) as they're edited"),
     check("Show line numbers", (q) => q.lineNumbers, (on) => ({ lineNumbers: on })),
-    check("Fold blocks of code, not just stanzas and tool handlers",
-          (q) => q.foldCodeBlocks, (on) => ({ foldCodeBlocks: on })),
-    ...(isMac ? [] : [check("Emacs-style movement keys (Control-A, Control-E, …)",
-                            (q) => q.emacsKeys, (on) => ({ emacsKeys: on }))]));
+    check("Fold code blocks", (q) => q.foldCodeBlocks, (on) => ({ foldCodeBlocks: on }),
+          "Fold blocks of code, not just stanzas and tool handlers"),
+    ...(isMac ? [] : [check("Emacs movement keys", (q) => q.emacsKeys, (on) => ({ emacsKeys: on }),
+                            "Control-A, Control-E, … move the cursor, as in Emacs")]));
 }
 
 // --- Viewers
@@ -112,14 +113,20 @@ function viewersTab(): HTMLElement {
   choice.setAttribute("aria-label", "Smoothing for new viewers");
   const highDpi = !smoothingNow({ ...p, smoothing: "auto" });
   for (const [value, label] of [
-    ["auto", `Automatic: ${highDpi ? "off on this screen, which is high-DPI" : "on, on this screen"}`],
+    ["auto", `Automatic (${highDpi ? "off" : "on"} here)`],
     ["on", "On"], ["off", "Off"]] as [Smoothing, string][]) {
     choice.append(el("option", { value, textContent: label, selected: p.smoothing === value }));
   }
   choice.addEventListener("change", () => setPreferences({ smoothing: choice.value as Smoothing }));
+  choice.title = `Automatic is off on high-DPI screens${highDpi ? ", like this one" : ""}. \
+Each viewer's ☰ menu turns its own smoothing on or off.`;
+  slider.title = "Shades the globe as if it were lit from the upper left. At 0% it isn't shaded at all.";
   // The order viewers try the backends in, each with buttons moving it up
   // or down (and why one can't draw anything here, if it can't).
-  const order = el("ol", { className: "prefs-order" });
+  const order = el("ol", { className: "prefs-order",
+    title: "Each viewer is drawn with the first of these that can draw it as precisely as the CPU's doubles would \
+(the GPU's double-float can't zoom as deep, for instance), and those after the CPU only when it can't. \
+A viewer's ☰ menu can choose one for that viewer." });
   const showOrder = () => {
     const now = preferences().rendering;
     const move = (k: number, by: number) => {
@@ -133,7 +140,8 @@ function viewersTab(): HTMLElement {
       const down = el("button", { textContent: "↓", disabled: k === now.length - 1, title: "Move down" });
       up.addEventListener("click", () => move(k, -1));
       down.addEventListener("click", () => move(k, 1));
-      return el("li", {}, el("span", { textContent: backendLabels[b] + backendNote(b) }),
+      return el("li", {}, el("span", { textContent: backendLabels[b], title: backendNote(b),
+                                      className: backendNote(b) ? "unavailable" : "" }),
                 up, down);
     }));
   };
@@ -143,13 +151,10 @@ function viewersTab(): HTMLElement {
   return el("div", { className: "prefs-pane" },
     el("div", { className: "prefs-label", textContent: "Shading of the Riemann sphere:" }),
     el("div", { className: "prefs-row" }, slider, shown),
-    el("p", { className: "prefs-hint", textContent: "Shades the globe as if it were lit from the upper left. At 0% it isn't shaded at all." }),
     el("div", { className: "prefs-label", textContent: "Subpixel smoothing, for new viewers:" }),
     choice,
-    el("p", { className: "prefs-hint", textContent: "Each viewer's ☰ menu turns its own smoothing on or off." }),
-    el("div", { className: "prefs-label", textContent: "Drawing viewers, in order of preference:" }),
-    order, reset,
-    el("p", { className: "prefs-hint", textContent: "Each viewer is drawn with the first of these that can draw it as precisely as the CPU's doubles would (the GPU's double-float can't zoom as deep, for instance), and those after the CPU only when it can't. A viewer's ☰ menu can choose one for that viewer." }));
+    el("div", { className: "prefs-label", textContent: "Draw viewers with, in order:" }),
+    order, reset);
 }
 
 // --- Colors
@@ -220,6 +225,5 @@ function colorsTab(): HTMLElement {
   return el("div", { className: "prefs-pane" },
     el("div", { className: "prefs-row" }, el("span", { textContent: "Script colors for" }), which,
        el("span", { className: "form-gap" }), resetAll),
-    el("p", { className: "prefs-hint", textContent: "For each kind of text: its color, its background, and bold, italic or underlined." }),
     rows);
 }

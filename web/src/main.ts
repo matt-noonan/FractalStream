@@ -387,8 +387,8 @@ let detailsDialog: { element: HTMLElement; preview: HTMLElement } | null = null;
 function previewElement(preview: string | null): HTMLElement {
   return preview
     ? el("img", { className: "details-preview", src: `data:image/png;base64,${preview}`, alt: "The project's preview" })
-    : el("p", { className: "details-no-preview",
-                textContent: "No preview yet. To make one, choose “Use this as preview” from a viewer's ☰ menu." });
+    : el("p", { className: "details-no-preview", textContent: "No preview",
+                title: "To make one, choose “Use this as preview” from a viewer's ☰ menu" });
 }
 
 function showDetails(m: Extract<Message, { type: "details" }>) {
@@ -998,7 +998,7 @@ function renderAutocolor() {
   const status = el("p", { className: "autocolor-status" });
   const g = groups.find((x) => x.id === autocolorGroup);
   if (!g) {
-    status.textContent = "No viewer has used autocolor yet: a group appears here once one does.";
+    status.textContent = "No groups yet";
     body.replaceChildren(status);
     return;
   }
@@ -2080,17 +2080,17 @@ class ViewerView {
           send({ type: "viewerBackend", viewer: this.info.id, backend });
         };
         const d = drawnWith.get(this.info.id);
-        return [
-          { kind: "toggle", label: "The order in Preferences", on: this.info.drawWith === null, toggle: () => drawWith(null) },
-          ...(Object.keys(backendLabels) as Backend[]).map((b): MenuItem => this.info.backends.includes(b) && !backendNote(b)
-            ? { kind: "toggle", label: label(b), on: this.info.drawWith === b, toggle: () => drawWith(b) }
-            : { kind: "action", label: label(b) + (backendNote(b) || " (not in this version)"), enabled: false, run: () => {} }),
-          { kind: "separator" },
-          { kind: "action", enabled: false, run: () => {},
-            label: !d ? "Not drawn yet" : d.backend ? `Drawn with: ${label(d.backend)}` : "No backend could draw it" },
-          ...(d?.declined ?? []).map(([b, why]): MenuItem =>
-            ({ kind: "action", enabled: false, run: () => {}, label: `${label(b)} declined: ${why}` })),
-        ];
+        // One a viewer tries first, checked (chosen again: back to the order
+        // in Preferences). One that can't draw here, or declined the last
+        // render, is greyed out, with why on hover.
+        return (Object.keys(backendLabels) as Backend[]).map((b): MenuItem => {
+          const why = !this.info.backends.includes(b) ? "Not in this version"
+                    : backendNote(b) || d?.declined?.find(([x]) => x === b)?.[1];
+          return why
+            ? { kind: "action", label: label(b), help: why, enabled: false, run: () => {} }
+            : { kind: "toggle", label: label(b), on: this.info.drawWith === b,
+                toggle: () => drawWith(this.info.drawWith === b ? null : b) };
+        });
       } });
     return items;
   }
@@ -2133,10 +2133,11 @@ class ViewerView {
     const turned = m.turn !== null;
     const fields = [
       { label: sphere ? "Face x =" : "x =", value: m.x === null ? "∞" : String(m.x),
-        note: sphere ? "(∞ for the point at infinity)" : undefined },
+        note: sphere ? "∞ for the point at infinity" : undefined },
       { label: sphere ? "Face y =" : "y =", value: String(m.y) },
-      ...(turned ? [{ label: "turned (degrees) =", value: String(Number(m.turn!.toPrecision(10))) }] : []),
-      { label: sphere ? "pixel size (on the sphere) =" : "pixel size =", value: String(m.pixelSize) },
+      ...(turned ? [{ label: "turned (°) =", note: "Degrees counterclockwise", value: String(Number(m.turn!.toPrecision(10))) }] : []),
+      { label: "pixel size =", value: String(m.pixelSize),
+        note: sphere ? "The size of a pixel in the middle, on the sphere" : undefined },
     ];
     askForm(this.element, "Jump to view", fields, (values) => {
       const number = (v: string) => ["∞", "inf", "infinity", "Infinity"].includes(v.trim()) ? Infinity : Number(v.trim());
@@ -2174,7 +2175,7 @@ class ViewerView {
   /** Ask for a colorizer's arguments, as the desktop does. */
   askArguments(name: string, fields: { param: string; note: string; text: string }[]) {
     askForm(this.element, `${name}: arguments`,
-            fields.map((f) => ({ label: `${f.param} =`, note: f.note, value: f.text })),
+            fields.map((f) => ({ label: `${f.param} =`, value: f.text, note: f.note })),
             (answers) => {
               colorizerChange = this.info.title;
               send({ type: "colorizerAnswers", viewer: this.info.id, name, answers });
@@ -2205,8 +2206,9 @@ function askForm(host: HTMLElement, title: string, fields: { label: string; note
   });
   const form = el("form", { className: "viewer-form" },
     el("div", { className: "form-title", textContent: title }),
-    ...fields.map((f, i) => el("label", { className: "form-field" },
-      el("span", { textContent: f.label }), inputs[i], f.note ? el("small", { textContent: f.note }) : "")),
+    // (a field's note is its hover text, not shown in the form)
+    ...fields.map((f, i) => el("label", { className: "form-field", title: f.note ?? "" },
+      el("span", { textContent: f.label }), inputs[i])),
     error, el("div", { className: "form-buttons" }, ...extra, el("span", { className: "form-gap" }), cancel, okButton));
   form.setAttribute("role", "dialog");
   const close = () => form.remove();

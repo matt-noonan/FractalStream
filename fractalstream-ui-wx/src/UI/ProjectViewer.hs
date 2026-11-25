@@ -194,18 +194,17 @@ data BuiltinTool = NavTool | DebugTool | MoviePathTool
 -- be written between its parentheses.
 askColorizerArguments :: Window a -> String -> [(String, String, String)] -> IO (Maybe [String])
 askColorizerArguments f name params = do
-  d <- dialog f [ text := name ]
+  d <- dialog f [ text := "Arguments for " ++ name ]
   p <- panel d []
   ok <- button p [ text := "OK" ]
   cancel <- button p [ text := "Cancel" ]
-  fields <- forM params $ \(param, _, current) -> textEntry p [ text := current, tooltip := param ]
-  let fieldRow (param, note, _) field = row 5
-        [ margin 3 (label (param ++ " =")), hfill (widget field), margin 3 (label note) ]
+  -- (what leaving a field empty does is its tooltip)
+  fields <- forM params $ \(_, note, current) -> textEntry p [ text := current, tooltip := note ]
+  let fieldRow (param, _, _) field = row 5
+        [ margin 3 (label (param ++ " =")), hfill (widget field) ]
   set d [ layout := margin 10 $ fill $ container p $ column 5 $
-          [ label ("Arguments for " ++ name ++ ":") ]
-          ++ zipWith fieldRow params fields
-          ++ [ label "An empty field means its default, or else the viewer's variable of that name."
-             , row 5 [ margin 5 (widget cancel), hglue, margin 5 (widget ok) ] ] ]
+          zipWith fieldRow params fields
+          ++ [ row 5 [ margin 5 (widget cancel), hglue, margin 5 (widget ok) ] ] ]
   showModal d $ \onDone -> do
     set cancel [ on command := onDone Nothing ]
     set ok [ on command := mapM (`get` text) fields >>= onDone . Just ]
@@ -707,7 +706,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     onOwnDestroy host (void (windowDestroy debugger))
     debugPanel <- panel debugger []
     debugResult <- textCtrl debugPanel
-      [ text := "Click in the viewer to see the final value of each variable" ]
+      [ text := "", tooltip := "Click in the viewer to see the final value of each variable" ]
     set debugger [ layout := fill $ container debugPanel $ margin 5 $ expand $ widget debugResult ]
 
     let debugAt (x, y) (dx, dy) = case vCodeWithArgs of
@@ -1954,26 +1953,25 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
               readNumber txt = case filter (/= ' ') txt of
                 t | t `elem` ["∞", "inf", "infinity", "Infinity"] -> Just (1 / 0)
                 t -> readMaybe t
-              heading = case modelShape oldModel of
-                FlatShape -> "The point in the middle, and a pixel's size."
-                GlobeShape _ -> "The point the globe faces (x = ∞ for ∞), how far it's turned (in degrees, \
-                                \counterclockwise), and the size of a pixel in the middle, on the sphere."
-                HyperbolicShape{} -> "The point in the middle, how far the picture is turned about it (in \
-                                     \degrees, counterclockwise), and a pixel's size."
+              -- (what each field means is in its tooltip)
+              (centerTip, pixelTip) = case modelShape oldModel of
+                FlatShape -> ("The point in the middle", "A pixel's size")
+                GlobeShape _ -> ("The point the globe faces (x = ∞ for ∞)", "The size of a pixel in the middle, on the sphere")
+                HyperbolicShape{} -> ("The point in the middle", "A pixel's size")
           d <- dialog f [ text := "Jump to view..." ]
           jp <- panel d []
           jOk <- button jp [ text := "OK" ]
           jCancel <- button jp [ text := "Cancel" ]
-          jCenterX <- textEntry jp [ text := shownNumber oldX ]
-          jCenterY <- textEntry jp [ text := shownNumber oldY ]
-          jTurn <- textEntry jp [ text := maybe "" (printf "%0.10g") oldTurn ]
-          jPixel <- textEntry jp [ text := printf "%0.14g" oldPx ]
+          jCenterX <- textEntry jp [ text := shownNumber oldX, tooltip := centerTip ]
+          jCenterY <- textEntry jp [ text := shownNumber oldY, tooltip := centerTip ]
+          jTurn <- textEntry jp [ text := maybe "" (printf "%0.10g") oldTurn
+                                , tooltip := "How far the picture is turned, in degrees counterclockwise" ]
+          jPixel <- textEntry jp [ text := printf "%0.14g" oldPx, tooltip := pixelTip ]
           jError <- staticText jp [ text := "" ]
           set d [ layout := margin 10 $ fill $ container jp $ column 5 $
-                  [ label heading
-                  , row 5 [ label "x = ", expand $ widget jCenterX
+                  [ row 5 [ label "x = ", expand $ widget jCenterX
                           , hglue, label "y = ", expand $ widget jCenterY ] ]
-                  ++ [ row 5 [ label "turned = ", expand $ widget jTurn ] | isJust oldTurn ]
+                  ++ [ row 5 [ label "turned (°) = ", expand $ widget jTurn ] | isJust oldTurn ]
                   ++ [ row 5 [ label "pixel size = ", expand $ widget jPixel ]
                      , widget jError
                      , row 5 [ margin 5 $ widget jCancel, hglue, margin 5 $ widget jOk ] ] ]
@@ -2115,38 +2113,24 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           requestRefresh
       ]
 
-    -- Which backend draws this viewer: the app's order (Preferences), or
-    -- one this viewer tries first; and, shown as the menu opens, which
-    -- drew the last render, and why the ones before it didn't.
+    -- Which backend draws this viewer: one it tries first, checked (and
+    -- chosen again, unchecked: back to the order in Preferences). A
+    -- backend that isn't in this version, or that declined the last
+    -- render, is greyed out.
     drawMenu <- menuPane [ text := "Draw with" ]
     let available = viewerBackends theViewer
-        setOverride o = setValue vBackendOverride o
-    defaultItem <- menuItem drawMenu [ text := "The order in Preferences", checkable := True ]
     backendItems <- forM allBackends $ \b -> do
-      mi <- menuItem drawMenu [ text := backendLabel b ++ (if b `elem` available then "" else " (not in this version)")
-                                , checkable := True, enabled := b `elem` available ]
+      mi <- menuItem drawMenu [ text := backendLabel b, checkable := True, enabled := b `elem` available ]
       pure (b, mi)
-    menuLine drawMenu
-    drawnItem <- menuItem drawMenu [ text := "Not drawn yet", enabled := False ]
-    -- (a line per backend that declined: made afresh each time, since an
-    -- empty item would still take up a line)
-    declineItems <- newIORef []
-    set defaultItem [ on command := setOverride Nothing ]
-    forM_ backendItems $ \(b, mi) -> set mi [ on command := setOverride (Just b) ]
+    forM_ backendItems $ \(b, mi) -> set mi [ on command := do
+      override <- getDynamic vBackendOverride
+      setValue vBackendOverride (if override == Just b then Nothing else Just b) ]
     let showDrawMenu = do
           override <- getDynamic vBackendOverride
-          set defaultItem [ checked := isNothing override ]
-          forM_ backendItems $ \(b, mi) -> set mi [ checked := override == Just b ]
-          report <- readIORef renderReport
-          set drawnItem [ text := case report of
-                            Nothing -> "Not drawn yet"
-                            Just RenderReport{ rrBackend = Just b } -> "Drawn with: " ++ backendLabel b
-                            Just _ -> "No backend could draw it" ]
-          let declines = maybe [] rrDeclined report
-          readIORef declineItems >>= mapM_ (menuDestroyByItem drawMenu)
-          fresh <- forM declines $ \(b, Decline why) ->
-            menuItem drawMenu [ text := "  " ++ backendLabel b ++ " declined: " ++ why, enabled := False ]
-          writeIORef declineItems fresh
+          declined <- maybe [] (map fst . rrDeclined) <$> readIORef renderReport
+          forM_ backendItems $ \(b, mi) ->
+            set mi [ checked := override == Just b
+                   , enabled := b `elem` available && b `notElem` declined ]
     modifyIORef' beforeMenu (>> showDrawMenu)
     void (menuSub hamburgerMenu drawMenu [ text := "Draw with" ])
     menuLine hamburgerMenu
@@ -2890,16 +2874,12 @@ takePicture :: Window a -> Viewer -> IO ()
 takePicture f v0 = do
   d <- dialog f [ text := "Save viewer snapshot"]
   p <- panel d []
-  mbox <- textEntry p [ text := "1" ]
-  cbox <- checkBox  p [ text := "Use subpixel smoothing?", checkable := True, checked := True ]
+  mbox <- textEntry p [ text := "1", tooltip := "The picture's size, as a multiple of the viewer's" ]
+  cbox <- checkBox  p [ text := "Subpixel smoothing", checkable := True, checked := True ]
   ok     <- button p [ text := "OK" ]
   cancel <- button p [ text := "Cancel" ]
-  p' <- panel p []
-  txt <- staticText p' [ text := "Choose any resolution adjustments for the saved picture" ]
-  set p' [ layout := margin 5 . floatCentre . widget $ txt ]
   set d [ layout := margin 10 $ fill $ container p $ column 5
-          [ hstretch . expand . margin 5 $ widget p'
-          , row 5 [ margin 3 $ label "Dimension multiplier: ", hfill $ widget mbox, hglue, margin 5 $ widget cbox ]
+          [ row 5 [ margin 3 $ label "Size multiplier: ", hfill $ widget mbox, hglue, margin 5 $ widget cbox ]
           , row 5 [ margin 5 $ widget ok, margin 5 $ widget cancel ]]]
 
   result <- showModal d $ \done -> do

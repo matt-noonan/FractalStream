@@ -191,16 +191,16 @@ makeMovieDialog owner project@MovieProject{..} fromTitle source = do
           sw <- scriptWidgetWith (movieScriptNames defs mpConfig) p scriptCheck
           let editor = swEditor sw
           let getScript = styledTextCtrlGetText editor
+          set editor [ tooltip := "Run for each frame, with the argument going from 0 to 1" ]
           pure ( column 5
-                   [ hfill (label "Run this script for each frame, with the argument going from 0 to 1:")
-                   , fill (minsize (sz 460 110) (widget editor))
+                   [ fill (minsize (sz 460 110) (widget editor))
                    , hfill (widget (swStatus sw)) ]
                , \_ -> case defsOrError of
                    Left err -> pure (Left err)
                    Right _ -> getScript >>= scriptAnimation defs mpConfig
                , Just <$> getScript )
         PathSource drawnIn var path ->
-          pure ( hfill (label (showCoordinate var ++ " will move along the path drawn in " ++ quoted drawnIn ++ "."))
+          pure ( hfill (label (showCoordinate var ++ " along the path drawn in " ++ quoted drawnIn))
                , \backToStart -> pure (pathAnimation mpConfig var backToStart path)
                , pure Nothing )
 
@@ -210,9 +210,10 @@ makeMovieDialog owner project@MovieProject{..} fromTitle source = do
       fpsBox     <- textEntry p [ text := lastOr lmFps "30" ]
       scaleBox   <- textEntry p [ text := lastOr lmScale "1" ]
       sizeNote   <- staticText p [ text := "" ]
-      smoothBox  <- checkBox p [ text := "Use subpixel smoothing"
+      smoothBox  <- checkBox p [ text := "Subpixel smoothing"
                                , checked := lastOr lmSmooth True ]
-      drawingsBox <- checkBox p [ text := "Include what the viewer's tools have drawn"
+      drawingsBox <- checkBox p [ text := "Tool drawings"
+                                , tooltip := "Include what the viewer's tools have drawn"
                                 , checked := lastOr lmDrawings False ]
       let loopTip = case source of
             ScriptSource -> "Leave out the last frame, since a movie playing in a loop goes back to the first frame."

@@ -50,29 +50,31 @@ preferencesWindow available settingsVar = do
   -- On macOS, the script editor's emacs keys are always on (see
   -- "UI.EditorKeys"); elsewhere they take over Control shortcuts, so
   -- they're up to the user.
-  symbolsBox <- checkBox editorTab [ text := "Write scripts with mathematical symbols \
-                                     \(\x27F5, \x211D, z\xB2, ...) as they're edited" ]
+  symbolsBox <- checkBox editorTab [ text := "Mathematical symbols"
+                                   , tooltip := "Write scripts with mathematical symbols \
+                                                \(\x27F5, \x211D, z\xB2, ...) as they're edited" ]
   numbersBox <- checkBox editorTab [ text := "Show line numbers" ]
   foldBox <- checkBox editorTab [ text := "Code folding" ]
   emacsBox <- if emacsKeysByDefault then pure Nothing else
-    Just <$> checkBox editorTab [ text := "Emacs-style movement keys (Control-A, Control-E, ...)" ]
+    Just <$> checkBox editorTab [ text := "Emacs movement keys"
+                                , tooltip := "Control-A, Control-E, ... move the cursor, as in Emacs" ]
 
   -- The Viewers tab: how strongly a sphere viewer shades the globe, in
   -- percent (sphere viewers draw again as it's dragged).
   shadingSlider <- horizontalSlider viewersTab 0 100 defaultSphereShading 240
   shadingText <- staticText viewersTab [ text := "100%" ]
-  shadingNote <- staticText viewersTab [ text := "Shades the globe as if it were lit from the upper left. \
-                                                 \Use 0% for no shading at all." ]
+  set shadingSlider [ tooltip := "Shades the globe as if it were lit from the upper left. \
+                                 \Use 0% for no shading at all." ]
   -- ...and the order viewers try the backends in (GPU_PLAN.md, G1)
-  renderingList <- singleListBox viewersTab [ items := [], size := sz 320 80 ]
+  renderingList <- singleListBox viewersTab
+    [ items := [], size := sz 320 80
+    , tooltip := "Each viewer is drawn with the first of these that can draw it as \
+                 \precisely as the CPU's doubles would (the GPU's double-float can't \
+                 \zoom as deep, for instance), and so those after the CPU only when \
+                 \it can't. A viewer's menu can choose one for that viewer." ]
   upButton <- button viewersTab [ text := "Move up" ]
   downButton <- button viewersTab [ text := "Move down" ]
   defaultOrderButton <- button viewersTab [ text := "Use the default" ]
-  -- (in lines: a static text doesn't wrap, and would widen the window)
-  renderingNote <- staticText viewersTab [ text := "Each viewer is drawn with the first of these that can draw it as\n\
-                                                   \precisely as the CPU's doubles would (the GPU's double-float can't\n\
-                                                   \zoom as deep, for instance), and so those after the CPU only when\n\
-                                                   \it can't. A viewer's menu can choose one for that viewer." ]
 
   -- The Colors tab: for light windows or dark ones (the kind this one
   -- is, to start with), each class's sample, and buttons and boxes for
@@ -255,11 +257,9 @@ preferencesWindow available settingsVar = do
             , ("Viewers", viewersTab, margin 12 $ column 8
                 [ label "Shading of the Riemann sphere:"
                 , row 6 [ hfill (widget shadingSlider), widget shadingText ]
-                , hstretch (widget shadingNote)
-                , label "Drawing viewers, in order of preference:"
-                , row 6 [ widget renderingList
+                , label "Draw viewers with, in order:"
+                , row 6 [ minsize (sz 260 90) (widget renderingList)
                         , column 6 [ widget upButton, widget downButton, widget defaultOrderButton ], hglue ]
-                , hstretch (widget renderingNote)
                 , glue
                 ])
             , ("Colors", colorsTab, margin 12 $ column 8

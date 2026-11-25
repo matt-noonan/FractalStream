@@ -1996,7 +1996,7 @@ async function capture() {
   await page.waitForTimeout(900);
   c.check((await dialog.locator(".form-error").textContent()) === "", "and fixed, it isn't");
   const fields = dialog.locator(".capture-grid input");
-  await fields.nth(0).fill("8");
+  await fields.nth(0).fill("2");   // seconds: 8 frames, at 4 a second
   await fields.nth(1).fill("4");
   await app.forgetMessages();
   dl = page.waitForEvent("download", { timeout: 60000 }).catch(() => null);
@@ -2058,8 +2058,8 @@ async function preferences() {
   await app.projectMenu("Preferences");
   await tab("Editor");
   await box("line numbers").check();
-  await box("Fold blocks").check();
-  await box("mathematical symbols").uncheck();
+  await box("Fold code blocks").check();
+  await box("Mathematical symbols").uncheck();
   await page.locator(".prefs-dialog input[type=text]").fill("Courier New");
   await page.locator(".prefs-size").fill("16");
   await page.locator(".prefs-size").press("Tab");
@@ -2130,7 +2130,7 @@ async function preferences() {
   await page.locator(".welcome-preferences").click();
   c.check(await chooser().evaluate((s) => s.selectedOptions[0]?.textContent) === "Viewers", "Preferences opens on the page it was left on");
   await tab("Editor");
-  c.check(await box("line numbers").isChecked() && !(await box("mathematical symbols").isChecked()), "and the dialog shows them");
+  c.check(await box("line numbers").isChecked() && !(await box("Mathematical symbols").isChecked()), "and the dialog shows them");
   await page.keyboard.press("Escape");
   await page.evaluate(() => localStorage.removeItem("fractalstream.preferences"));
   await page.reload();
@@ -2168,7 +2168,7 @@ async function pathMovie() {
   c.check((await views()) === viewsBefore, "dragging draws a path, not a pan");
   const text = await dialog.textContent();
   const recordWhich = await dialog.locator("select").first().evaluate((s) => s.selectedOptions[0].textContent);
-  c.check(/C will move along the path drawn in “Parameter plane”/.test(text) && recordWhich === "Dynamical plane",
+  c.check(/C along the path drawn in “Parameter plane”/.test(text) && recordWhich === "Dynamical plane",
           `letting go asks how to make a movie along it, of the other viewer (${recordWhich})`);
   c.check(!(await dialog.locator(".capture-check input").first().isChecked()), "an open path doesn't loop, to begin with");
 
@@ -2176,7 +2176,7 @@ async function pathMovie() {
   await dialog.locator(".capture-inset input").check();
   await dialog.locator(".capture-inset select").selectOption("1");
   const fields = dialog.locator(".capture-grid input");
-  await fields.nth(0).fill("6");
+  await fields.nth(0).fill("1.5");   // seconds: 6 frames, at 4 a second
   await fields.nth(1).fill("4");
   const before = await page.locator(".panel input[type=text]").first().inputValue();
   await app.forgetMessages();
@@ -2260,13 +2260,15 @@ async function backends() {
   // (why the engine has no GPU, if it hasn't)
   const noGpu = await page.evaluate(() => window.__gpu?.error ?? null);
   let items = await drawWith();
-  const labels = (await page.locator(".window-menu .menu-label").allTextContents()).join(" | ");
-  c.check(noGpu
-    ? labels.includes("Drawn with: CPU") && labels.includes(`GPU, double-float (${noGpu})`)
-      && labels.includes(`GPU, single precision (${noGpu})`) && labels.includes(`GPU, double-float declined: ${noGpu}`)
-    : labels.includes("Drawn with: GPU, double-float"), `its "Draw with" menu (${noGpu ?? "with a GPU"}): ${labels}`);
-  c.check(await checkedOf(items, "The order in Preferences") && !(await checkedOf(items, "CPU")),
-          "the order in Preferences is checked, to start with");
+  const labels = (await page.locator(".window-menu .menu-label").allTextContents())
+    .filter((l) => !l.includes("Back")).join(" | ");
+  // just the backends: no other lines, and why one can't draw is its hover text
+  c.check(labels === "GPU, double-float | CPU | GPU, single precision",
+          `its "Draw with" menu lists just the backends: ${labels}`);
+  if (noGpu) c.check(await items.filter({ hasText: "GPU, double-float" }).first().getAttribute("title") === noGpu,
+                     `a greyed-out GPU says why on hover (${noGpu})`);
+  c.check(!(await checkedOf(items, "CPU")) && !(await checkedOf(items, "GPU, double-float")),
+          "nothing's checked, to start with: the order in Preferences");
   c.check(await items.filter({ hasText: "GPU, double-float" }).first().isDisabled() === !!noGpu,
           noGpu ? "the GPU's backends can't be chosen" : "the GPU's backends can be chosen");
   await items.filter({ hasText: /^CPU/ }).first().click();
@@ -2274,19 +2276,18 @@ async function backends() {
   const sent = await page.evaluate((id) => window.__sent.filter((r) => r.type === "viewerBackend" && r.viewer === id).pop(), pp);
   c.check(sent?.backend === "cpu", `choosing the CPU tells the engine (${JSON.stringify(sent)})`);
   items = await drawWith();
-  c.check(await checkedOf(items, "CPU") && !(await checkedOf(items, "The order in Preferences")), "and it's checked now");
-  await items.filter({ hasText: "The order in Preferences" }).first().click();
+  c.check(await checkedOf(items, "CPU"), "and it's checked now");
+  await items.filter({ hasText: /^CPU/ }).first().click();
   await page.waitForTimeout(300);
   const back = await page.evaluate((id) => window.__sent.filter((r) => r.type === "viewerBackend" && r.viewer === id).pop(), pp);
-  c.check(back?.backend === null, "the order in Preferences, again");
+  c.check(back?.backend === null, "choosing it again unchecks it: the order in Preferences, again");
 
   // the order, in Preferences
   await app.backToLibrary();
   await page.locator(".welcome-preferences").click();
   await page.locator(".prefs-dialog .tab-chooser").selectOption({ label: "Viewers" });
   const order = () => page.locator(".prefs-order li span").allTextContents();
-  const note = noGpu ? ` (${noGpu})` : "";
-  c.check((await order()).join(" | ") === `GPU, double-float${note} | CPU | GPU, single precision${note}`,
+  c.check((await order()).join(" | ") === `GPU, double-float | CPU | GPU, single precision`,
           `the backends' order, the default to start with: ${(await order()).join(" | ")}`);
   await page.locator(".prefs-order li").nth(1).locator("button", { hasText: "↑" }).click();
   const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("fractalstream.preferences") || "{}").rendering);
