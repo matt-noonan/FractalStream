@@ -120,6 +120,18 @@ integer division, use `//` instead.
 | `^`  | Exponentiation | Fractional exponents are allowed, integer exponents will be optimized |
 | `mod(a, b)` | Remainder | For integers or real numbers; never negative (see below) |
 
+Values written next to each other are multiplied, as on paper: `x y` is `x * y`, `2 π i t` is
+`2 * π * i * t`, and `r x (1 - x)` is `r * x * (1 - x)`. A function can be applied without
+parentheses to a single value, as in `cos z` or `log |z|`, but only to that one value: `cos x + y`
+means `(cos x) + y`.
+
+A function applied in parentheses is a value like any other in a product, so `cos(z) 2`,
+`a sin(x) b` and `f(x) g(y)` all multiply. A function applied *without* parentheses can only be
+followed by other functions in a product: `2 cos z sin z` is fine, but `cos z 2` is an error,
+since it could mean `(cos z) 2` or `cos(z 2)`. Write `cos(z) 2` or `cos(2 z)`, whichever you mean.
+For the same reason, `sin x^2` is an error, since it could mean `(sin x)^2` or `sin(x^2)`; write
+`sin(x)^2` for the first.
+
 `mod(a, b)` is the remainder of dividing `a` by `b`: the number `r` with `a = b k + r` for a whole
 number `k`, and `0 ≤ r < |b|`. It is never negative, whatever the signs of `a` and `b`:
 `mod(-7, 3)` is 2, `mod(7, -3)` is 1, and `mod(-0.5, 1)` is 0.5. For integers, `a // b` is that
