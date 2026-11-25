@@ -13,7 +13,7 @@ Here is an example of a script that defines two viewers (the blue and purple box
 configuration variable (green box), and one tool (yellow box):
 
 ```{figure} _static/script-components.jpg
-[Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=vVKxTsMwFNz7FU9ZUaI0TZM0UiWkzohvcJ2X9onUtmw3pRETYmFn7z8gsTHxKf0STELaUli6sPnO9853eTFck7I5PAwArmvCDWrwbrZQbAVbETee48miZhahgf3uHZqPV7iCGayFpcpxaDhTaAZnBopptkI3CapiAj2omZ7OnMi5PL9AeJEvl6KkRetr0FoSizbYDHLYPz22hn4YDKNonDiPMEjjOEuoHbVSVuDd6jlZ40Ep9fS8nhSgsdRolrlDAC6UwY4vkHFLtQtZ_LrjFfG7jm0gn3b4hwicr0JmO1HbfPfW9_zmCs02oCQJC8xCc8pWJBBKLVdu0EpQGmuSa_MtOv9MG5z7SkuF2hKarye7ZZju9ZPOfRx-n7draM_b49nti2Mv8iENJuiPDjAJkhj96IDDYDRJshOYRlkPNS5IiqNVHCRZOv4bmqWrkcOwT3v2_1wYOgziYZT-X-hP&edit)
+[Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=vVKxTsMwEN37FaesKFGapkkaCQmpM-IbXOfSnkhty3ZTGjEhFnb2_gMSGxOf0i_BJKQtLUsXtnvPd8_v-Wy4JmVzeBwA3NSEa9Tg3W6g2Ai2JG48x5NFzSxCA7vtBzSfb3AFU1gJS5Xj0HCm0AxOBBTTbIluElTFBHoga1dPXZeTeXmF8CJhLkVJ81bYoLUk5q2zKeSwe35qBf0wGEbROHEaYZDGcZZQO2qlrMC70zOyxoNSnueTAjSWGs0idwjAmTLY8QUybql2JouzM14Rv-_YBvLrDv9qAqerkNmuqU2-fe9z_nCFZmtQkoQFZqE5ZisSCKWWSzdoJSiNNcmV-Wk6faY1znylpUJtCc33ld02THf7UebeDn_I2zW09eZQu4Vx7Jt8SIMJ-qM9TIIkRj_a4zAYTZLsCKZR1kONc5LiIBUHSZaO_4Zm4WLkMOzdnnygC02HQTyM0v8z_QU&edit)
 ```
 
 In the next few sections, you will learn how to write basic FractalStream viewer scripts and define your own custom tools.
@@ -73,7 +73,7 @@ enter new values of `C`.
 
 ```{code-block} fs
 ---
-caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=vVC9TsMwGNz7FKeslaMkDUkaCalSZx7CmI9iKT-W7bYkYkIs7Oy8AzMTj5InwXWUFlUdYGG783d33_kzQktlSzyxGbASbXMvNwhuOoxwq7mVbRO44RolhpdnDK9vYPHsIN9J2pP28ruu4bUUvILpjKX64JCWnJ3QY3j_RP_1gblL2TZWVu6NjOCKzHmQ4prX5JxQFW8owI7r67UT9X5z9OvcPd0ypVtF2koypfONWzwELnQeB4B4LP0ej7sTdoUETSKGPFwSWxxpFmYpseTIo3CxzIofNE-KiWrauKueotIwK_Kry9Q8uO-UiKfWZwf6Y-koTOMk_7_S3w&edit)
+caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=vVA7TsNAFOxzipFbtFbsGNtxhZSaQyzLI6zkz2p3k2CLCtHQ03MHaiqO4pPwYssJilKEhm5m38y82eeU1cYXeBYz4EY19YNeI7htMcKNlV43dcDDFQr0ry_o394hotlevtW0IzvI79taVlrJEq51nqq9Q3tiO6FD__GF7vsTV5yyqb0u-Y2ckobcaZCRVlbETphS1hSg2TJesaobVs8vDt7RnTC2MWS9Jlewb1wzQOBM6XEAqKdi2DPg9oi5kaJJJJCFSxKLA03DNCERH_g8XCzT_BfN4nyiltZ81mNUEqZ5dn2eukf-ToFoan1yoT-WnodJFGf_V_oH&edit)
 ---
 @config "My configuration"
 C : C := -1
@@ -81,7 +81,7 @@ C : C := -1
 @viewer "My dynamical system"
 iterate z -> z^2 + C until z escapes
 
-@viewer "My parameter plane" var=C
+@viewer "My parameter plane" over C
 z := 0
 iterate z -> z^2 + C until z escapes
 ```
@@ -105,7 +105,7 @@ position of each iteration, and a line connecting each point on the orbit to the
 
 ```{code-block} fs
 ---
-caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=vVK7bsJAEOz5ipHbyBavGLCEFIk6yjccxxpOse9OdwfEVqooTfr0_EOkdKnyKXxJDhsDQaSgSbczN7M7u7blRmiX4DlsAXdcyVTMEdwXqMulYU4oGfjHCRJsX1-wfXtH2Gnt5CtBazKVfFZIlgvOMtjCOsp3DuHI2wkltpsvlN8fuPFdltKJzHNkOdNkzxtpZlhO3gmdMUkBVsyMJ15UVpPbV_V1SmUIHsxUOBsgVWb8V1YlYSg1ZBeJR4CfYKnmeSb4Y82WSMY1_iWC92pirhZVUTefTbA9NzNsDa2EdGAO5SmbCUlIjcq90SloQyuhlnYvOt9rTdNQG6XJOEF2N7K-nq2nX9ivicWfkup-VV0ca39oTo0oxCAaUdg7wDiK-xR2D7gd9Ubx8AQOusMGGpr7v-XYqh_Fw8HtZWgXfp0EnSb12Ye_MnQ76ne6g_8L_QM&edit)
+caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=vVK7TsNAEOz5ipFbZCsv7MQSElJqxDdcLuvkhH13ursk2KJCNPT0-QckOio-JV_CxY6TEIUiDd3O3Mzu7NqWG6FdiufwCrjjSmZihuC-RFMuDHNCycA_jpFi8_qCzds7wu7VVr4UtCJTy6elZIXgLIctraNi6xCOvJ1QYbP-QvX9gWvfZSGdyD1HljNN9rSRZoYV5J3QOZMUQC19Pfaqqh7duaixUypH8GAmwtkAmfo7rJIwlBmy89QjwE-w1PA8F_yxYSuktw3-JYL3amKuEdVR159tsB03NWwFrYR0YA7VMZsLSciMKrzRKWhDS6EWdic63WtFk1Abpck4QXY7sjmfbaaf2a-NxZ_S-n51XR5qf2lOrShEEo0o7O9hHMUDCnt73In6o3h4BJPesIWGZv53ObQaRPEwuTkP7dyvk6Lbpj758heG7kSDbi_5v9A_&edit)
 ---
 @config "My configuration"
 C : C := -1
@@ -113,11 +113,11 @@ C : C := -1
 @viewer "My dynamical system"
 iterate z -> z^2 + C until z escapes
 
-@viewer "My parameter plane" var=C
+@viewer "My parameter plane" over C
 z := 0
 iterate z -> z^2 + C until z escapes
 
-@tool "Orbits" for="My dynamical system"
+@tool "Orbits" for "My dynamical system"
 on refresh:
   erase
 on click:
@@ -143,7 +143,7 @@ are available to all other parts of the script.
 
 ```{code-block} fs
 ---
-caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=vVJLTsMwEN33FKOsQChR0jRfqRJS14gzuOmEWiS2ZbstjVghNiyREDvUOyCxY8VRegKOgBv3R1Uk2LCbN35v5s2MVSGp0Dncuh2A84LXNWcmKk-aU1g-PEHz8QpnMOjYV1bSK3Au5mDDiSSacuaYxwHksLy_azVu0NKnFGcoW_pozkhNC1KBmiuN9UpBNRo5QgPLxbttOGGaViaBqiAC1WEVQSSp0chAVIShA1Mi-wNDatq2_u-Las4rcC7lkGrlQMll_yeXnIHEUqIa5wYBmPIKbb6oaHFtsw3kfYu_kcBoBRJtSa3PxVvrap0YSTIDwSnTQDQ0-9mKMoRS8tqoNAchcUr5RK1Jh0NNSTVBtepjL2M7DnIIPD9K_CiIkyTIumFqjhl4YZjEmR-kUZj1sujz5fG5M8OhKyQXKDW1hezila10ZDuboYqbvF19G893sblRgRuSC4mXoRtuYezFPXS7W-x7YRanezDpphso8cr8sl2pnhenSXQcqrHZhxl74_rgz_zRtO_1gm7yf6a_AA&edit)
+caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=vVJLTsMwEN33FKOsQChR0jRfCQmpa8QZ3HTSWiS2ZbstjVghNiyREDvUOyCxY8VRegKOgBv3R1Uk2LCbN35v5s2MVSGp0Dncuh2Ai4LXNWcmKk-aU1g-PEHz8Qpn0O_YV1bSETiXc7DhRBJNOXPMYx9yWN7ftRo3aOlTijOULX04Z6SmBalAzZXGeqWgGo0coYHl4t02nDBNK5NAVRCB6rCKIJLUaGQgKsLQAT41cd-wmrav__uqmvMKnCs5oFo5UPKfbXIGEkuJapwbBGDKK7T5oqLFtc02kJ9b_I0ERiuQaEtqfS7eWlfrxFCSGQhOmQaiodnPVpQhlJLXRqU5CIlTyidqTTocakqqCapVH3sa27GfQ-D5UeJHQZwkQdYNU3PNwAvDJM78II3CrJdFny-Pz50ZDlwhuUCpqS1kN69spSPb2QxV3OTt6tt4vovNkQrckFxIvAzdcAtjL-6h291i3wuzON2DSTfdQIkj8812pXpenCbRcajGZh9m7I3rg0_zR9O-1wu6yf-Z_gI&edit)
 ---
 @common
 f(z) := z^2 + C
@@ -154,11 +154,11 @@ C : C := -1
 @viewer "My dynamical system"
 iterate z -> f(z) until z escapes
 
-@viewer "My parameter plane" var=C
+@viewer "My parameter plane" over C
 z := 0
 iterate z -> f(z) until z escapes
 
-@tool "Orbits" for="My dynamical system"
+@tool "Orbits" for "My dynamical system"
 on refresh:
   erase
 on click:

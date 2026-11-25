@@ -38,7 +38,8 @@ string              String.Double (escapes: String.Escape)
 comment             Comment.Single
 operator            Operator
 stanza-header       Name.Decorator (``@viewer``), String (title),
-                    Name.Attribute (``var``, ``center``, ...)
+                    Name.Attribute (phrase words: ``over``, ``on the``,
+                    ``modulo the lattice``, ``for``, ...)
 parameter           Name.Variable.Global
 variable            Name.Variable
 function            Name.Function
@@ -99,7 +100,7 @@ _KEYWORDS = {
     "use",
     "erase", "write", "point", "at", "circle", "filled", "radius", "pixels",
     "rectangle", "from", "line", "stroke", "fill", "on", "as",
-    "choice", "button", "row", "tab", "coloring", "reset", "resize",
+    "choice", "button", "row", "tab", "coloring", "setup", "reset", "resize",
 }
 
 # Language.Editor.Highlight.builtinFunctions, from the tables in
@@ -315,22 +316,30 @@ class _Stanza:
             titles = [t for t in toks if t.kind == "string"]
             if titles:
                 self.title = _unquote(titles[0].text)
+            # (what its phrases say: `over z`, `over (x, y)`, `modulo the
+            # lattice ...`, `modulo the ... group`, `for "V"`)
+            rest = toks[toks.index(titles[0]) + 1:] if titles else []
             k = 0
-            while k < len(toks):
-                if (k + 2 < len(toks) and toks[k].is_ident()
-                        and toks[k + 1].is_symbol("=", "==")):
-                    v = toks[k + 2]
-                    value = None
-                    if v.kind in ("ident", "reserved"):
-                        value = v.name
-                    elif v.kind == "string":
-                        value = _unquote(v.text)
-                    elif v.kind == "int":
-                        value = v.text
-                    if value is not None:
-                        self.attrs.setdefault(toks[k].name, value)
-                        k += 3
-                        continue
+            while k < len(rest):
+                t = rest[k]
+                if t.is_ident("over") and k + 5 < len(rest) and rest[k + 1].is_symbol("(") \
+                        and rest[k + 2].is_ident() and rest[k + 3].is_symbol(",") \
+                        and rest[k + 4].is_ident() and rest[k + 5].is_symbol(")"):
+                    self.attrs.setdefault("xvar", rest[k + 2].name)
+                    self.attrs.setdefault("yvar", rest[k + 4].name)
+                    k += 6
+                    continue
+                if t.is_ident("over") and k + 1 < len(rest) and rest[k + 1].is_ident():
+                    self.attrs.setdefault("var", rest[k + 1].name)
+                    k += 2
+                    continue
+                if t.is_ident("modulo"):
+                    lattice = any(r.is_ident("lattice") for r in rest[k + 1:k + 3])
+                    self.attrs.setdefault("lattice" if lattice else "group", "")
+                if t.is_ident("for") and k + 1 < len(rest) and rest[k + 1].kind == "string":
+                    self.attrs.setdefault("for", _unquote(rest[k + 1].text))
+                    k += 2
+                    continue
                 k += 1
 
 
@@ -392,6 +401,21 @@ def _is_handler(line):
     return line.indent == 0 and line.first_word() == "on"
 
 
+def _in_setup(stanza, line):
+    """Whether a line is one of a stanza's ``setup:`` settings (indented
+    right under its ``setup:`` line)."""
+    if line.indent == 0:
+        return False
+    k = next((j for j, l in enumerate(stanza.lines) if l is line), None)
+    if k is None:
+        return False
+    for p in reversed(stanza.lines[:k]):
+        if p.tokens and p.indent < line.indent:
+            return (p.indent == 0 and len(p.tokens) == 2
+                    and p.tokens[0].is_ident("setup") and p.tokens[1].is_symbol(":"))
+    return False
+
+
 def _definitions(stanza):
     """The names a stanza defines, from the shapes of its lines."""
     body = [l for l in (stanza.lines[1:] if stanza.header else stanza.lines)
@@ -416,6 +440,11 @@ def _definitions(stanza):
     pairs = []
     for k, line in enumerate(body):
         toks = line.tokens
+        # (a `setup:` setting defines nothing; its `coloring:` block does)
+        parent = enclosing(k)
+        if _in_setup(stanza, line) and line.first_word() != "coloring" \
+                and not (parent is not None and parent.first_word() == "coloring"):
+            continue
         # `name : Type ...` (not `row:` or `coloring:`, which have no type)
         if (len(toks) >= 3 and toks[0].is_ident()
                 and toks[1].is_symbol(":")):
@@ -631,11 +660,16 @@ def _classify(tok, before, before2, defs):
     return Error
 
 
+# The words of a header's phrases.
+_PHRASE_WORDS = {"over", "on", "the", "plane", "sphere", "disk", "half", "halfplane", "modulo",
+                 "lattice", "modular", "group", "centered", "at", "for", "with", "shortcut"}
+
+
 def _header_token(tok, nxt):
     """A token of a stanza's header line."""
     if tok.kind == "symbol" and tok.text == "@":
         return Name.Decorator
-    if tok.kind in ("ident", "reserved") and nxt is not None and nxt.is_symbol("=", "=="):
+    if tok.kind in ("ident", "reserved") and (tok.name in _PHRASE_WORDS or tok.text in _PHRASE_WORDS):
         return Name.Attribute
     if tok.kind in ("ident", "reserved"):
         return Name
@@ -695,10 +729,16 @@ class FractalStreamLexer(Lexer):
         toks = line.tokens
         is_header = stanza.header is line
 
-        # the event words of a handler's first line, up to its ':'
+        # the event words of a handler's first line, up to its ':', and a
+        # setting's name in a `setup:` block
         event_words = set()
         if _is_handler(line):
             for t in toks[1:]:
+                if t.is_symbol(":"):
+                    break
+                event_words.add(t.start)
+        elif _in_setup(stanza, line) and any(t.is_symbol(":") for t in toks):
+            for t in toks:
                 if t.is_symbol(":"):
                     break
                 event_words.add(t.start)
