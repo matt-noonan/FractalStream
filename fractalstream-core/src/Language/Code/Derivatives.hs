@@ -67,59 +67,62 @@ import Language.Code.Typecheck.Functions (FunDef(..), Funs, expandCalls, freeVar
 -- the second needs @dv@'s derivative, so it waits until the first has
 -- been expanded (and @dv@ is worked out from a companion, which the
 -- second round follows, as for @diff(diff(v, w), w)@). Otherwise it would
--- take the unexpanded @diff(v, w)@ for a constant. A @diff@ waits while
--- anything it's worked out from is assigned something with a @diff@ in it
--- ('waiting'); if every one is waiting (a variable assigned a @diff@ of
--- itself, say), the first goes ahead anyway.
+-- take the unexpanded @diff(v, w)@ for a constant. A @diff@ by @x@ waits
+-- while what its argument is worked out from, back as far as @x@ (where
+-- following stops), includes a variable assigned something with a @diff@
+-- in it ('readyArg'). If every one is waiting (a variable assigned a
+-- @diff@ of itself, say), the first goes ahead anyway.
 expandDerivatives :: TypeEnv -> Stmt -> TC Stmt
 expandDerivatives tenv = go (0 :: Int)
   where
     go n s = do
-      waits <- waiting (allFunctions s) s
-      let next = case innermostDiffs waits s of
-            [] -> (, waits) <$> listToMaybe (innermostDiffs Set.empty s)
-            ready : _ -> Just (ready, waits)
+      flow <- dataFlow (allFunctions s) s
+      let next = case innermostDiffs flow s of
+            [] -> (, noFlow) <$> listToMaybe (innermostDiffs noFlow s)
+            ready : _ -> Just (ready, flow)
       case next of
         Nothing -> pure s
-        Just ((x, sr), waits')
+        Just ((x, sr), flow')
           | n > 64 -> throwError (Internal (Advice sr "expandDerivatives: too many rounds"))
-          | otherwise -> do
-              -- (if every diff was waiting, the one going ahead ignores it)
-              let w = if null (innermostDiffs waits s) then Set.empty else waits'
-              forVariable tenv w x sr s >>= go (n + 1)
+          | otherwise -> forVariable tenv flow' x sr s >>= go (n + 1)
 
--- | The variables a @diff@ can't follow yet: those assigned something
--- with a @diff@ in it (with calls expanded), and those worked out from
--- them.
-waiting :: Funs -> Stmt -> TC (Set String)
-waiting funs s = do
+-- | What each variable is assigned from (by all its assignments, with
+-- calls expanded), and which are assigned something with a @diff@ in it.
+data Flow = Flow (Map String (Set String)) (Set String)
+
+-- (nothing waits)
+noFlow :: Flow
+noFlow = Flow Map.empty Set.empty
+
+dataFlow :: Funs -> Stmt -> TC Flow
+dataFlow funs s = do
   edges <- assignmentsIn funs s
   direct <- assignedExprs funs (Set.fromList (map fst edges)) s
-  let seeds = Set.fromList [ v | (v, e) <- direct, hasDiff e ]
-  pure (fixpoint (\t -> t <> Set.fromList [ v | (v, uses) <- edges, not (Set.null (uses `Set.intersection` t)) ]) seeds)
-  where
-    hasDiff (Syn _ node) = case node of
-      EDiff{} -> True
-      _ -> any hasDiff node
+  pure (Flow (Map.fromListWith (<>) edges) (Set.fromList [ v | (v, e) <- direct, hasDiffE e ]))
 
--- | Whether a @diff@'s argument can be followed now: it has no @diff@ in
--- it, and isn't worked out from a variable that's 'waiting'.
-readyArg :: Set String -> Expr -> Bool
-readyArg waits e = not (hasDiff e) && Set.null (valueDeps e `Set.intersection` waits)
+hasDiffE :: Expr -> Bool
+hasDiffE (Syn _ node) = case node of
+  EDiff{} -> True
+  _ -> any hasDiffE node
+
+-- | Whether a @diff@ by @x@ can follow its argument now: the argument has
+-- no @diff@ in it, and isn't worked out, back as far as @x@, from a
+-- variable assigned something with a @diff@ in it.
+readyArg :: Flow -> String -> Expr -> Bool
+readyArg (Flow edges seeds) x e = not (hasDiffE e) && Set.null (back `Set.intersection` seeds)
   where
-    hasDiff (Syn _ node) = case node of
-      EDiff{} -> True
-      _ -> any hasDiff node
+    back = fixpoint grow (Set.delete x (valueDeps e))
+    grow vs = vs <> Set.delete x (Set.unions [ Map.findWithDefault Set.empty v edges | v <- Set.toList vs ])
 
 -- | The @diff@s ready to be expanded ('readyArg'), by their variables
 -- (and where one of them is). A @diff@ by a variable bound inside an
 -- expression (a function's parameter) isn't one of them.
-innermostDiffs :: Set String -> Stmt -> [(String, SourceRange)]
-innermostDiffs waits s = concatMap (inExpr Set.empty) (stmtExprs s)
+innermostDiffs :: Flow -> Stmt -> [(String, SourceRange)]
+innermostDiffs flow s = concatMap (inExpr Set.empty) (stmtExprs s)
   where
     inExpr bound (Syn sr node) = case node of
       EDiff (Syn _ (EVar x)) e
-        | readyArg waits e, not (Set.member x bound) -> [(x, sr)]
+        | readyArg flow x e, not (Set.member x bound) -> [(x, sr)]
       ELet n v b -> inExpr bound v ++ inExpr (Set.insert n bound) b
       ELambda ps b -> inExpr (bound <> Set.fromList ps) b
       ERemove lst n p -> inExpr bound lst ++ inExpr (Set.insert n bound) p
@@ -145,8 +148,8 @@ stmtExprs st = execState (mapStmtExprs (\e -> modify (e :) $> e) (dropFunctions 
 -- One variable
 ------------------------------------------------------
 
-forVariable :: TypeEnv -> Set String -> String -> SourceRange -> Stmt -> TC Stmt
-forVariable tenv waits x xsr s = do
+forVariable :: TypeEnv -> Flow -> String -> SourceRange -> Stmt -> TC Stmt
+forVariable tenv flow x xsr s = do
   let funs = allFunctions s
       types = tyVars tenv <> declaredTypes s
   tyX <- case Map.lookup x types of
@@ -210,11 +213,11 @@ forVariable tenv waits x xsr s = do
         _ -> SomeHaskellType RealType 0))
       top = [ st (SDecl (c v) (Just (companionType v)) (zeroOf (companionType v)))
             | v <- envOnes, c <- companion : [ companionBar | Set.member v freshBars ] ]
-  s'' <- mapStmtExprs (replaceDiffs funs waits denv tyX) s'
+  s'' <- mapStmtExprs (replaceDiffs funs flow denv tyX) s'
   pure (if null top then s'' else st (SBlock (top ++ [s''])))
   where
     innermostOf (Syn sr node) = case node of
-      EDiff (Syn _ (EVar y)) e | readyArg waits e -> [(y, sr, e)]
+      EDiff (Syn _ (EVar y)) e | readyArg flow y e -> [(y, sr, e)]
       _ -> foldMap innermostOf node
 
 fixpoint :: Eq a => (a -> a) -> a -> a
@@ -393,11 +396,11 @@ withCompanions funs denv companion companionBar companionType needed bars = stmt
 
 -- | Each innermost @diff@ by the variable that's ready ('readyArg'), as
 -- the derivative.
-replaceDiffs :: Funs -> Set String -> DiffEnv -> FSType -> Expr -> TC Expr
-replaceDiffs funs waits denv tyX = go
+replaceDiffs :: Funs -> Flow -> DiffEnv -> FSType -> Expr -> TC Expr
+replaceDiffs funs flow denv tyX = go
   where
     go e@(Syn sr node) = case node of
-      EDiff (Syn _ (EVar y)) arg | y == deVar denv, readyArg waits arg -> do
+      EDiff (Syn _ (EVar y)) arg | y == deVar denv, readyArg flow y arg -> do
         d <- differentiateWith denv =<< expandCalls funs arg
         pure (Syn sr (EWiden (if tyX == ComplexT then ComplexT else RealT) d))
       _ | hasDiff e -> Syn sr <$> traverse go node

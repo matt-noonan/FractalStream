@@ -238,7 +238,11 @@ differentiatePair env e@(Syn sr node)
 -- could follow: not through conditions (which pick a branch, and aren't
 -- differentiated), comparisons or truth values, nor a local binding the
 -- rest doesn't use. (Through lists and tables, every variable counts, so
--- that a derivative that would have to follow one says it can't.)
+-- that a derivative that would have to follow one says it can't. But a
+-- table's size, its cells' places in the plane, and which cell a point is
+-- in depend only on its shape, which writing its cells doesn't change:
+-- those are constants, even in a script that writes values worked out
+-- from @x@ into the table.)
 valueDeps :: Expr -> Set String
 valueDeps (Syn _ node) = case node of
   EVar n -> Set.singleton n
@@ -255,6 +259,10 @@ valueDeps (Syn _ node) = case node of
   ERemove{} -> boundFree (Syn NoSourceRange node)
   EFind{} -> boundFree (Syn NoSourceRange node)
   ETransform{} -> boundFree (Syn NoSourceRange node)
+  ETableSize{} -> Set.empty
+  ETableHas{} -> Set.empty
+  ETableCell{} -> Set.empty
+  ETableCellPoint{} -> Set.empty
   _ -> foldMap valueDeps node
 
 -- (the free variables of an expression with binders of its own)
