@@ -35,11 +35,12 @@ else:
 
 FractalStream currently supports three different kinds of viewers:
 
-| Kind | Default variables | Viewer modes |
-| ---- | ----------------- | ------------ |
-| Complex line | `z : C` | Plane, Riemann sphere |
-| Real plane | `x : R`, `y : R` | Plane |
-| Hyperbolic plane | `z : C` | Disk, upper halfplane; coordinate is bounded in norm by 1 |
+| Kind | Its points | Header | See |
+| ---- | ---------- | ------ | --- |
+| The complex plane | complex numbers, `z` | (nothing, or `over z`) | |
+| The real plane | pairs of real numbers, `(x, y)` | `over (x, y)` | {ref}`real-viewers` |
+| The Riemann sphere | points of `Ĉ` | `on the sphere` | {ref}`sphere-viewers` |
+| The hyperbolic plane | points of the unit disk, or of the upper half-plane | `on the disk`, `on the half-plane` | {ref}`hyperbolic-viewers` |
 
 To use a different variable name for your viewer, say so at the end of your `@viewer` line with
 `over NAME`. For example, here is a Mandelbrot viewer script that uses `C` instead of `z` for the
@@ -95,6 +96,48 @@ iterate z -> z^2 + C until z escapes
 | `show if:` | when it's shown (see below) |
 | `tiled:` | `false` to start showing only the fundamental domain (see below) |
 | `iteration limit:`, `escape radius:`, `vanishing radius:` | what its loops use instead of `max_iters`, `escape_radius` and `vanishing_radius`, so that two viewers can differ |
+
+(real-viewers)=
+### Viewers of the real plane
+
+A viewer `over (x, y)` is a *real viewer*: each pixel is a pair of real numbers, the first the
+horizontal coordinate and the second the vertical one, so there's no need to take a complex number
+apart into `re(z)` and `im(z)`:
+
+```{code-block} fs
+---
+caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=NY5LbsMwDET3PsXAKwd1EtntSkiCLLsseoACskC3RGTJkOTEKXKhnKMXK93PhhjOkIPXhziYrNEUyUYeRd0K4GiD7_kd5YuJZqBMMZViG2i8Qu_RbJ5k7f5XtXkslq8z04Uiyuevuw8egxlLhLM41VzjupKTRHkatQjAkpdejUrVUKsfa-SZHBJ_kgBtW6XEnXxmh_mtxQOuMg9olPptWEqxW6PBWtD-TmrBmiW2wYW4pNwj5cmekD_Io3NGJLlEiIZ9Fy4VC4bJHHzCFq2gfAM)
+---
+@config "Parameters"
+a : R := 1.4
+b : R := 0.3
+
+@viewer "Hénon map" over (x, y)
+setup:
+  center: (0, 0)
+  pixel size: 1/200
+until x^2 + y^2 > 100:
+  x, y <- 1 - a x^2 + y, b x
+color <- if stuck then black else rainbow(iterations / 20)
+```
+
+Either coordinate can be a real configuration value's name, as in `over (a, b)`, for a plane of
+parameters: inside the viewer, it then means the pixel's coordinate. With both coordinates
+configuration values, the viewer has a "Select" tool that sets them both to the point clicked.
+
+A real viewer's `center:` is a point, like `center: (1, -1/2)`. Its pixels needn't be square: an
+`aspect:` setting gives a pixel's height over its width (`aspect: 2` fits twice as much of the y
+axis in the window), and the viewer's menu has an "Aspect ratio…" item to change it. Besides
+`pixel_size` (a pixel's width), a real viewer's code and its tools can read `pixel_width` (the same)
+and `pixel_height`. A complex viewer's pixels are always square.
+
+### A viewer's size and position
+
+A viewer's code and its tools can read where the viewer is looking: `viewer_width` and
+`viewer_height` (the image's size, in pixels), and the middle of the view, `viewer_center` in a
+complex viewer, or `viewer_center_x` and `viewer_center_y` in a real one. With `pixel_size`, that's
+enough to work out which pixel a point is in. They change as the window is resized, panned and
+zoomed, and a viewer whose code uses them is drawn again when they do.
 
 ### Showing a viewer only some of the time
 
@@ -184,8 +227,106 @@ grey. A `tiled: false` setting in its `setup:` starts it that way, and its menu'
 domain" switches between the two. Which one it shows is saved with the project. While it shows
 only its domain, a tool's drawings are only drawn in the domain, not copied into the other tiles.
 
-The same works for a viewer of the hyperbolic plane with a group (`modulo the group`), whose fundamental
-domain is a polygon.
+The same works for a viewer of the hyperbolic plane with a group, whose fundamental domain is a
+polygon (see {ref}`groups`).
+
+(sphere-viewers)=
+### Viewers of the Riemann sphere
+
+A complex viewer can show the Riemann sphere instead of the plane, as a globe, with `on the sphere`:
+
+```{code-block} fs
+---
+caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=VY3BDoIwEETvfMWEiyURBbkZJH6Bn0CCsEiT0pJ2sQnh42315GVmd19mdjR27viKMnG9lUuY9gS4vyV5skgf5Nnog8NMPJkBRoMnglsmspT-ryEnmWzHhA15EwVia6tgZYYzRIWtvWRYNUsVqGOzuBDyuN7QjaPUJMojtizceqOMRZ1Djth9bNhRozgVZXyoYWkAKUeRy1n4DA2KH3pZCvqFT7VS8gE)
+---
+@viewer "Newton's method on the sphere" on the sphere
+iterate z -> z - (z^3 - 1) / (3 z^2) until z stops
+w := affine(1, z)
+color <- if |w - 1| < 0.01 then red else if im(w) > 0 then green else blue
+```
+
+On the sphere, `z` is the point of the globe under each pixel, a point of `Ĉ` (see
+{ref}`riemann-sphere`): 0 is the globe's north pole, ∞ its south pole, and the unit circle its
+equator. It's exact everywhere, ∞ included, so a rational map like Newton's method above is right
+all over the globe. For the complex number a point is, use `affine(1, z)`. A viewer over a
+configuration value, like a parameter space `over c`, needs that value to be a point of the sphere
+too: `c : Ĉ := 0`.
+
+The globe always fills the window. `center:` is the point facing you to start with (0, if it doesn't
+say), and `pixel size:` is the size of a pixel in the middle of the globe, measured on the sphere,
+whose radius is 1. Scrolling zooms in or out about the point under the pointer, and dragging with
+the Navigate tool turns the globe; zoomed in, that pans. Tools get points of `Ĉ` too (a click on ∞
+is ∞ itself), and draw on the globe: a line is an arc of a great circle.
+
+(hyperbolic-viewers)=
+### Viewers of the hyperbolic plane
+
+A complex viewer can show the hyperbolic plane, as the Poincaré disk, with `on the disk`:
+
+```{code-block} fs
+---
+caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=RY3BCoMwEETvfsVgLwotWI9Socf-Rho3JhizsoYWix_frZfOaQbezDiW2eQO12K1EhZ1ewHcX4HeJCgf20Ly5BgslmgSleCE7AlDWCcFBV2PFiab5Kv9s9dQnQ7C_6sKK2AJTnhGoz3LkQW3C4LDzEPlIrNULaQ-o63Ro_ltJMQw-oxRaAPFVW-NTEcsvg)
+---
+@viewer "Hyperbolic plane" on the disk
+r := 2 atanh(|z|)    # the hyperbolic distance from 0
+color <- if mod(floor(2 r), 2) = 0 then light grey else dark grey
+```
+
+`z` is a point of the unit disk under each pixel. What the window shows is the disk moved by the
+view, an isometry of the hyperbolic plane: dragging with the Navigate tool moves the view by a
+hyperbolic translation, keeping the point under the pointer there, so the whole plane can be
+visited. Scrolling zooms in on the disk as it's drawn, to see the small details near its edge.
+`center:` is the point of the disk shown in the middle to start with, and `pixel size:` is measured
+on the disk, whose radius is 1.
+
+With `on the half-plane` instead, `z` is a point of the upper half-plane, drawn with its real axis
+along the window's bottom edge. Either way, the viewer's menu can switch between showing the
+hyperbolic plane as the disk and as the half-plane, keeping the view (the code still sees points
+of its own model).
+
+`pixel_size` is the width of a pixel in the model, which in the hyperbolic plane depends on the
+pixel. A pixel's size in the hyperbolic metric is `2 pixel_size / (1 - |z|²)` in the disk, and
+`pixel_size / im(z)` in the half-plane. Tools get model points, and what they draw follows the
+view; for a marker that's the same size anywhere, give a circle's radius in pixels (see
+{ref}`draw-commands`).
+
+(groups)=
+#### Groups: tilings and surfaces
+
+A viewer of the hyperbolic plane can have a *group* acting on it, as a lattice acts on the plane:
+the viewer folds each pixel's point into the group's fundamental polygon before its code sees it,
+so the code works on the quotient (a surface, or an orbifold), and the picture is repeated over the
+plane, one copy per tile.
+
+```{code-block} fs
+---
+caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=bYy7DoJAFER7vmJCpQUqhQ2BxI-wJ-vuBTYue8ld8EH8eFewMbGbnDkzDUuvxgJ5ErTYIaZXApxulu4kSM8doWczOSVohachBXuMkXbKNdnglP8KvNAfNx6RaQlFhWAN1caGUXlNKJHvjhjsg1wd7EzYw_abeRsHmh0Lygy2Wcfx1ePilL6CXKAPb9iZWvPkR1Q4rIaQ-d_na8-ifHxblFbombwB)
+---
+@viewer "The modular group" on the half-plane modulo the modular group
+edge := side_distance < 1.5 pixel_size / im(z)
+color <- if edge then black else if fold_count = 0 then red else if fold_count = 1 then orange else grey
+```
+
+`modulo the modular group` is the modular group PSL(2, ℤ), whose fundamental polygon is the
+familiar one, |Re z| ≤ 1/2 and |z| ≥ 1 in the half-plane. Any other group is given by a
+`Table 2 of C` of the configuration, `modulo the group T`: column `k` of the table is the polygon's
+side `k`, and its first four rows are the `a`, `b`, `c` and `d` of that side's *pairing*, the map
+`s ⟼ (a s + b)/(c s + d)` that takes a point beyond the side back across it. The side is halfway
+between the polygon's center and the point the pairing takes the center to. The center is the
+middle of the model (0, or `i`), or `centered at c` in the header. A tool can fill in or change the
+table, and the viewer is drawn again; a table that can't be used (a pairing that isn't invertible,
+for example) pauses the viewer, which says what's wrong.
+
+Besides its folded point, a viewer with a group has:
+
+| Variable | Is |
+| -------- | -- |
+| `side_distance` | the hyperbolic distance from the point to the nearest side of the polygon |
+| `side_index` | which side that is (its column of the table) |
+| `fold_count` | how many times the point was moved across a side to get into the polygon |
+
+As with a lattice, a tool's points are folded too, and its drawings are drawn in each tile on the
+screen. "Show fundamental domain" works the same way, too.
 
 ## Shared definitions
 
