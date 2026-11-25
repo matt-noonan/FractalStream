@@ -22,8 +22,8 @@ checks=(
   "1 Getting started/mandelbrot-set.fs|Mandelbrot set with smooth coloring|99"
   "2 Quadratic family/bottcher-coordinates.fs|Dynamical plane|99"
   "3 Newton's method/newton-cubic.fs|Roots of f|99"
-  "6 Quadratic rational maps/period-3.fs|Parameter plane|95"
-  "7 The hyperbolic plane/j-invariant.fs|j-invariant|99"
+  "7 Quadratic rational maps/period-3.fs|Parameter plane|95"
+  "8 The hyperbolic plane/j-invariant.fs|j-invariant|99"
 )
 
 py="$(command -v python3 || command -v python)"
