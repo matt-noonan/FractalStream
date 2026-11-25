@@ -887,7 +887,26 @@ x <- d|] `shouldBe` Right 3
       -- (an orbit that escapes)
       "C := 1\nfound, w, p := find_cycle(z -> z^2 + C, 0, 10000, 100, (a, b) -> |a - b| < 0.000001, a -> |a| < 2.5)\nx <- if found then p else 0" `gives` 0
 
-    describe "the standard library's Newton's method and Schwarzian" $
+    it "gives a preperiod and period with the standard library's preperiod_and_period" $ do
+      -- (9/56 under doubling: 9, 18, 36, then the cycle 16, 32, 8)
+      "(ok, μ, λ) := preperiod_and_period(t -> mod(2 t, 56), 9, 56, (a, b) -> a = b)\nx <- if ok then 10 μ + λ else 0" `gives` 33
+      "(ok, μ, λ) := preperiod_and_period(t -> mod(2 t, 7), 1, 7, (a, b) -> a = b)\nx <- if ok then 10 μ + λ else 0" `gives` 3
+      -- (no cycle within the steps allowed)
+      "(ok, μ, λ) := preperiod_and_period(t -> t + 1, 0, 50, (a, b) -> a = b)\nx <- if ok then 1 else 0" `gives` 0
+
+    it "winds polygons around points, and picks the closest of some values" $ do
+      "x <- polygon_winding_number([1 - i, 1 + i, -1 + i, -1 - i], 0)" `gives` 1
+      "x <- polygon_winding_number([1 - i, -1 - i, -1 + i, 1 + i], 0)" `gives` (-1)
+      "x <- polygon_winding_number([1 - i, 1 + i, -1 + i, -1 - i], 5)" `gives` 0
+      "x <- polygon_winding_number([1, i, -1, -i, 1, i, -1, -i], 0.1 i)" `gives` 2
+      "x <- im closest([1, -1, i], 0.1 + 0.9 i)" `gives` 1
+      "x <- closest([3.0, -1.0, 2.5], 2)" `gives` 2.5
+
+    describe "the standard library's Newton's method and Schwarzian" $ do
+      it "keeps capped steps near the start" $ do
+        -- (uncapped, the first step from 1.4 jumps to about -4.4, and it ends at π)
+        "(ok, r) := capped_newton_root(w -> sin(w), 1.4, 0.5, 100, (a, b) -> |a - b| < 10^(-12))\nx <- if ok and |r| < 10^(-9) then 1 else 0" `gives` 1
+        "(ok, r) := full_newton_root(w -> sin(w), 1.4, 100, (a, b) -> |a - b| < 10^(-12))\nx <- if ok and |r - π| < 10^(-9) then 1 else 0" `gives` 1
       it "work from any kind of number, an integer included" $ do
         "(ok, r) := full_newton_root(w -> w^3 - 2, 1, 50, (a, b) -> |a - b| < 10^(-14))\nx <- if ok and |r^3 - 2| < 10^(-12) then 1 else 0" `gives` 1
         "(ok, r) := full_newton_root(w -> w^2 + 1, 0.5 + 0.5 i, 50, (a, b) -> |a - b| < 10^(-14))\nx <- if ok and |r - i| < 10^(-12) then 1 else 0" `gives` 1

@@ -132,6 +132,19 @@ function full_newton_root(f, x0, N, stop):
 function newton_root(f, x):
   newton_root <- full_newton_root(f, x, max_iters, (x,y) -> x = y)
 
+# Newton's method with each step at most `cap` long, so that it settles on
+# a root near where it started rather than jumping to another.
+function capped_newton_root(f, x0, cap, N, stop):
+  x := x0 + 0.0
+  repeat up to N times:
+    y := f(x)
+    step := y / (ⅆy/ⅆx)
+    if |step| > cap:
+      step <- step cap / |step|
+    x <- x - step
+  until stop(x, previous x)
+  capped_newton_root <- not stuck, x
+
 # ---------------------------------------------------------------------------
 # Schwarzian derivative
 
@@ -189,6 +202,18 @@ function find_cycle(f, z, warmup, max_period, same, χ):
       if same(tortoise, hare):
         find_cycle <- true, hare, λ
 
+# How many steps z takes to reach a cycle of f, and the cycle's period:
+# (found, preperiod, period), found if both fit in max_steps.
+function preperiod_and_period(f, z, max_steps, same):
+  preperiod_and_period <- false, 0, 0
+  (found, w, period) := find_cycle(f, z, 0, max_steps, same, x -> true)
+  if found:
+    x := z
+    μ := 0
+    while not same(x, w) up to max_steps times:
+      x, μ <- f(x), μ + 1
+    preperiod_and_period <- true, μ, period
+
 # ---------------------------------------------------------------------------
 # Integrals, residue, winding number
 
@@ -206,6 +231,28 @@ function residue(f, z, r, N):
 
 function winding_number(γ, z0, N):
   winding_number <- round (im riemann_sum(γ, z -> 1 / (z - z0), N) / (2 π))
+
+# The winding number about z0 of the closed polygon through a list of
+# points (the last joined back to the first), counterclockwise: the
+# angles its sides turn through, as seen from z0, added up.
+function polygon_winding_number(points, z0):
+  angle := 0.0
+  last := points @ -1
+  for each p in points:
+    angle <- angle + arg((p - z0) / (last - z0))
+    last <- p
+  polygon_winding_number <- round(angle / (2 π))
+
+# ---------------------------------------------------------------------------
+# Choosing among values
+
+# The item of a list nearest w (the first of those, if there's a tie):
+# say, the branch of an inverse that continues a path.
+function closest(points, w):
+  closest <- points @ 1
+  for each p in points:
+    if |p - w| < |closest - w|:
+      closest <- p
 
 # ---------------------------------------------------------------------------
 # Elliptic functions
