@@ -1189,6 +1189,40 @@ pass
 pass
 |] `shouldFailWith` "show_if="
 
+    it "can use @common's values and one-line functions, following the configuration" $
+      shouldBuild [r|
+@config "Parameters"
+n : Z := 3
+
+@common
+threshold := 2
+big(k) := k > threshold
+
+@viewer "V" show_if="big(n)"
+pass
+|] $ \ens -> do
+        [viewer] <- getDynamic (ensembleViewers ens)
+        getDynamic (cvVisible viewer) >>= (`shouldBe` True)
+        fields <- ensembleFields ens
+        case [ f | (_, f) <- fields, fieldName f == "n" ] of
+          [nField] -> do
+            setFieldText nField "1" >>= (`shouldBe` Right ())
+            getDynamic (cvVisible viewer) >>= (`shouldBe` False)
+          other -> expectationFailure ("expected one n field, got " ++ show (length other))
+
+    it "can't use @common's functions with a body" $
+      [r|
+@config "Parameters"
+n : Z := 3
+
+@common
+function big(k):
+  big <- k > 2
+
+@viewer "V" show_if="big(n)"
+pass
+|] `shouldFailWith` "one-line functions"
+
   describe "a viewer's lattice=" $ do
 
     it "follows the configuration's values: lattice=τ is ℤ + τℤ" $

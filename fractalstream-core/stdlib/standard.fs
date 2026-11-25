@@ -120,7 +120,9 @@ function compose(f, N, x):
 # ---------------------------------------------------------------------------
 # Newton's method
 
-function full_newton_root(f, x, N, stop):
+function full_newton_root(f, x0, N, stop):
+  # (a copy that's at least real, so that an integer start works too)
+  x := x0 + 0.0
   repeat up to N times:
     y := f(x)
     x <- x - y / (ⅆy/ⅆx)
@@ -133,7 +135,9 @@ function newton_root(f, x):
 # ---------------------------------------------------------------------------
 # Schwarzian derivative
 
-function S(f, x):
+function S(f, x0):
+  # (at least real, so that it can be differentiated by)
+  x := x0 + 0.0
   y := f(x)
   S <- diff(y, x, 3) / diff(y, x) - (3/2) (diff(y, x, 2) / diff(y, x))^2
 

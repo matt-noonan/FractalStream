@@ -1074,8 +1074,10 @@ the disk's drawing (0 until it's zoomed somewhere else). These names can't be de
 ### Showing a viewer only some of the time
 
 A viewer with `show_if=` is only shown while its truth value holds. The
-value is an expression over the configuration's values (and the standard
-library's functions), worked out again whenever one of them changes:
+value is an expression over the configuration's values (with `@common`'s
+values and one-line functions, and the standard library's), worked out
+again whenever one of them changes. It's worked out apart from any code, so
+it can't call a function with a body:
 
 ```
 @config "Parameters"

@@ -18,6 +18,7 @@ module Language.Code.Parser
   , ParsedCode
   , withDefinedFunctions
   , withCommon
+  , withUsedCommon
   , runParsedCode
   , runExpandedCode
   ) where

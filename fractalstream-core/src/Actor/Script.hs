@@ -193,6 +193,9 @@ data ParsedStanza
         -- ^ The user-defined functions in scope at the end of the
         -- viewer's code, which is where its colorizer's arguments are
         -- read.
+      , vsCommon      :: CommonDefs
+        -- ^ The project's @\@common@ definitions (and the standard
+        -- library's), for its @show_if=@, which is outside its code.
       }
   | CommonStanza
       { cmBody :: ParsedCode
@@ -670,7 +673,7 @@ scriptGrammar defs = mdo
     (\ehdr mcoloringE code ->
         (\ViewerHeader{..} mcoloring ->
             ViewerStanza vhTitle vhCoord vhCenter vhPixelSize vhAspect vhView vhGroup vhGroupCenter vhIterLimit vhEscape vhVanish
-                         vhPixelVar vhColorizer vhShowIf vhLattice vhLatticeCenter vhTiled (fromMaybe [] mcoloring) code (funNames defs))
+                         vhPixelVar vhColorizer vhShowIf vhLattice vhLatticeCenter vhTiled (fromMaybe [] mcoloring) code (funNames defs) defs)
         <$> ehdr <*> sequence mcoloringE)
     <$> viewerHeader <*> optional coloringBlock
     <*> (withCommon defs <$> viewerBody)
