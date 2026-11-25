@@ -181,8 +181,9 @@ Inequality can be tested with the `!=` /  `=/=` / `≠` operator.
 - Functions for points of the Riemann sphere: `affine`, `chart`, `chordal` (see {ref}`riemann-sphere`).
 - Derivatives: `diff`, `diff_bar`, `partial` (see {ref}`derivatives`).
 - From the standard library (see {ref}`standard-library`): `min`, `max`, `clamp`, `compose`,
-  `newton_root`, `find_cycle`, `S`, `riemann_sum`, `residue`, `winding_number`, and color
-  functions like `cycle` and `rainbow`.
+  `newton_root`, `capped_newton_root`, `find_cycle`, `preperiod_and_period`, `S`, `riemann_sum`,
+  `residue`, `winding_number`, `polygon_winding_number`, `closest`, and color functions like
+  `cycle` and `rainbow`.
 
 (derivatives)=
 ### Derivatives
@@ -361,6 +362,9 @@ Two common uses of contour integrals have functions of their own:
   around the point `z0`, counterclockwise, as a whole number. For example,
   `winding_number(t -> e^{4 π i t}, 0, 1000)` is 2. It is rounded from an approximate integral, so
   `N` has to be large enough for the path's shape, and `z0` mustn't be on the path.
+- `polygon_winding_number(points, z0)` is the same for the closed polygon through a list of points
+  (the last one joined back to the first). It adds up the angles the sides turn through, as seen
+  from `z0`, so it's exact: `polygon_winding_number([1 - i, 1 + i, -1 + i, -1 - i], 0)` is 1.
 
 (newton)=
 ### Newton's method
@@ -379,6 +383,13 @@ when a step moves less than `vanishing_radius` (the `=` test), or after `max_ite
 For your own limit and stopping test, use `full_newton_root(f, x, N, stop)`, which takes at most `N`
 steps, and stops when `stop(new, old)` holds for the latest step, as in
 `full_newton_root(w -> w^3 - 1, z, 50, (a, b) -> |a - b| < 10^(-12))`.
+
+Newton's method can jump a long way from where it starts, and settle on a root far from it. To
+find the root near the start, `capped_newton_root(f, x, cap, N, stop)` moves at most `cap` in each
+step, and otherwise works as `full_newton_root` does.
+
+A function given to these, or to any of the functions here, is one of the script's own or one written
+in place: a built-in function like `sin` can't be passed by its name, so write `w -> sin(w)`.
 
 (cycles)=
 ### Cycle detection
@@ -409,6 +420,18 @@ parameter), `found` is false. With the cycle in hand, its multiplier is the deri
 if found:
   multiplier := ⅆ(compose(z -> z^2 + C, period, w))/ⅆw
 ```
+
+When the orbit lands exactly on its cycle, as an angle under doubling does, it also has a
+*preperiod*: the number of steps before it gets there. `preperiod_and_period(f, z, max_steps, same)`
+gives back `(found, preperiod, period)`. For example, 9/56 goes to 18/56, 36/56, and then around the
+cycle 16/56, 32/56, 8/56, so it has preperiod 3 and period 3:
+
+``` fractalstream
+(found, μ, λ) := preperiod_and_period(t -> mod(2 t, 56), 9, 56, (a, b) -> a = b)
+```
+
+It finds the cycle with `find_cycle`, with no warmup and nowhere left out, so `max_steps` has to be at
+least the preperiod and the period together.
 
 (colors-and-gradients)=
 ### Colors and gradients
@@ -560,10 +583,11 @@ means.
 | `min(x, y)`, `max(x, y)` | The smaller / larger of two numbers |
 | `clamp(x, lo, hi)` | `x`, moved into the range from `lo` to `hi` |
 | `compose(f, N, x)` | `f` applied `N` times to `x` (see {ref}`composition`) |
-| `newton_root(f, x)`, `full_newton_root(f, x, N, stop)` | Newton's method (see {ref}`newton`) |
-| `find_cycle(f, z, warmup, max_period, same, χ)` | Finding an attracting cycle (see {ref}`cycles`) |
+| `newton_root(f, x)`, `full_newton_root(f, x, N, stop)`, `capped_newton_root(f, x, cap, N, stop)` | Newton's method (see {ref}`newton`) |
+| `find_cycle(f, z, warmup, max_period, same, χ)`, `preperiod_and_period(f, z, max_steps, same)` | Finding a cycle, and how long an orbit takes to reach it (see {ref}`cycles`) |
 | `S(f, x)` | The Schwarzian derivative of `f` at `x` |
-| `riemann_sum(γ, f, N)`, `residue(f, z, r, N)`, `winding_number(γ, z0, N)` | Contour integrals (see {ref}`integration`) |
+| `riemann_sum(γ, f, N)`, `residue(f, z, r, N)`, `winding_number(γ, z0, N)`, `polygon_winding_number(points, z0)` | Contour integrals and winding numbers (see {ref}`integration`) |
+| `closest(points, w)` | The item of a list nearest `w` (the first of those, on a tie): the branch of an inverse that continues a path, say |
 | `theta1(z, τ)` .. `theta4(z, τ)`, `wp(z, ω1, ω2)` / `℘(z, ω1, ω2)`, `wp_prime(z, ω1, ω2)`, `g2(ω1, ω2)`, `g3(ω1, ω2)`, `klein_j(τ)` | Elliptic functions (see {ref}`elliptic`) |
 | `cycle(t, c1, c2)` | A color going back and forth between `c1` (at whole numbers) and `c2` (halfway between) |
 | `rgb255(r, g, b)` | A color from red, green and blue components from 0 to 255 |
