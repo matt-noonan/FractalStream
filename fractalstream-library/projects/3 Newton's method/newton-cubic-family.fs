@@ -23,27 +23,19 @@ script: |
       c <- blue
 
     s := (cos (iterations pi / 10))^2
-    color <- if z = lastZ then blend (s, light c, dark c) else black
+    color <- if not stuck then blend (s, light c, dark c) else black
 
   @viewer "Parameter plane" over a
   setup:
     vanishing radius: tol
   z := 0
-  lastZ := 0
-  repeat:
-    lastZ <- z
-    z <- newton(z)
-  while z != lastZ
+  iterate z -> newton(z) until z stops
   run shade
 
   @viewer "Newton's method dynamics"
   setup:
     vanishing radius: tol
-  lastZ := 0
-  repeat:
-    lastZ <- z
-    z <- newton(z)
-  while z != lastZ
+  iterate z -> newton(z) until z stops
   run shade
 
   @tool "Trace" for "Newton's method dynamics" with shortcut t

@@ -13,12 +13,12 @@ let `color` = Color 128 128 128 in:
                     block:
                       let `r1` = 1 in:
                         block:
-                          let `lastZ` = 0:R:C in:
+                          let `[internal] stops.started #0` = False in:
                             block:
                               let `c` = Color 128 128 128 in:
                                 block:
                                   set `[hoisted] r1` := r1
-                                  set `[hoisted] lastZ` := lastZ
+                                  set `[hoisted] [internal] stops.started #0` := [internal] stops.started #0
                                   set `[hoisted] c` := c
 
 --- body
@@ -33,7 +33,7 @@ let `[internal] vanishing radius` = tol in:
               block:
                 let `r1` = [hoisted] r1 in:
                   block:
-                    let `lastZ` = [hoisted] lastZ in:
+                    let `[internal] stops.started #0` = [hoisted] [internal] stops.started #0 in:
                       block:
                         let `c` = [hoisted] c in:
                           block:
@@ -43,33 +43,39 @@ let `[internal] vanishing radius` = tol in:
                                   block:
                                     let `z` = 0:R:C in:
                                       block:
-                                        let `[internal] fresh #28` = 0 in:
-                                          let `[internal] fresh #29` = [internal] iteration limit in:
-                                            block:
-                                              do-while (!(|(z - lastZ)| < [internal] vanishing radius) and ([internal] fresh #28 < [internal] fresh #29)):
+                                        let `[internal] stops.prev #1` = z in:
+                                          block:
+                                            let `[internal] fresh #29` = 0 in:
+                                              let `[internal] fresh #30` = [internal] iteration limit in:
                                                 block:
-                                                  block:
-                                                    set `lastZ` := z
-                                                    set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] p.z #1 = [internal] newton.z #0 in ((([internal] p.z #1 - r1:R:C) * ([internal] p.z #1 - r2)) * ([internal] p.z #1 - r3)) / let [internal] p'.z #2 = [internal] newton.z #0 in ((([internal] p'.z #2 - r3) * (([internal] p'.z #2 - r2) + ([internal] p'.z #2 - r1:R:C))) + (([internal] p'.z #2 - r1:R:C) * ([internal] p'.z #2 - r2)))))
-                                                  set `[internal] fresh #28` := ([internal] fresh #28 + 1)
-                                              set `[internal] iteration count` := [internal] fresh #28
-                                              set `[internal] stuck` := ([internal] fresh #28 = [internal] fresh #29)
-                                        if (|(z - r1:R:C)| < [internal] vanishing radius) then:
-                                          block:
-                                            set `c` := Color 255 0 0
-                                        else:
-                                          if (|(z - r2)| < [internal] vanishing radius) then:
-                                            block:
-                                              set `c` := Color 0 180 0
-                                          else:
-                                            if (|(z - r3)| < [internal] vanishing radius) then:
+                                                  if (!([internal] stops.started #0 and (|(z - [internal] stops.prev #1)| < [internal] vanishing radius)) and ([internal] fresh #29 < [internal] fresh #30)) then:
+                                                    do-while (!([internal] stops.started #0 and (|(z - [internal] stops.prev #1)| < [internal] vanishing radius)) and ([internal] fresh #29 < [internal] fresh #30)):
+                                                      block:
+                                                        block:
+                                                          set `[internal] stops.prev #1` := z
+                                                          set `[internal] stops.started #0` := True
+                                                          set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] p.z #1 = [internal] newton.z #0 in ((([internal] p.z #1 - r1:R:C) * ([internal] p.z #1 - r2)) * ([internal] p.z #1 - r3)) / let [internal] p'.z #2 = [internal] newton.z #0 in ((([internal] p'.z #2 - r3) * (([internal] p'.z #2 - r2) + ([internal] p'.z #2 - r1:R:C))) + (([internal] p'.z #2 - r1:R:C) * ([internal] p'.z #2 - r2)))))
+                                                        set `[internal] fresh #29` := ([internal] fresh #29 + 1)
+                                                  else:
+                                                    no-op
+                                                  set `[internal] iteration count` := [internal] fresh #29
+                                                  set `[internal] stuck` := ([internal] fresh #29 = [internal] fresh #30)
+                                            if (|(z - r1:R:C)| < [internal] vanishing radius) then:
                                               block:
-                                                set `c` := Color 0 0 255
+                                                set `c` := Color 255 0 0
                                             else:
-                                              no-op
-                                        let `s` = (cos((([internal] iteration count:R * 3.141592653589793) / 10:R)) ^ 2:R) in:
-                                          block:
-                                            set `color` := if (|(z - lastZ)| < [internal] vanishing radius) then blend(s, let [internal] [std] light.c #1 = c in blend(0.333, [internal] [std] light.c #1, Color 255 255 255), let [internal] [std] dark.c #0 = c in blend(0.333, [internal] [std] dark.c #0, Color 0 0 0)) else Color 0 0 0
+                                              if (|(z - r2)| < [internal] vanishing radius) then:
+                                                block:
+                                                  set `c` := Color 0 180 0
+                                              else:
+                                                if (|(z - r3)| < [internal] vanishing radius) then:
+                                                  block:
+                                                    set `c` := Color 0 0 255
+                                                else:
+                                                  no-op
+                                            let `s` = (cos((([internal] iteration count:R * 3.141592653589793) / 10:R)) ^ 2:R) in:
+                                              block:
+                                                set `color` := if ![internal] stuck then blend(s, let [internal] [std] light.c #1 = c in blend(0.333, [internal] [std] light.c #1, Color 255 255 255), let [internal] [std] dark.c #0 = c in blend(0.333, [internal] [std] dark.c #0, Color 0 0 0)) else Color 0 0 0
 
 
 === viewer 1: Newton's method dynamics
@@ -91,14 +97,14 @@ let `color` = Color 128 128 128 in:
                             block:
                               let `r3` = (-0.5:C - a) in:
                                 block:
-                                  let `lastZ` = 0:R:C in:
+                                  let `[internal] stops.started #0` = False in:
                                     block:
                                       let `c` = Color 128 128 128 in:
                                         block:
                                           set `[hoisted] r1` := r1
                                           set `[hoisted] r2` := r2
                                           set `[hoisted] r3` := r3
-                                          set `[hoisted] lastZ` := lastZ
+                                          set `[hoisted] [internal] stops.started #0` := [internal] stops.started #0
                                           set `[hoisted] c` := c
 
 --- body
@@ -116,37 +122,43 @@ let `[internal] vanishing radius` = tol in:
                       block:
                         let `r3` = [hoisted] r3 in:
                           block:
-                            let `lastZ` = [hoisted] lastZ in:
+                            let `[internal] stops.started #0` = [hoisted] [internal] stops.started #0 in:
                               block:
                                 let `c` = [hoisted] c in:
                                   block:
-                                    let `[internal] fresh #30` = 0 in:
-                                      let `[internal] fresh #31` = [internal] iteration limit in:
-                                        block:
-                                          do-while (!(|(z - lastZ)| < [internal] vanishing radius) and ([internal] fresh #30 < [internal] fresh #31)):
+                                    let `[internal] stops.prev #1` = z in:
+                                      block:
+                                        let `[internal] fresh #31` = 0 in:
+                                          let `[internal] fresh #32` = [internal] iteration limit in:
                                             block:
-                                              block:
-                                                set `lastZ` := z
-                                                set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] p.z #1 = [internal] newton.z #0 in ((([internal] p.z #1 - r1:R:C) * ([internal] p.z #1 - r2)) * ([internal] p.z #1 - r3)) / let [internal] p'.z #2 = [internal] newton.z #0 in ((([internal] p'.z #2 - r3) * (([internal] p'.z #2 - r2) + ([internal] p'.z #2 - r1:R:C))) + (([internal] p'.z #2 - r1:R:C) * ([internal] p'.z #2 - r2)))))
-                                              set `[internal] fresh #30` := ([internal] fresh #30 + 1)
-                                          set `[internal] iteration count` := [internal] fresh #30
-                                          set `[internal] stuck` := ([internal] fresh #30 = [internal] fresh #31)
-                                    if (|(z - r1:R:C)| < [internal] vanishing radius) then:
-                                      block:
-                                        set `c` := Color 255 0 0
-                                    else:
-                                      if (|(z - r2)| < [internal] vanishing radius) then:
-                                        block:
-                                          set `c` := Color 0 180 0
-                                      else:
-                                        if (|(z - r3)| < [internal] vanishing radius) then:
+                                              if (!([internal] stops.started #0 and (|(z - [internal] stops.prev #1)| < [internal] vanishing radius)) and ([internal] fresh #31 < [internal] fresh #32)) then:
+                                                do-while (!([internal] stops.started #0 and (|(z - [internal] stops.prev #1)| < [internal] vanishing radius)) and ([internal] fresh #31 < [internal] fresh #32)):
+                                                  block:
+                                                    block:
+                                                      set `[internal] stops.prev #1` := z
+                                                      set `[internal] stops.started #0` := True
+                                                      set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] p.z #1 = [internal] newton.z #0 in ((([internal] p.z #1 - r1:R:C) * ([internal] p.z #1 - r2)) * ([internal] p.z #1 - r3)) / let [internal] p'.z #2 = [internal] newton.z #0 in ((([internal] p'.z #2 - r3) * (([internal] p'.z #2 - r2) + ([internal] p'.z #2 - r1:R:C))) + (([internal] p'.z #2 - r1:R:C) * ([internal] p'.z #2 - r2)))))
+                                                    set `[internal] fresh #31` := ([internal] fresh #31 + 1)
+                                              else:
+                                                no-op
+                                              set `[internal] iteration count` := [internal] fresh #31
+                                              set `[internal] stuck` := ([internal] fresh #31 = [internal] fresh #32)
+                                        if (|(z - r1:R:C)| < [internal] vanishing radius) then:
                                           block:
-                                            set `c` := Color 0 0 255
+                                            set `c` := Color 255 0 0
                                         else:
-                                          no-op
-                                    let `s` = (cos((([internal] iteration count:R * 3.141592653589793) / 10:R)) ^ 2:R) in:
-                                      block:
-                                        set `color` := if (|(z - lastZ)| < [internal] vanishing radius) then blend(s, let [internal] [std] light.c #1 = c in blend(0.333, [internal] [std] light.c #1, Color 255 255 255), let [internal] [std] dark.c #0 = c in blend(0.333, [internal] [std] dark.c #0, Color 0 0 0)) else Color 0 0 0
+                                          if (|(z - r2)| < [internal] vanishing radius) then:
+                                            block:
+                                              set `c` := Color 0 180 0
+                                          else:
+                                            if (|(z - r3)| < [internal] vanishing radius) then:
+                                              block:
+                                                set `c` := Color 0 0 255
+                                            else:
+                                              no-op
+                                        let `s` = (cos((([internal] iteration count:R * 3.141592653589793) / 10:R)) ^ 2:R) in:
+                                          block:
+                                            set `color` := if ![internal] stuck then blend(s, let [internal] [std] light.c #1 = c in blend(0.333, [internal] [std] light.c #1, Color 255 255 255), let [internal] [std] dark.c #0 = c in blend(0.333, [internal] [std] dark.c #0, Color 0 0 0)) else Color 0 0 0
 
 
 --- tool Trace

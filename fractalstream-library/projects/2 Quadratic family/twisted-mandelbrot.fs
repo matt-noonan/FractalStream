@@ -49,13 +49,11 @@ script: |
     erase
   on click:
     z := click
-    prevZ ≔ z
     erase
     until z escapes up to 100 times:
-      prevZ ⭠ z
       draw point at z
       run twist_step
-      draw line from z to prevZ
+      draw line from previous z to z
 
   @tool "Dehn twist" for "Twisted dynamical plane" with shortcut d
   on activated:

@@ -58,13 +58,11 @@ script: |
     draw point at 1
     use zero_orbit_color for line
     z := 0
-    last_z := z
     repeat:
       draw point at z
-      if follow:
-        draw line from last_z to z
-        last_z <- z
       z <- f(z)
+      if follow:
+        draw line from previous z to z
     while z != 0
 
   @tool "Pullback" for "Dynamics" with shortcut p
@@ -95,9 +93,7 @@ script: |
       # Make sure that pre1 is the preimage that
       # is closest to last_pre1
       if |last_pre1 - pre2| < |last_pre1 - pre1|:
-        tmp := pre1
-        pre1 <- pre2
-        pre2 <- tmp
+        pre1, pre2 <- pre2, pre1
 
       use color2 for line
       draw line from last_pre1 to pre1

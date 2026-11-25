@@ -69,7 +69,7 @@ metadata:
   description: |
     The j-invariant on the upper half-plane, tiled by the modular group's
     fundamental domain. The viewer folds each point into that domain
-    (group=modular), where the q-series converge fast.
+    (`modulo the modular group`), where the q-series converge fast.
   preview-commands: |
     capture viewer "j-invariant" as preview
   preview: |

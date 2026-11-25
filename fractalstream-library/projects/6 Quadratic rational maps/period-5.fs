@@ -236,35 +236,18 @@ script: |
     else:
       run per5_paint(cc)
   else:
-    d5 := pixel_size / 4
-    run per5_sample(t5 + d5 + d5 i)
-    k1 := cls5
-    run per5_sample(t5 - d5 + d5 i)
-    k2 := cls5
-    run per5_sample(t5 - d5 - d5 i)
-    k3 := cls5
-    run per5_sample(t5 + d5 - d5 i)
-    k4 := cls5
-    nc := 0
-    if k1 = 1:
-      nc <- nc + 1
-    if k2 = 1:
-      nc <- nc + 1
-    if k3 = 1:
-      nc <- nc + 1
-    if k4 = 1:
-      nc <- nc + 1
+    # (four samples vote: captured if at least two are, else the first
+    # other cycle found, if any)
+    captured := 0
     pick := 0
-    if nc >= 2:
+    for each o in [1 + i, -1 + i, -1 - i, 1 - i]:
+      run per5_sample(t5 + o pixel_size / 4)
+      if cls5 = 1:
+        captured <- captured + 1
+      else if cls5 > 1 and pick = 0:
+        pick <- cls5
+    if captured >= 2:
       pick <- 1
-    else if k1 > 1:
-      pick <- k1
-    else if k2 > 1:
-      pick <- k2
-    else if k3 > 1:
-      pick <- k3
-    else if k4 > 1:
-      pick <- k4
     run per5_paint(pick)
 
   @viewer "Julia set"

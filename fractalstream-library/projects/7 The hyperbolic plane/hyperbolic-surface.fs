@@ -95,7 +95,7 @@ metadata:
   description: |
     A closed surface of genus g, as the regular 4g-gon with opposite sides
     glued, tiling the Poincaré disk. The viewer folds each point into the
-    polygon (group=sides); the tool's drawings are repeated in every tile.
+    polygon (`modulo the group sides`); the tool's drawings are repeated in every tile.
   preview-commands: |
     capture viewer "Surface" as preview
   preview: |

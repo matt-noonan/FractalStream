@@ -13,11 +13,8 @@ script: |
     vanishing radius: tol
     center: 0
     pixel size: 1/128
-  lastZ := 0
-  while z != lastZ:
-    lastZ <- z
-    z <- newton(z)
-  if z = lastZ:
+  iterate z -> newton(z) until z stops
+  if not stuck:
     color <- rainbow(arg z / (2π))
     color <- cycle(iterations / 20, light color, dark color)
   else:
