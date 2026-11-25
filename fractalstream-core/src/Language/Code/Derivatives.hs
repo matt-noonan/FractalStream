@@ -24,10 +24,15 @@
 -- * @x@ mustn't change between when a variable is worked out and the
 --   @diff@ (the derivative would be with respect to an older @x@): that's
 --   an error, saying to differentiate with respect to a copy.
--- * Nothing is silently zero: a value that depends on @x@ through
---   something with no derivative (an item of a list or table, @floor@,
---   @mod@, or, with respect to a complex variable, @|z|@, @re@, @conj@)
---   is an error saying so (see "Language.Value.Differentiate").
+-- * Derivatives are taken wherever they exist (see
+--   "Language.Value.Differentiate"): an integer worked out from @x@ (by
+--   @round@, say) is a constant, as are @round@, @floor@ and the like.
+--   A value that depends on @x@ through an item of a list or table is an
+--   error saying so.
+-- * With respect to a complex @x@, the derivative is the Wirtinger
+--   derivative ∂, and a variable whose value isn't holomorphic in @x@
+--   (worked out with @|z|@, @re@, @conj@, ...) gets a second companion
+--   holding its ∂̄ (named @dbar v/d x@), which the chain rule needs.
 --
 -- @partial(e, x)@ differentiates @e@ alone, every other variable a
 -- constant, and is left for typing, as is the @diff@ that @f'(z)@ expands
@@ -130,7 +135,12 @@ forVariable tenv x xsr s = do
       usesOf v = Set.unions [ uses | (w, uses) <- edges, w == v ]
       needed = Set.filter numeric (fixpoint (\n -> n <> Set.unions (map usesOf (Set.toList n)) `Set.intersection` dependsOn) fromDiffs)
       companion v = "d " ++ v ++ "/d " ++ x
-      denv = DiffEnv x (tyX == RealT) (Map.fromSet companion needed) dependsOn
+      companionBar v = "dbar " ++ v ++ "/d " ++ x
+      -- (an integer worked out from x, as by `round`, only jumps, so it's
+      -- a constant)
+      isInteger v = Map.lookup v types == Just IntegerT
+      denvWith bars = DiffEnv x (tyX == RealT) (Map.fromSet companion needed)
+                              (Set.filter (not . isInteger) dependsOn) (Map.fromSet companionBar bars)
       companionOf = \case
         Pair a b -> Pair (companionOf a) (companionOf b)
         ComplexT -> ComplexT
@@ -138,15 +148,27 @@ forVariable tenv x xsr s = do
       companionType v = maybe RealT companionOf (Map.lookup v types)
       -- (a variable with a companion already, from an earlier round, keeps it)
       fresh = Set.filter (\v -> Map.notMember (companion v) types) needed
+  -- what needs a companion for its ∂̄ too: what's assigned something
+  -- whose ∂̄ isn't zero, as far as that goes (in a loop, from itself)
+  assigned <- assignedExprs funs needed s
+  let growBars bars = do
+        more <- forM assigned $ \(v, e) ->
+          differentiatePair (denvWith bars) e <&> \(_, mbar) -> [ v | isJust mbar ]
+        let bars' = bars <> Set.fromList (concat more)
+        if bars' == bars then pure bars else growBars bars'
+  bars <- if tyX == ComplexT then growBars Set.empty else pure Set.empty
+  let denv = denvWith bars
+      freshBars = Set.filter (\v -> Map.notMember (companionBar v) types) bars
   checkUnchanged funs x needed (needed `Set.intersection` Map.keysSet (tyVars tenv)) s
-  s' <- withCompanions funs denv companion companionType fresh s
+  s' <- withCompanions funs denv companion companionBar companionType fresh freshBars s
   -- companions of the environment's variables (those the code assigns)
   let envOnes = [ v | v <- Set.toList fresh, Map.member v (tyVars tenv) ]
       st = Stmt xsr
       zeroOf t = Syn xsr (ELit "0" (case t of
         ComplexT -> SomeHaskellType ComplexType 0
         _ -> SomeHaskellType RealType 0))
-      top = [ st (SDecl (companion v) (Just (companionType v)) (zeroOf (companionType v))) | v <- envOnes ]
+      top = [ st (SDecl (c v) (Just (companionType v)) (zeroOf (companionType v)))
+            | v <- envOnes, c <- companion : [ companionBar | Set.member v freshBars ] ]
   s'' <- mapStmtExprs (replaceDiffs funs denv tyX) s'
   pure (if null top then s'' else st (SBlock (top ++ [s''])))
   where
@@ -178,6 +200,16 @@ everyStmt st@(Stmt _ node) = st : case node of
   SForEach _ _ body -> everyStmt body
   SWithFirst _ _ _ body fb -> everyStmt body ++ foldMap everyStmt fb
   _ -> []
+
+-- | The assignments to the variables, with their calls expanded.
+assignedExprs :: Funs -> Set String -> Stmt -> TC [(String, Expr)]
+assignedExprs funs vars s = fmap concat . forM (everyStmt s) $ \(Stmt _ node) -> case node of
+  SDecl v _ e | Set.member v vars -> one v e
+  SSet v e | Set.member v vars -> one v e
+  SIterate (PVar _ v) e _ _ _ | Set.member v vars -> one v e
+  _ -> pure []
+  where
+    one v e = expandCalls funs e <&> \e' -> [(v, e')]
 
 -- | What each assignment assigns, and what it's worked out from.
 assignmentsIn :: Funs -> Stmt -> TC [(String, Set String)]
@@ -273,9 +305,13 @@ checkUnchanged funs x needed initiallyFresh s = void (walk True (Fresh initially
 
 -- | The code, with each variable that needs a companion updating it
 -- just before each assignment.
-withCompanions :: Funs -> DiffEnv -> (String -> String) -> (String -> FSType) -> Set String
-               -> Stmt -> TC Stmt
-withCompanions funs denv companion companionType needed = stmt
+--
+-- A variable with a companion for its ∂̄ too updates both from the
+-- values before the assignment: ∂̄ is worked out into a temporary first,
+-- since ∂'s companion might be part of it.
+withCompanions :: Funs -> DiffEnv -> (String -> String) -> (String -> String) -> (String -> FSType)
+               -> Set String -> Set String -> Stmt -> TC Stmt
+withCompanions funs denv companion companionBar companionType needed bars = stmt
   where
     stmt (Stmt sr node) = case node of
       SBlock body -> Stmt sr . SBlock . concat <$> mapM spliced body
@@ -283,22 +319,32 @@ withCompanions funs denv companion companionType needed = stmt
         [one] -> one
         many' -> Stmt sr (SBlock many')
 
-    derivativeOf e = differentiateWith denv =<< expandCalls funs e
+    derivativesOf e = differentiatePair denv =<< expandCalls funs e
+    zeroAt sr = Syn sr (ELit "0" (SomeHaskellType IntegerType 0))
+
+    -- (the companions' updates, from the values before the assignment)
+    updates sr v e = derivativesOf e <&> \(de, mdbe) ->
+      if Set.member v bars
+        then let tmp = "[internal] " ++ companionBar v
+             in [ Stmt sr (SBlock [ Stmt sr (SDecl tmp (Just (companionType v)) (fromMaybe (zeroAt sr) mdbe))
+                                  , Stmt sr (SSet (companion v) de)
+                                  , Stmt sr (SSet (companionBar v) (Syn sr (EVar tmp))) ]) ]
+        else [ Stmt sr (SSet (companion v) de) ]
 
     spliced st@(Stmt sr node) = case node of
       SDecl v mty e | Set.member v needed -> do
-        de <- derivativeOf e
+        (de, mdbe) <- derivativesOf e
         when (isNothing mty) $
           advise sr ("I couldn't work out what type `" ++ v ++ "` is, to follow its derivative.")
-        pure [ Stmt sr (SDecl (companion v) (Just (companionType v)) de), st ]
-      SSet v e | Set.member v needed -> do
-        de <- derivativeOf e
-        pure [ Stmt sr (SSet (companion v) de), st ]
+        let decl c val = Stmt sr (SDecl c (Just (companionType v)) val)
+        pure ([ decl (companion v) de ]
+              ++ [ decl (companionBar v) (fromMaybe (zeroAt sr) mdbe) | Set.member v bars ]
+              ++ [ st ])
+      SSet v e | Set.member v needed -> (++ [st]) <$> updates sr v e
       SIterate (PVar psr v) e isWhile c lim | Set.member v needed -> do
-        de <- derivativeOf e
+        us <- updates psr v e
         pure [ Stmt sr (SLoop (if isWhile then LoopWhile else LoopUntil) c lim
-                         (Stmt psr (SBlock [ Stmt psr (SSet (companion v) de)
-                                           , Stmt psr (SSet v e) ]))) ]
+                         (Stmt psr (SBlock (us ++ [ Stmt psr (SSet v e) ])))) ]
       SBlock{} -> (:[]) <$> stmt st
       SIf c yes no -> (\y n -> [Stmt sr (SIf c y n)]) <$> stmt yes <*> stmt no
       SLoop kind c lim body -> (\b -> [Stmt sr (SLoop kind c lim b)]) <$> stmt body

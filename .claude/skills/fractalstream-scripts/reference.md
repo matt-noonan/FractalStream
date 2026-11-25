@@ -452,14 +452,19 @@ Functions:
   (loops, branches) to `x`: `w := z`, iterate `w`, then `diff(w, z)` is
   the orbit's derivative (no hand-carried `dw`). Differentiate with respect to
   a copy, not the loop variable itself (`diff(z, z)` after iterating `z` is an
-  error). `diff(e, x, 2)` = second derivative. Errors, never zero, through list/
-  table items, floor/round/mod, and (w.r.t. a complex x) |w|, re, im, conj, arg
-  (fine w.r.t. a real x). `partial(e, x)`: other variables constant.
+  error). `diff(e, x, 2)` = second derivative. Derivative wherever it exists:
+  `if` conditions aren't differentiated, round/floor/ceiling/`//` and integers
+  worked out from x have derivative 0, `mod` per a - |b| floor(a/|b|), `|x|`' = 0
+  at 0. Error only through list/table items. W.r.t. a complex z, `diff` is the
+  Wirtinger ∂ = ½(∂x − i∂y) (= f' where holomorphic; `diff(|z|^2, z)` = conj z),
+  and `diff_bar(e, z)` is ∂̄ (0 where holomorphic); Jacobian det = |∂w|² − |∂̄w|².
+  `partial(e, x)`: other variables constant.
   Fraction forms: `ⅆw/ⅆz` = `diff(w, z)` (ⅆ is U+2146, Unicode's differential d), `∂w/∂z` =
   `partial(w, z)`; top is a name, `f(z)`, or `( ... )`; `ⅆ²w/ⅆz²` for order 2,
   mixed `∂²f/∂x∂y`, `∂³f/∂x∂y²` (bottom orders sum to the top's). Never the base
-  of a power: write `(ⅆw/ⅆz)^2`; `ⅆw/ⅆz^2` is an error. For a
-  one-variable user function `f`, `f'(z)` and `f''(z)`
+  of a power: write `(ⅆw/ⅆz)^2`; `ⅆw/ⅆz^2` is an error. For a user
+  function `f`, `f'(z)` and `f''(z)`; with several parameters, the derivative
+  in the first (`g'(z, c)` = d/dw g(w, c) at z; e.g. `℘'(z, ω1, ω2)`).
 
 Constants: `pi`/`π`, `e`/`𝑒`, `i`/`𝑖`, `true`, `false`.
 

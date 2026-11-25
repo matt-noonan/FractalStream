@@ -154,9 +154,23 @@ compositions defs e = do
       EDerivOf c order arg | withBody c -> do
         arg' <- pull arg
         derivative sr order arg' c
-      EDerivCall f order [arg] | Map.member f defs -> do
-        arg' <- pull arg
-        derivative sr order arg' (Syn sr (EFunRef f))
+      EDerivCall f order args
+        | Just (FunctionDef ps _ _) <- Map.lookup f defs -> case (ps, args) of
+            ([_], [arg]) -> do
+              arg' <- pull arg
+              derivative sr order arg' (Syn sr (EFunRef f))
+            -- (of several variables: the derivative in the first, f'(a, b)
+            -- being diff(f(t, b), t) with t bound to a; the arguments
+            -- may come as one tuple)
+            (_ : _ : _, _) | Just (a1 : rest) <- spreadTo (length ps) args -> do
+              a1' <- pull a1
+              rest' <- traverse pull rest
+              t <- freshName "derivative"
+              let x = Syn sr (EVar t)
+              pure (Syn sr (ELet t (Syn (synRange a1') (EWiden RealT a1'))
+                                   (iterate (Syn sr . EDiff x) (Syn sr (ECall f (x : rest'))) !! order)))
+            _ -> pure (Syn sr (EAdvice ("`" ++ f ++ replicate order '\'' ++ "` needs as many arguments as `"
+                                        ++ f ++ "` has parameters, one for each.")))
       _ -> Syn sr <$> traverse pull node
 
     derivative sr order arg fn = do
@@ -168,6 +182,13 @@ compositions defs e = do
       pure (Syn sr (ELet t (Syn (synRange arg) (EWiden RealT arg))
                            (iterate (Syn sr . EDiff x) applied !! order)))
     withBody c = any (`Map.member` defs) (composed c) || hasCall defs c
+    -- (arguments, as many as a function's parameters: given one by one,
+    -- or as one tuple)
+    spreadTo n = \case
+      as | length as == n -> Just as
+      [Syn _ (EPair a b)] | n > 1 -> (a :) <$> spreadTo (n - 1) [b]
+      [a] | n == 1 -> Just [a]
+      _ -> Nothing
 
 -- | A statement whose right-hand side is a call to a function with a
 -- body: how to put the statement back together around another

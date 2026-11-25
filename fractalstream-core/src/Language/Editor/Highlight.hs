@@ -357,7 +357,7 @@ builtinFunctions = Set.fromList $ concat
   , Set.toList stdlibFunctionNames
   , [ "mod", "rgb", "hsv", "hsl", "blend", "invert"
     , "autocolor", "nearest_autocolor", "get_autocolor"
-    , "table_size", "table_cell", "table_point", "partial", "chart", "affine", "chordal" ] ]
+    , "table_size", "table_cell", "table_point", "partial", "diff_bar", "chart", "affine", "chordal" ] ]
 
 typeNames :: Set String
 typeNames = Set.fromList (Map.keys Builtins.types)

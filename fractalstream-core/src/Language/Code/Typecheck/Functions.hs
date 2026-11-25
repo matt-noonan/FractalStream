@@ -89,18 +89,28 @@ expandCalls funs0 e0 = evalStateT (expand funs0 e0) (0 :: Int)
         body' <- expand bodyFuns body1
         pure (foldr (\(n, a) b -> Syn sr (ELet n a b)) body' (spread' ++ zip names (map snd valArgs)))
 
+      -- (a function of several variables: the derivative in its first,
+      -- f'(a, b) being diff(f(t, b), t) with t bound to a)
+      EDerivCall f order args | Just (FunDef params@(p : _ : _) _ _) <- Map.lookup f funs -> do
+        let f' = f ++ replicate order '\''
+        tuple <- gets (\k -> "[internal] " ++ f' ++ " #" ++ show k)
+        (spread, args0) <- lift (splitArgs sr f (length params) tuple args)
+        case args0 of
+          a1 : rest -> do
+            t <- freshName f' p
+            let x = Syn sr (EVar t)
+                derivative = Syn sr (ELet t (Syn (synRange a1) (EWiden RealT a1))
+                                           (iterate (Syn sr . EDiff x) (Syn sr (ECall f (x : rest))) !! order))
+            go funs (foldr (\(n, a) b -> Syn sr (ELet n a b)) derivative spread)
+          [] -> throwError (Internal (Advice sr "splitArgs: no arguments"))
+
       EDerivCall f order args -> do
         (params, body0, bodyFuns) <- lookupFun sr f funs
         let body = atCallSite sr body0
             f' = f ++ replicate order '\''
         param <- case params of
           [p] -> pure p
-          p : _ -> advise sr ("Only a function of one variable can be differentiated with "
-                              ++ f' ++ ". To differentiate " ++ f
-                              ++ " with respect to one of its arguments, use diff instead, like "
-                              ++ "diff(" ++ f ++ "(" ++ intercalate ", " params ++ "), "
-                              ++ p ++ ").")
-          [] -> throwError (Internal (Advice sr (f ++ " has no parameters")))
+          _ -> throwError (Internal (Advice sr (f ++ " has no parameters")))
         arg <- lift (splitArgs sr f 1 "" args) >>= \case
           (_, [a]) -> go funs a
           _ -> throwError (Internal (Advice sr "splitArgs: wrong number of arguments"))

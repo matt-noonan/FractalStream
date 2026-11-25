@@ -292,6 +292,11 @@ function wp_prime(z, ω1, ω2):
   t2, t3, t4 := theta2(0, τ), theta3(0, τ), theta4(0, τ)
   wp_prime <- -2 * (π / a)^3 * (t2 t3 t4)^2 * theta2(v, τ) * theta3(v, τ) * theta4(v, τ) / theta1(v, τ)^3
 
+# ℘, the same as wp (so ℘'(z, ω1, ω2), its derivative in z, is the same
+# as wp_prime: see "Derivatives" in LANGUAGE.md).
+function ℘(z, ω1, ω2):
+  ℘ <- wp(z, ω1, ω2)
+
 # The invariants of the lattice ω1 ℤ + ω2 ℤ: ℘'² = 4℘³ - g2 ℘ - g3.
 function g2(ω1, ω2):
   (a, b) := lattice_basis(ω1, ω2)
