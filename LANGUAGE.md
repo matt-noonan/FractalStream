@@ -129,15 +129,30 @@ Behind the scenes, each variable a `diff` needs gets a companion holding
 its derivative, updated alongside it. `diff(expr, x, 2)` is the second
 derivative (the same as `diff(diff(expr, x), x)`), and so on.
 
-- An `if` isn't differentiated: the derivative is that of the branch taken.
+- The derivative is taken wherever it exists. An `if` isn't
+  differentiated: the derivative is that of the branch taken. In the same
+  way, `round`, `floor`, `ceiling` and `//`, which only jump, have
+  derivative 0, as does an integer worked out from `x`; `mod` has the
+  derivative of its definition, `a mod b = a - |b| floor(a / |b|)`; and
+  `|x|` has derivative 0 at 0. Newton's method won't move on a function
+  that's flat like this, so keep that in mind.
 - `x` mustn't change between when a variable is worked out and the
   `diff`, or the derivative would be with respect to an older `x`; that's
   an error. In particular, to differentiate a loop's result with respect
   to where it started, work from a copy (`w := z` above), not from `z`.
-- What has no derivative is an error, not zero: an item of a list or
-  table, `floor`, `round`, `mod`, `//`, and, with respect to a complex
-  variable, `|w|`, `re`, `im`, `conj` and `arg` (which aren't holomorphic).
-  With respect to a real variable, those last ones are fine.
+- An item of a list or table can't be followed: that's an error.
+
+With respect to a complex variable `z = x + y i`, `diff` is the
+*Wirtinger derivative* ∂ = ½(∂/∂x − i ∂/∂y). Where `expr` is holomorphic,
+that's the usual complex derivative, so `diff(z^3 - 1, z)` is still
+`3 z^2`; but it's defined for the rest too, like `|z|`, `re`, `im`,
+`conj` and `arg`: `diff(|z|^2, z)` is `conj(z)`, and `diff(conj(z), z)`
+is 0. `diff_bar(expr, z)` is the other one, ∂̄ = ½(∂/∂x + i ∂/∂y): 0
+exactly where `expr` is holomorphic, and `diff_bar(|z|^2, z)` is `z`.
+Together they're the whole derivative of a map of the plane: its
+Jacobian determinant is `|diff(w, z)|^2 - |diff_bar(w, z)|^2`. (Newton's
+method uses the complex derivative, so it only makes sense where the
+function is holomorphic.) `diff_bar(expr, z, 2)` is the second, and so on.
 
 `partial(expr, x)` is the derivative of `expr` alone, with every other
 variable a constant: `partial(z^2 + c, c)` is `1`, whatever `z` was worked
@@ -494,9 +509,13 @@ it is defined in, and its name can't also be used as a variable.
 Functions don't need type annotations: each use of a function works with
 whatever kinds of numbers it is given, so `f(2)` and `f(z)` are both fine.
 
-The derivative of a function of one variable can be written with a prime:
-`f'(z)` means the same as `diff(f(z), z)`, and `f''(z)` is the second
-derivative. (You can also use `′`.) Derivatives of your own functions also
+The derivative of a function can be written with a prime: `f'(z)` means
+the same as `diff(f(z), z)`, and `f''(z)` is the second derivative. (You
+can also use `′`.) For a function of several variables, the prime is the
+derivative in its first one: `g'(z, c)` means `diff(g(w, c), w)` at
+`w = z` (the way ℘′(z) is written for the Weierstrass function of a
+lattice; on paper, a prime on such a function would usually need saying
+which variable it's for, so this is a convention of FractalStream's). Derivatives of your own functions also
 work inside `diff`, so Newton's method can be written as
 
 ```
@@ -726,8 +745,8 @@ The standard library has the Jacobi theta functions and the Weierstrass
 | Function | Is |
 |---|---|
 | `theta1(z, τ)` .. `theta4(z, τ)` | The Jacobi theta functions θ1 .. θ4 of `z`, with the nome `q = e^(iπτ)` (`Im τ > 0`), as in DLMF §20 (and Mathematica's `EllipticTheta`): θ1(z + π) = -θ1(z), and θ3(0)⁴ = θ2(0)⁴ + θ4(0)⁴ |
-| `wp(z, ω1, ω2)` | The Weierstrass ℘ function of the lattice `ω1 ℤ + ω2 ℤ` |
-| `wp_prime(z, ω1, ω2)` | Its derivative, ℘′ |
+| `wp(z, ω1, ω2)`, or `℘(z, ω1, ω2)` | The Weierstrass ℘ function of the lattice `ω1 ℤ + ω2 ℤ` (in the editor, `\wp` types ℘) |
+| `wp_prime(z, ω1, ω2)` | Its derivative, ℘′ (the same as `℘'(z, ω1, ω2)`) |
 | `g2(ω1, ω2)`, `g3(ω1, ω2)` | The lattice's invariants, with ℘′² = 4℘³ - g2 ℘ - g3 |
 | `klein_j(τ)` | Klein's j-invariant, with `klein_j(i)` = 1728 |
 
@@ -735,9 +754,9 @@ The standard library has the Jacobi theta functions and the Weierstrass
 (so that `τ = ω2 / ω1` has `Im τ ≥ √3/2`), and move `z` into the
 parallelogram around 0, so their series converge in a few terms. The
 theta functions themselves sum their series as they're given, which is
-fastest for large `Im τ` and small `Im z`. Because `wp` moves `z` with
-`round`, `diff` can't follow it through `wp`: use `wp_prime` for its
-derivative.
+fastest for large `Im τ` and small `Im z`. `diff` follows `wp` too (its
+`round` has derivative 0), so `℘'(z, ω1, ω2)` and `diff(wp(z, ω1, ω2), z)`
+are ℘′, the same as `wp_prime` up to rounding.
 
 ### Line continuations
 

@@ -196,6 +196,11 @@ spec = describe "highlighting scripts" $ do
     classOf src "period" 0 `shouldBe` Just Parameter
     classOf src "repeat" 0 `shouldBe` Just Keyword
 
+  it "knows `diff_bar` and the standard library's `℘`" $ do
+    let src = "@viewer \"V\"\nd := diff_bar(|z|^2, z) + ℘'(z, 1, i)\ncolor <- domain_color(d)\n"
+    classOf src "diff_bar" 0 `shouldBe` Just BuiltinFunction
+    classOf src "℘" 0 `shouldBe` Just BuiltinFunction
+
   it "knows `stops` and `stopped`" $ do
     let src = "iterate z -> z^2 until z stops\nrepeat:\n  pass\nuntil z stopped\n"
     classOf src "stops" 0 `shouldBe` Just Keyword

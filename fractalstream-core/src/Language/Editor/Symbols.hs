@@ -65,7 +65,9 @@ symbolNames = greek ++ language ++ other
       -- (Ĉ, the Riemann sphere, and ℙ, for ℙ¹)
       , ("Cinf", "Ĉ"), ("Chat", "Ĉ"), ("P", "ℙ")
       -- (ⅆf/ⅆz is diff(f, z), and ∂f/∂z, below, partial(f, z))
-      , ("d", "ⅆ") ]
+      , ("d", "ⅆ")
+      -- (Weierstrass's elliptic function, the standard library's ℘)
+      , ("wp", "℘") ]
     other =
       [ ("N", "ℕ"), ("Q", "ℚ"), ("infty", "∞"), ("partial", "∂")
       , ("nabla", "∇"), ("sum", "∑"), ("prod", "∏"), ("int", "∫")

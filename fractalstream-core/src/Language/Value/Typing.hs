@@ -210,7 +210,7 @@ synthDerivative env sr x f = do
     -- at ∞ would)
     EVar n | exprType x' == ExtComplexT, isDerivativeCallVar n
            , isProjective (exprType f') || isNumeric (exprType f') -> do
-      df <- differentiateWith (DiffEnv n False Map.empty Set.empty) f
+      df <- differentiateWith (DiffEnv n False Map.empty Set.empty Map.empty) f
       synth env (Syn sr (EWiden ExtComplexT df))
     _ -> synthNumericDerivative env sr x f x' f'
 
@@ -235,7 +235,7 @@ synthNumericDerivative env sr x f x' f' = do
   -- The derivative is at least real, and at least as big as the types
   -- of the variable and the function.
   let t = fromMaybe ComplexT (joinType RealT =<< joinType (exprType x') (exprType f'))
-  df <- differentiateWith (DiffEnv var (exprType x' == RealT) Map.empty Set.empty) f
+  df <- differentiateWith (DiffEnv var (exprType x' == RealT) Map.empty Set.empty Map.empty) f
   synth env (Syn sr (EWiden t df))
 
 -- | Push an expected type into a node that can adopt it, for the nodes

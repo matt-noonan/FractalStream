@@ -266,7 +266,7 @@ builtin = \case
       , ("im", "the imaginary part"), ("arg", "the argument") ]
     others = [ "mod", "rgb", "hsv", "hsl", "blend", "invert"
              , "autocolor", "nearest_autocolor", "get_autocolor", "point", "table_size", "filled"
-             , "table_cell", "table_point", "in", "pixels", "partial", "chart", "affine", "chordal" ]
+             , "table_cell", "table_point", "in", "pixels", "partial", "diff_bar", "chart", "affine", "chordal" ]
     keywordNames = [ (t, n) | (n, t) <- Map.toList wordlikeTokens
                             , t `elem` [ TextKeyword, AppendKeyword, PrependKeyword, JoinKeyword
                                        , RemoveKeyword, FindKeyword, TransformKeyword, RangeKeyword

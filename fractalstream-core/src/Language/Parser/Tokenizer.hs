@@ -209,10 +209,11 @@ skipString = go []
 -- | What an identifier goes on with, after its first letter: letters,
 -- digits, @_@, and combining marks (so @x̂@, x with a combining hat, is
 -- an identifier).
--- (ⅆ is the d of ⅆf/ⅆz, so it ends a name: ⅆaⅆb is two)
+-- (ⅆ is the d of ⅆf/ⅆz, so it ends a name: ⅆaⅆb is two; ℘, Weierstrass's
+-- elliptic function, is a math symbol rather than a letter, but a name)
 identChar :: Char -> Bool
 identChar c = (isAlphaNum c && not (c `elem` superscripts) && (c /= '⁻') && (c /= 'ⅆ'))
-              || c == '_' || isMark c
+              || c == '_' || c == '℘' || isMark c
 
 -- | An identifier's name, as written: in Unicode's composed form (NFC),
 -- so that names that look the same are the same however they were
@@ -351,7 +352,7 @@ tokenize' = \case
        -> tok : tokenize' cs'
 
   -- Tokenize identifiers
-  cs@(c:_) | isAlpha (fst c) && not (fst c `elem` superscripts) && (fst c /= '⁻') ->
+  cs@(c:_) | (isAlpha (fst c) || fst c == '℘') && not (fst c `elem` superscripts) && (fst c /= '⁻') ->
                let ds = takeWhile (identChar . fst) cs
                    cs' = dropWhile (identChar . fst) cs
                    name = identifierName (map fst ds)

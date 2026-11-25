@@ -1,7 +1,6 @@
 module Language.Value.DerivativeSpec (spec) where
 
 import Test.Hspec
-import Data.List (isInfixOf)
 
 import FractalStream.Prelude
 
@@ -80,14 +79,38 @@ spec = do
       parseR 3 "diff(|x|, x)" `shouldBe` Right 1
       parseR (-2) "diff(|x|, x)" `shouldBe` Right (-1)
 
-    it "throws errors when trying to differentiate non-differentiable functions" $ do
-      parseC 1 "diff(im z, z)" `shouldBe` Left (unlines
-        ["  diff(im z, z)"
-        ,"       ^^^^"
-        ,""
-        ,"`im` isn't holomorphic, so it has no derivative with respect to the complex variable `z`."])
-      parseC 1 "diff(|z|, z)" `shouldSatisfy` either ("|·| isn't holomorphic" `isInfixOf`) (const False)
-      parseR 2.5 "diff(floor(x), x)" `shouldSatisfy` either ("which jumps" `isInfixOf`) (const False)
+    it "take the Wirtinger derivative of what isn't holomorphic" $ do
+      -- ∂ = (∂/∂x - i ∂/∂y)/2: ∂ re z = 1/2, ∂ im z = -i/2, ∂ conj z = 0
+      parseC 1 "diff(re z, z)" `shouldBeNear` 0.5
+      parseC 1 "diff(im z, z)" `shouldBeNear` (0 :+ (-0.5))
+      parseC 1 "diff(conj z, z)" `shouldBeNear` 0
+      -- ∂|z|² = z̄, ∂|z| = z̄ / (2|z|), and 0 at 0
+      parseC (1 :+ 2) "diff(|z|^2, z)" `shouldBeNear` (1 :+ (-2))
+      parseC (3 :+ 4) "diff(|z|, z)" `shouldBeNear` (0.3 :+ (-0.4))
+      parseC 0 "diff(|z|, z)" `shouldBeNear` 0
+      -- ∂ arg z at i: arg's x-derivative is -1 there, its y-derivative 0
+      parseC (0 :+ 1) "diff(arg z, z)" `shouldBeNear` (-0.5)
+      -- through a holomorphic function: ∂ exp(|z|) = exp(|z|) z̄ / (2|z|)
+      parseC (3 :+ 4) "diff(exp(|z|), z)" `shouldBeNear` (exp 5 * (0.3 :+ (-0.4)))
+      -- and through what isn't: ∂ |conj z|² = z̄ too
+      parseC (1 :+ 2) "diff(|conj(z)|^2, z)" `shouldBeNear` (1 :+ (-2))
+      parseC (1 :+ 2) "diff(re(z)^2 + im(z)^2, z)" `shouldBeNear` (1 :+ (-2))
+
+    it "give diff_bar, the derivative with respect to z̄" $ do
+      parseC (1 :+ 2) "diff_bar(z^2, z)" `shouldBeNear` 0
+      parseC (1 :+ 2) "diff_bar(conj z, z)" `shouldBeNear` 1
+      parseC (1 :+ 2) "diff_bar(|z|^2, z)" `shouldBeNear` (1 :+ 2)
+      parseC (1 :+ 2) "diff_bar(re z, z)" `shouldBeNear` 0.5
+      parseC (1 :+ 2) "diff_bar(exp(conj(z)), z)" `shouldBeNear` exp (1 :+ (-2))
+
+    it "differentiate what jumps where it doesn't, and |x| at its kink" $ do
+      parseR 2.5 "diff(floor(x) + round(x) + ceiling(x), x)" `shouldBe` Right 0
+      parseR 2.5 "diff(mod(x^2, 1.0), x)" `shouldBe` Right 5
+      parseR 2.5 "diff(x + round(x) // 2, x)" `shouldBe` Right 1
+      -- (Euclidean: x mod b = x - |b| floor(x / |b|))
+      parseR 2.5 "diff(mod(7.0, x), x)" `shouldBe` Right (-2)
+      parseR (-2) "diff(|x|, x)" `shouldBe` Right (-1)
+      parseR 0 "diff(|x|, x)" `shouldBe` Right 0
 
     it "throws errors when the variable isn't a variable" $ do
       parseR 0 "diff(x, 2)" `shouldBe` Left (unlines

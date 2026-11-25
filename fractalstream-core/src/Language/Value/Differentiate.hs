@@ -3,20 +3,33 @@
 -- variable @x@, which is then typed and elaborated like any other
 -- expression.
 --
+-- With respect to a complex variable, the derivative is the Wirtinger
+-- derivative ∂ = ½(∂/∂x − i ∂/∂y): the usual complex derivative wherever
+-- the expression is holomorphic, and defined for the rest too (@|z|@,
+-- @re@, @im@, @conj@, @arg@). The chain rule then needs ∂̄ = ½(∂/∂x +
+-- i ∂/∂y) of what's inside, too, so both are worked out together
+-- ('differentiatePair'), ∂̄ as "zero" for anything holomorphic, so that
+-- the derivative of holomorphic code is just what it always was.
+--
+-- Derivatives are taken wherever they exist: as an @if@'s condition isn't
+-- differentiated (the derivative is that of the branch taken), @round@,
+-- @floor@, @ceiling@ and @//@ have derivative 0, @mod@ follows its
+-- definition, and @|x|@ has derivative 0 at 0.
+--
 -- Variables other than @x@ are treated as constants, except for those
 -- bound by local bindings (from inlined function calls, for example),
 -- which are handled by the chain rule:
 --
--- > d/dx (let p = v in b) = let p = v in (∂b/∂x + ∂b/∂p · dv/dx)
+-- > ∂/∂x (let p = v in b) = let p = v in (∂b/∂x + ∂b/∂p · ∂v + ∂b/∂p̄ · ∂v̄)
 --
--- A subexpression that doesn't mention @x@ at all has derivative zero,
--- even if it is something (like @|y|@) that couldn't be differentiated in
--- general.
+-- A subexpression that doesn't mention @x@ at all has derivative zero.
 module Language.Value.Differentiate
   ( differentiate
   , differentiateWith
+  , differentiatePair
   , DiffEnv(..)
   , valueDeps
+  , displayName
   ) where
 
 import FractalStream.Prelude
@@ -33,99 +46,150 @@ import Language.Value.Builtins (roundingFunctions)
 import Language.Parser.SourceRange
 
 -- | What differentiating needs to know besides the expression: the
--- variable, whether it's real (so that @|u|@, @re@, @im@, @conj@ and
--- @arg@ have derivatives: with respect to a complex variable they aren't
--- holomorphic), and the variables whose values depend on it, each with
--- the variable holding its derivative (see "Language.Code.Derivatives";
--- a variable that depends on it but has none, like an integer worked out
--- from it, is in the set without one).
+-- variable, whether it's real (so that the derivative is the plain
+-- derivative, and ∂̄ isn't needed), and the variables whose values depend
+-- on it, each with the variable holding its derivative (see
+-- "Language.Code.Derivatives"; a variable that depends on it but has
+-- none, like a list worked out from it, is in the set without one), and
+-- with the one holding its ∂̄, for those whose ∂̄ isn't zero.
 data DiffEnv = DiffEnv
-  { deVar     :: String
-  , deReal    :: Bool
-  , deFollow  :: Map String String
-  , deDepends :: Set String
+  { deVar       :: String
+  , deReal      :: Bool
+  , deFollow    :: Map String String
+  , deDepends   :: Set String
+  , deFollowBar :: Map String String
   }
 
 -- | The derivative of an expression with respect to the named variable,
 -- with every other variable a constant: what @partial@ means.
 differentiate :: String -> Expr -> TC Expr
-differentiate x = differentiateWith (DiffEnv x False Map.empty Set.empty)
+differentiate x = differentiateWith (DiffEnv x False Map.empty Set.empty Map.empty)
 
 -- | The derivative of an expression with respect to a variable, following
 -- the variables that depend on it to their derivatives.
 differentiateWith :: DiffEnv -> Expr -> TC Expr
-differentiateWith env e@(Syn sr node)
-  | not (dependsOn e) = pure (zero sr)
+differentiateWith env e = fst <$> differentiatePair env e
+
+-- | A name as a script would know it: an internal name made for a
+-- function's parameter (@[internal] f.p #3@, @[internal] f'.p #3@) is the
+-- parameter's.
+displayName :: String -> String
+displayName n
+  | "[internal] " `isPrefixOf` n =
+      let rest = drop (length ("[internal] " :: String)) n
+          base = takeWhile (/= ' ') rest
+      in case break (== '.') (reverse base) of
+           (p, _ : _) | not (null p) -> reverse p
+           _ -> n
+  | otherwise = n
+
+-- | ∂ and ∂̄ of an expression with respect to the variable (∂̄ 'Nothing'
+-- where it's zero: always, for a real variable, whose derivative is just
+-- the first).
+differentiatePair :: DiffEnv -> Expr -> TC (Expr, Maybe Expr)
+differentiatePair env e@(Syn sr node)
+  | not (dependsOn e) = pure (zero sr, Nothing)
   | otherwise = case node of
 
-      EVar n | n == x -> pure (one sr)
-             | Just dn <- Map.lookup n (deFollow env) -> pure (Syn sr (EVar dn))
-             | otherwise -> advise sr ("`diff` can't follow `" ++ n ++ "` back to `" ++ x
-                                       ++ "`: it's worked out from `" ++ x ++ "`, but isn't a real \
-                                          \or complex number.")
+      EVar n | n == x -> pure (one sr, Nothing)
+             | Just dn <- Map.lookup n (deFollow env) ->
+                 pure (Syn sr (EVar dn), Syn sr . EVar <$> Map.lookup n (deFollowBar env))
+             | otherwise -> advise sr ("`diff` can't follow `" ++ displayName n ++ "` back to `"
+                                       ++ displayName x ++ "`: it's worked out from `" ++ displayName x
+                                       ++ "`, but isn't a number.")
 
-      ECast a t -> (\da -> Syn sr (ECast da t)) <$> d a
-      EWiden t a -> Syn sr . EWiden t <$> d a
-      EITE c a b -> (\da db -> Syn sr (EITE c da db)) <$> d a <*> d b
+      -- (with respect to a complex variable, a real conversion's
+      -- derivative is complex)
+      ECast a t
+        | not (deReal env), t `elem` [RealT, IntegerT] -> both (Syn sr . EWiden ComplexT) <$> d a
+        | otherwise -> both (\da -> Syn sr (ECast da t)) <$> d a
+      EWiden t a -> both (Syn sr . EWiden t) <$> d a
+      EITE c a b -> lift2 (\da db -> Syn sr (EITE c da db)) <$> d a <*> d b
 
       EBin op a b -> case op of
-        OpAdd -> add sr <$> d a <*> d b
-        OpSub -> sub sr <$> d a <*> d b
+        OpAdd -> lift2 (add sr) <$> d a <*> d b
+        OpSub -> lift2 (sub sr) <$> d a <*> d b
         -- (a b)' = b a' + a b'
-        OpMul -> (\da db -> add sr (mul sr b da) (mul sr a db)) <$> d a <*> d b
+        OpMul -> lift2 (\da db -> add sr (mul sr b da) (mul sr a db)) <$> d a <*> d b
         -- (a / b)' = (a' - (a / b) b') / b, with b worked out once: never
         -- b^2, which could overflow (or underflow) where b doesn't, and
         -- which, for an integer b such as 2^k, would be an integer product
         -- that wraps (b is only ever divided by here, so it's computed as
         -- a real number). For a b that doesn't depend on x, just a' / b.
-        OpDiv -> d a >>= \da -> d b <&> \db ->
+        OpDiv -> lift2 (\da db ->
           if isInt 0 db then divide sr da b
           else let n = divisorName e
                    v = Syn sr (EVar n)
                in Syn sr (ELet n (Syn (synRange b) (EWiden RealT b))
-                                 (divide sr (sub sr da (mul sr (divide sr a v) db)) v))
+                                 (divide sr (sub sr da (mul sr (divide sr a v) db)) v)))
+                 <$> d a <*> d b
         OpPow
           -- (a^n)' = n a^(n-1) a', for n independent of x
-          | not (dependsOn b) -> (\da -> mul sr (mul sr b (pow sr a (minusOne sr b))) da) <$> d a
+          | not (dependsOn b) -> both (\da -> mul sr (mul sr b (pow sr a (minusOne sr b))) da) <$> d a
           -- (a^b)' = a^b (b' log a + b a' / a)
-          | otherwise -> (\da db -> mul sr e (add sr (mul sr db (call sr "log" a))
-                                                     (divide sr (mul sr b da) a)))
+          | otherwise -> lift2 (\da db -> mul sr e (add sr (mul sr db (call sr "log" a))
+                                                           (divide sr (mul sr b da) a)))
                            <$> d a <*> d b
-        OpMod -> jumps "`mod`"
-        OpIDiv -> jumps "`//`"
+        -- (a mod b = a - |b| floor(a / |b|), Euclidean: just a', for a b
+        -- that doesn't depend on x)
+        OpMod
+          | not (dependsOn b) -> d a
+          | otherwise -> let ab = Syn sr (EUn OpAbs b)
+                         in d (sub sr a (mul sr ab (call sr "floor" (divide sr a ab))))
+        -- (an integer, which only jumps)
+        OpIDiv -> pure (zero sr, Nothing)
         _ -> notImplemented
 
-      EUn OpNeg a -> neg sr <$> d a
+      EUn OpNeg a -> both (neg sr) <$> d a
 
       -- (pairs, as tuple assignments make)
-      EPair a b -> (\da db -> Syn sr (EPair da db)) <$> d a <*> d b
-      EProj isSecond p -> Syn sr . EProj isSecond <$> d p
+      EPair a b -> lift2 (\da db -> Syn sr (EPair da db)) <$> d a <*> d b
+      EProj isSecond p -> both (Syn sr . EProj isSecond) <$> d p
 
-      -- with respect to a real variable: |u|' = re(conj(u) u') / |u|
+      -- |u| = (u ū)^(1/2), and 0 where u is (where it has no derivative)
       EUn OpAbs a
-        | deReal env -> (\da -> divide sr (call sr "re" (mul sr (call sr "conj" a) da)) e) <$> d a
-        | otherwise -> notHolomorphic "|·|"
+        | deReal env -> d a <&> \(da, _) ->
+            (atZero a (divide sr (call sr "re" (mul sr (call sr "conj" a) da)) e), Nothing)
+        | otherwise -> d a <&> \da ->
+            let twice = mul sr (real sr 2) e
+            in both (atZero a) (wirtinger (divide sr (call sr "conj" a) twice) (divide sr a twice) da)
 
       EApp f a
-        | Just rule <- Map.lookup f derivatives -> rule sr a <$> d a
-        | Map.member f roundingFunctions -> jumps ("`" ++ f ++ "`")
+        | Just rule <- Map.lookup f derivatives -> both (rule sr a) <$> d a
+        -- (piecewise constant)
+        | Map.member f roundingFunctions -> pure (zero sr, Nothing)
         | f `elem` ["re", "Re", "im", "Im", "conj", "Conj", "bar", "Bar", "arg", "Arg"] ->
             if deReal env
-              then d a <&> \da -> case f of
+              then d a <&> \(da, _) -> (,Nothing) $ case f of
                 _ | f `elem` ["re", "Re"] -> call sr "re" da
                   | f `elem` ["im", "Im"] -> call sr "im" da
                   | f `elem` ["arg", "Arg"] -> call sr "im" (divide sr da a)
                   | otherwise -> call sr "conj" da
-              else notHolomorphic ("`" ++ f ++ "`")
+              else d a <&> \da -> case f of
+                -- re u = (u + ū)/2, im u = (u - ū)/(2i), arg u = im(log u)
+                _ | f `elem` ["re", "Re"] -> wirtinger (real sr 0.5) (real sr 0.5) da
+                  | f `elem` ["im", "Im"] -> wirtinger (complex sr (0 :+ (-0.5))) (complex sr (0 :+ 0.5)) da
+                  | f `elem` ["arg", "Arg"] -> wirtinger (divide sr (complex sr (0 :+ (-0.5))) a)
+                                                         (divide sr (complex sr (0 :+ 0.5)) (call sr "conj" a)) da
+                  | otherwise -> wirtinger (zero sr) (one sr) da
 
-      -- d/dx (let p = v in b) = let p = v in (∂b/∂x + ∂b/∂p · dv/dx)
+      -- ∂/∂x (let p = v in b) = let p = v in (∂b/∂x + ∂b/∂p ∂v + ∂b/∂p̄ ∂v̄),
+      -- and ∂̄ likewise (with respect to a real x, ∂v̄ is the conjugate of
+      -- v's derivative)
       ELet p v b
         | p == x -> throwError (Internal (Advice sr "differentiating by a shadowed variable"))
         | otherwise -> do
-            dbx <- d b
-            dbp <- differentiate p b
-            dvx <- d v
-            pure (Syn sr (ELet p v (addParts sr dbx (scaleParts sr dbp dvx))))
+            (dbx, dbbx) <- d b
+            (dbp, dbbp) <- differentiatePair (DiffEnv p False Map.empty Set.empty Map.empty) b
+            (dvx, dbvx) <- d v
+            let bound parts = Syn sr (ELet p v parts)
+                conjOf = call sr "conj"
+                -- ∂v̄ and ∂̄v̄
+                dvbar = if deReal env then Just (conjOf dvx) else conjOf <$> dbvx
+                dbvbar = conjOf dvx
+                total = addParts sr dbx (addParts sr (scaleParts sr dbp dvx) (scalePartsM dbbp dvbar))
+                totalBar = sumM [ dbbx, scalePartsM' dbp dbvx, (\k -> scaleParts sr k dbvbar) <$> dbbp ]
+            pure (bound total, if deReal env then Nothing else bound <$> totalBar)
 
       -- the derivative of a derivative
       EDiff (Syn _ (EVar y)) f -> d =<< differentiate y f
@@ -139,15 +203,36 @@ differentiateWith env e@(Syn sr node)
       _ -> notImplemented
   where
     x = deVar env
-    d = differentiateWith env
+    d = differentiatePair env
     dependsOn ex = not (Set.null (valueDeps ex `Set.intersection` Set.insert x (deDepends env)))
-    notImplemented = throwError (DiffNotImplemented sr x)
-    jumps what = advise sr ("`diff` can't follow `" ++ x ++ "` through " ++ what
-                            ++ ", which jumps, so has no derivative there.")
-    notHolomorphic what = advise sr (what ++ " isn't holomorphic, so it has no derivative with \
-                                     \respect to the complex variable `" ++ x ++ "`.")
-    throughData = advise sr ("`diff` can't follow `" ++ x ++ "` through an item of a list or \
+    notImplemented = throwError (DiffNotImplemented sr (displayName x))
+    throughData = advise sr ("`diff` can't follow `" ++ displayName x ++ "` through an item of a list or \
                              \table: work its derivative out manually instead.")
+
+    both f (a, mb) = (f a, f <$> mb)
+    -- (a rule linear in each derivative, for ∂ and for ∂̄; ∂̄ is zero when
+    -- both of the parts' are)
+    lift2 f (da, mda) (db, mdb) = (f da db, case (mda, mdb) of
+      (Nothing, Nothing) -> Nothing
+      _ -> Just (f (fromMaybe (zero sr) mda) (fromMaybe (zero sr) mdb)))
+
+    -- A function F(u, ū) of u, given ∂F/∂u and ∂F/∂ū at u, and ∂u and ∂̄u:
+    -- ∂F = F_u ∂u + F_ū ∂ū, ∂̄F = F_u ∂̄u + F_ū ∂̄ū, where ∂ū is the conjugate
+    -- of ∂̄u and ∂̄ū that of ∂u
+    wirtinger fu fubar (du, mdbu) =
+      ( add sr (mul sr fu du) (maybe (zero sr) (mul sr fubar . call sr "conj") mdbu)
+      , sumM [ mul sr fu <$> mdbu, Just (mul sr fubar (call sr "conj" du)) ] )
+
+    -- (0 where u is 0)
+    atZero u r = Syn sr (EITE (Syn sr (EBin OpExactEq (Syn sr (EUn OpAbs u)) (zero sr))) (zero sr) r)
+
+    sumM ms = case catMaybes ms of
+      [] -> Nothing
+      t : ts -> Just (foldl' (addParts sr) t ts)
+    scalePartsM ma mk = case (ma, mk) of
+      (Just a', Just k) -> scaleParts sr a' k
+      _ -> zero sr
+    scalePartsM' a' mk = scaleParts sr a' <$> mk
 
 -- | The variables an expression's value depends on, in a way a derivative
 -- could follow: not through conditions (which pick a branch, and aren't
@@ -235,6 +320,12 @@ derivatives = Map.fromList $
 
 int :: SourceRange -> Int64 -> Expr
 int sr n = Syn sr (ELit (show n) (SomeHaskellType IntegerType n))
+
+real :: SourceRange -> Double -> Expr
+real sr v = Syn sr (ELit (show v) (SomeHaskellType RealType v))
+
+complex :: SourceRange -> Complex Double -> Expr
+complex sr v = Syn sr (ELit (show v) (SomeHaskellType ComplexType v))
 
 zero, one :: SourceRange -> Expr
 zero sr = int sr 0

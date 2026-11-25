@@ -737,6 +737,15 @@ valueAndArithGrammar funs own = mdo
   diff <- ruleChoice
     [ derivative EDiff (void (token DiffKeyword))
     , derivative EPartial (builtinWord "partial")
+    -- (`diff_bar(f, z)`, the derivative with respect to z̄, is the
+    -- conjugate of the derivative of f̄: see "Language.Value.Differentiate")
+    , withSourceRange $
+        (\e x n sr -> let conj' = Syn sr . EApp "conj"
+                      in conj' (iterate (Syn sr . EDiff x) (conj' e) !! fromMaybe 1 n))
+          <$> (builtinWord "diff_bar" *> token OpenParen *> pairItem)
+          <*> (token Comma *> pairItem)
+          <*> optional (token Comma *> derivativeOrder)
+          <* token CloseParen
     ]
   let derivative mk word = withSourceRange $
         (\e x n sr -> iterate (Syn sr . mk x) e !! fromMaybe 1 n)
@@ -846,7 +855,7 @@ valueAndArithGrammar funs own = mdo
 
   let reserved n = Set.member n funs || ((Set.member n builtinWords || isStdlibFunction n) && free n)
       builtinWords = Set.fromList
-        [ "invert", "blend", "rgb", "hsv", "hsl", "mod", "diff", "point", "table_size", "filled"
+        [ "invert", "blend", "rgb", "hsv", "hsl", "mod", "diff", "diff_bar", "point", "table_size", "filled"
         , "table_cell", "table_point", "in", "pixels", "partial"
         , "infinity", "chart", "affine", "chordal" ]
         `Set.union` Set.fromList (map autocolorModeName [minBound .. maxBound])

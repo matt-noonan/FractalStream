@@ -334,9 +334,8 @@ x <- g'(1)|] `shouldBe` Right 5.0
       runWithX (Scalar RealType 1) "f(t) := t^3\nx <- diff(1 + x f'(2x), x)" `shouldBe` Right 36.0
       runWithX (Scalar RealType 2) "f(t) := t^3\ng(s) := f(s + 1)\nx <- diff(g(x x), x)" `shouldBe` Right 300.0
 
-    it "suggests diff for f' of functions of several variables" $
-      runWithX (Scalar RealType 0) "f(a, b) := a b\nx <- f'(1, 2)" `shouldSatisfy`
-        either ("use diff instead, like diff(f(a, b), a)" `isInfixOf`) (const False)
+    it "takes f' of a function of several variables in its first" $
+      runWithX (Scalar RealType 0) "f(a, b) := a b\nx <- f'(1, 2)" `shouldBe` Right 2
 
   describe "when defining and running code" $ do
 
@@ -732,9 +731,23 @@ x <- d|] `shouldBe` Right 3
       failsWith "c := 2.0\ny := c^2\nc <- 3\nx <- diff(y, c)" "`y` was worked out from an earlier value of `c`"
       failsWith "w := 2.0\nw <- w^2\nx <- diff(w, w)" "`w` changes before this, from its own value"
 
-    it "say what they can't follow, rather than give zero" $ do
+    it "say what they can't follow, rather than give zero" $
       failsWith "c := 2.0\nxs := [c, c^2]\ny := xs @ 2\nx <- diff(y, c)" "through an item of a list or table"
-      failsWith "c := 2.5\ny := mod(c, 1.0)\nx <- diff(y, c)" "which jumps"
+
+    it "take derivatives where they exist: through jumps, and integers worked out from the variable" $ do
+      "c := 2.5\ny := mod(c, 1.0)\nx <- diff(y, c)" `gives` 1
+      "c := 2.5\nm := round(c)\ny := c - m + m^2\nx <- diff(y, c)" `gives` 1
+
+    it "follow what isn't holomorphic through statements and loops (with ∂̄)" $ do
+      -- y = |c|² = c c̄, so ∂y = c̄: 1 - 2i at c = 1 + 2i
+      "c := 1 + 2i\ny := |c|^2\nd := diff(y, c)\nx <- re(d) + 10 im(d)" `near` (-19)
+      -- w = conj(c), then v = w^2: ∂v = 0, ∂̄v = 2 c̄
+      "c := 1 + 2i\nw := conj(c)\nv := w^2\nd := diff(v, c)\nx <- |d|" `near` 0
+      "c := 1 + 2i\nw := conj(c)\nv := w^2\nd := diff_bar(v, c)\nx <- re(d) + 10 im(d)" `near` (-38)
+      -- in a loop, from itself: z ← z̄ + c three times from 0 is c̄ + c + ... ;
+      -- z1 = c, z2 = c̄ + c, z3 = c + c̄ + c, so ∂z3 = 2 and ∂̄z3 = 1
+      "c := 1 + 2i\nz := 0\nk := 0\nwhile k < 3:\n  z <- conj(z) + c\n  k <- k + 1\nd := diff(z, c)\nx <- re(d) + 10 im(d)" `near` 2
+      "c := 1 + 2i\nz := 0\nk := 0\nwhile k < 3:\n  z <- conj(z) + c\n  k <- k + 1\nd := diff_bar(z, c)\nx <- re(d) + 10 im(d)" `near` 1
 
   describe "functions given as arguments" $ do
 
@@ -755,6 +768,12 @@ x <- d|] `shouldBe` Right 3
     it "keep the names where they're written" $
       -- (the function's `x` is the caller's, not h's parameter)
       "h(g, x) := g(x) + x\nx <- h(w -> w + x, 2)" `gives` 4
+
+    it "a function of several variables differentiates, with f', in its first" $ do
+      "g(w, c) := w^3 + c w\nx <- g'(2, 5)" `gives` 17
+      "g(w, c) := w^3 + c w\nx <- g''(2, 5)" `gives` 12
+      "function g(w, c):\n  g <- w^3 + c w\nx <- g'(2, 5)" `gives` 17
+      "function g(w, c):\n  g <- w^3 + c w\nx <- g''(2, 5)" `gives` 12
 
     it "can be differentiated with g'(x)" $ do
       "sq(a) := a a\nh(g, v) := g'(v)\nx <- h(sq, 3)" `gives` 6
@@ -869,6 +888,12 @@ x <- d|] `shouldBe` Right 3
       "C := 1\nfound, w, p := find_cycle(z -> z^2 + C, 0, 10000, 100, (a, b) -> |a - b| < 0.000001, a -> |a| < 2.5)\nx <- if found then p else 0" `gives` 0
 
     describe "the standard library's elliptic functions" $ do
+      it "give ℘, whose derivative ℘' (in z) is wp_prime, and differentiate wp itself" $ do
+        "z := 0.31 + 0.17 i\nerr := |℘(z, 1, 0.3 + 1.1 i) - wp(z, 1, 0.3 + 1.1 i)|\nx <- if err < 10^(-15) then 1 else 0" `gives` 1
+        "z := 0.31 + 0.17 i\nq := wp_prime(z, 1, 0.3 + 1.1 i)\nerr := |℘'(z, 1, 0.3 + 1.1 i) - q| / |q|\nx <- if err < 10^(-13) then 1 else 0" `gives` 1
+        -- (through `round`, which lattice_reduce uses: away from where it jumps)
+        "z := 2.31 + 0.17 i\nq := wp_prime(z, 1, 0.3 + 1.1 i)\nerr := |diff(wp(z, 1, 0.3 + 1.1 i), z) - q| / |q|\nx <- if err < 10^(-13) then 1 else 0" `gives` 1
+
       it "give the theta functions (Jacobi's identity, and θ1's period)" $ do
         "err := |theta3(0, i)^4 - theta2(0, i)^4 - theta4(0, i)^4|\nx <- if err < 10^(-14) then 1 else 0" `gives` 1
         "z := 0.3 + 0.2 i\nerr := |theta1(z + π, 0.4 + 0.9 i) + theta1(z, 0.4 + 0.9 i)|\nx <- if err < 10^(-14) then 1 else 0" `gives` 1
