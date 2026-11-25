@@ -127,13 +127,13 @@ _BUILTIN_FUNCTIONS = {
     "min", "max", "clamp", "compose", "newton_root", "full_newton_root", "S",
     "find_cycle", "riemann_sum", "residue", "winding_number",
     "theta1", "theta2", "theta3", "theta4", "lattice_basis",
-    "lattice_reduce_by", "lattice_reduce", "wp", "wp_prime", "g2", "g3",
+    "lattice_reduce_by", "lattice_reduce", "wp", "℘", "wp_prime", "g2", "g3",
     "klein_j",
     # the rest
     "mod", "rgb", "hsv", "hsl", "blend", "cycle", "dark", "light", "invert",
     "autocolor", "nearest_autocolor", "get_autocolor",
     "table_size", "table_cell", "table_point",
-    "partial", "chart", "affine", "chordal",
+    "partial", "diff_bar", "chart", "affine", "chordal",
 }
 
 # Language.Value.Builtins.colors
@@ -189,7 +189,7 @@ _TOKEN_RE = re.compile(
     | (?P<int>\d+)
     | (?P<super>⁻?[{sup}]+)
     | (?P<symbol>{symbols})
-    | (?P<ident>(?![{sup}ⅆ])[^\W\d_](?:(?![{sup}ⅆ])\w|[{marks}])*)
+    | (?P<ident>(?:(?![{sup}ⅆ])[^\W\d_]|℘)(?:(?![{sup}ⅆ])\w|℘|[{marks}])*)
     | (?P<junk>.)
     """.format(
         sup=_SUPERSCRIPTS,

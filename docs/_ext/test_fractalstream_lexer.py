@@ -212,6 +212,13 @@ def test_sphere_classes(text, ttype):
     assert class_of(SPHERE, text) == ttype
 
 
+def test_wirtinger_and_wp():
+    src = "@viewer \"V\"\nd := diff_bar(|z|^2, z) + ℘'(z, 1, i)\ncolor <- domain_color(d)\n"
+    assert class_of(src, "diff_bar") == Name.Builtin
+    assert class_of(src, "℘") == Name.Builtin
+    assert not [v for v, t in classes(src) if t is Error]
+
+
 def test_d_ends_a_name():
     # (ⅆw is the differential sign, then the name w)
     assert ("w", Name.Variable) in classes("w := 0\ng := ⅆw/ⅆz\n")
