@@ -96,6 +96,24 @@ readSpec = describe "tables" $ do
     evalIn t (PairType IntegerType IntegerType) "table_cell(T, 2 - i)" `shouldReturn` (3, 2)
     evalIn t (PairType IntegerType IntegerType) "table_cell(T, 5 + 3 i)" `shouldReturn` (6, -2)
 
+  -- (the sample covers -1/2 ≤ x ≤ 5/2 and -3/2 ≤ y ≤ 1/2)
+  it "take a point between two cells as in the second, but cover their edges" $ do
+    t <- sample
+    let cell = evalIn t (PairType IntegerType IntegerType)
+    -- between cells: the one to the right, or below (a pixel's top left
+    -- corner, where a viewer samples it)
+    cell "table_cell(T, 0.5 - 0.5 i)" `shouldReturn` (2, 2)
+    -- the left and top edges
+    cell "table_cell(T, -0.5 + 0.5 i)" `shouldReturn` (1, 1)
+    -- the right and bottom edges: the last cells, not past them
+    cell "table_cell(T, 2.5 - 1.5 i)" `shouldReturn` (3, 2)
+    evalIn t RealType "T @ point (2.5 - 1.5 i)" `shouldReturn` 23
+    evalIn t BooleanType "(2.5 - 1.5 i) in T" `shouldReturn` True
+    -- and beyond them, off the table
+    cell "table_cell(T, 2.6 - 1.6 i)" `shouldReturn` (4, 3)
+    evalIn t BooleanType "(2.6 + 0 i) in T" `shouldReturn` False
+    evalIn t BooleanType "(-0.6 + 0 i) in T" `shouldReturn` False
+
   it "give the point at the center of a cell" $ do
     t <- sample
     evalIn t ComplexType "table_point(T, (3, 2))" `shouldReturn` (2 :+ (-1))

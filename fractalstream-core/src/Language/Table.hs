@@ -126,7 +126,8 @@ pointIndices :: Table -> Complex Double -> [Int]
 pointIndices t (x :+ y) =
   let (x0, y0) = tableOrigin t
       (dx, dy) = tableStep t
-  in [ nearestCell ((x - x0) / dx), nearestCell ((y0 - y) / dy) ]
+      dim i = case drop i (tableDims t) of { d : _ -> d; [] -> 0 }
+  in [ nearestCell (dim 0) ((x - x0) / dx), nearestCell (dim 1) ((y0 - y) / dy) ]
 
 -- | The point at the center of a 2-dimensional table's cell, by its
 -- column and row (in range or not).
@@ -137,14 +138,20 @@ cellPoint t j k =
   in (x0 + fromIntegral (j - 1) * dx) :+ (y0 - fromIntegral (k - 1) * dy)
 
 -- | The 1-based index of the cell nearest a position measured in cells
--- from the center of cell 1: the cell the position is in. A position on
--- the boundary between two cells, give or take a millionth of a cell, is
--- in the second: viewers sample each pixel at its top left corner, which
--- for a table laid over the window is exactly on a boundary, and rounding
--- shouldn't push it into the cell before. Compiled code does the same
--- ("Backend.LLVM.Table").
-nearestCell :: Double -> Int
-nearestCell u = 1 + floor (u + 0.5 + 0.000001)
+-- from the center of cell 1, along a dimension of @n@ cells: the cell
+-- the position is in. A position on the boundary between two cells, give
+-- or take a millionth of a cell, is in the second: viewers sample each
+-- pixel at its top left corner, which for a table laid over the window is
+-- exactly on a boundary, and rounding shouldn't push it into the cell
+-- before. But on the table's far edge, where there's no second cell, it's
+-- in the last one: a table covers its whole rectangle, edges and all (so
+-- a table over the unit square takes every point that @mod(·, 1)@ gives).
+-- Compiled code does the same ("Backend.LLVM.Table", and the others).
+nearestCell :: Int -> Double -> Int
+nearestCell n u =
+  let after = 1 + floor (u + 0.5 + 0.000001)
+      before = 1 + floor (u + 0.5 - 0.000001)
+  in if after == n + 1 && before == n then n else after
 
 -- | The element at some 1-based indices, if they're in range.
 readCell :: TypeProxy t -> Table -> [Int] -> Maybe (HaskellType t)

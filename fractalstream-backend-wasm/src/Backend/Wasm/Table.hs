@@ -156,13 +156,25 @@ tableRead ty desc ixs = do
 -- 'Language.Table.nearestCell'), into fresh locals.
 pointIndices :: Int -> Int -> Int -> Gen (Int, Int)
 pointIndices desc x y = do
-  let nearest u = u ++ [ f64Const 0.500001, f64Add, f64Floor, i32TruncSatF64S, i32Const 1, i32Add ]
+  -- (1 + floor(u + 1/2 + 10^-6), or the last cell where that's one past
+  -- the end and 1 + floor(u + 1/2 - 10^-6) isn't)
+  u <- newLocal F64
+  after <- newLocal I32
+  before <- newLocal I32
+  let index bias = [ localGet u, f64Const bias, f64Add, f64Floor, i32TruncSatF64S, i32Const 1, i32Add ]
+      nearest dimOffset position out =
+        position ++ [ localSet u ]
+        ++ index 0.500001 ++ [ localSet after ]
+        ++ index 0.499999 ++ [ localSet before ]
+        -- select(dim, after, after == dim + 1 && before == dim)
+        ++ [ localGet desc, i32Load dimOffset, localGet after
+           , localGet after, localGet desc, i32Load dimOffset, i32Const 1, i32Add, i32Eq
+           , localGet before, localGet desc, i32Load dimOffset, i32Eq, i32And
+           , select, localSet out ]
   j <- newLocal I32
   k <- newLocal I32
-  emit ( nearest [ localGet x, localGet desc, f64Load 16, f64Sub, localGet desc, f64Load 32, f64Div ]
-         ++ [localSet j]
-         ++ nearest [ localGet desc, f64Load 24, localGet y, f64Sub, localGet desc, f64Load 40, f64Div ]
-         ++ [localSet k] )
+  emit ( nearest 48 [ localGet x, localGet desc, f64Load 16, f64Sub, localGet desc, f64Load 32, f64Div ] j
+         ++ nearest 52 [ localGet desc, f64Load 24, localGet y, f64Sub, localGet desc, f64Load 40, f64Div ] k )
   pure (j, k)
 
 -- | The cell nearest a point, at some indices in the dimensions after
