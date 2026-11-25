@@ -14,7 +14,7 @@ to go on editing rather than to reproduce the old pictures exactly:
   script(limit)@: each of its loops makes at most @limit@ passes. If it
   has @par@ or @dyn@ commands, it also takes @in_parameter_plane@, and
   those commands check it.
-* There's a viewer for each plane: @\@viewer "Parameter plane" var=C@
+* There's a viewer for each plane: @\@viewer "Parameter plane" over C@
   (starting from @z := 0@, as the old program did) and
   @\@viewer "Dynamical plane"@, each declaring the variables the script
   sets for coloring and then running @script(max_iters)@ (with @true@ or
@@ -50,8 +50,8 @@ to go on editing rather than to reproduce the old pictures exactly:
 
 A real-dynamics script (@{real}@) works on a plane of real points
 @(x, y)@ instead: its viewers are real viewers, @\@viewer "Dynamical
-plane" xvar=x yvar=y@, and, when it mentions the parameters @a@ or @b@,
-@\@viewer "Parameter plane" xvar=a yvar=b@ (starting from @(x, y) = (0,
+plane" over (x, y)@, and, when it mentions the parameters @a@ or @b@,
+@\@viewer "Parameter plane" over (a, b)@ (starting from @(x, y) = (0,
 0)@). Its values are real unless they're complex for some other reason
 (an @i@), @z@ and @c@ aren't special, a pair @(e1, e2)@ stays a pair
 (so @(x, y) escapes@ measures its length), and an @iterate@ without a
@@ -502,10 +502,10 @@ translateT isReal title src body = do
   -- viewers
   let viewers = flip map planes $ \plane ->
         let header = case (plane, isReal) of
-              (ParamPlane, False) -> "@viewer \"Parameter plane\" var=C"
+              (ParamPlane, False) -> "@viewer \"Parameter plane\" over C"
               (DynPlane, False)   -> "@viewer \"Dynamical plane\""
-              (ParamPlane, True)  -> "@viewer \"Parameter plane\" xvar=" ++ nameOf "a" ++ " yvar=" ++ nameOf "b"
-              (DynPlane, True)    -> "@viewer \"Dynamical plane\" xvar=" ++ nameOf "x" ++ " yvar=" ++ nameOf "y"
+              (ParamPlane, True)  -> "@viewer \"Parameter plane\" over (" ++ nameOf "a" ++ ", " ++ nameOf "b" ++ ")"
+              (DynPlane, True)    -> "@viewer \"Dynamical plane\" over (" ++ nameOf "x" ++ ", " ++ nameOf "y" ++ ")"
             start' = [ Line (startingPoint ++ " := 0" ++ (if isReal then ", 0" else "")) | plane == ParamPlane ]
             finish = case outcome of
               Nothing -> "color <- if stuck then black else " ++ shadeFn ++ "(" ++ flagVar ++ ", iterations / 20)"
@@ -570,7 +570,7 @@ translateT isReal title src body = do
                    ParamPlane -> clickedNames plane
                    DynPlane -> paramNames)
                 ++ [ if plane == ParamPlane then "true" else "false" | probeSplit ]
-          in [ Line ("@tool " ++ quote title' ++ " for=" ++ quote viewerTitle)
+          in [ Line ("@tool " ++ quote title' ++ " for " ++ quote viewerTitle)
              , Line (field ++ " : " ++ fieldTy ++ " as " ++ quote title' ++ " := " ++ fieldDefault fieldTy)
              , Line "on click:"
              , Nest (Line (clicked ++ " := click") : start' ++ [Line ("run " ++ withArguments probeFn arguments)]) ]
@@ -594,7 +594,7 @@ translateT isReal title src body = do
             -- (where the point was at the start of this step)
             previous = tuple (map ("previous " ++) traced)
             toolTitle = freshIn (Set.fromList [ t | (_, t, _) <- probes body ]) "Trace"
-        in [ Line ("@tool " ++ quote toolTitle ++ " for=\"Dynamical plane\" shortcut=t")
+        in [ Line ("@tool " ++ quote toolTitle ++ " for \"Dynamical plane\" with shortcut t")
            , Line (colorVar ++ " : Color as \"Trace color\" := white")
            , Line ""
            , Line "on deactivated:"

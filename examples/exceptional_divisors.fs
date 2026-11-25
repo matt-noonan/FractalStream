@@ -21,7 +21,9 @@ script: |
   j := -1/2 + i sqrt(3) / 2
   jbar := -1/2 - i sqrt(3) / 2
 
-  @viewer "t-plane" var=t vanish=tol
+  @viewer "t-plane" over t
+  setup:
+    vanishing radius: tol
   while t^3 != 1:
     t <- t (2 + t^3) / (2 t^3 + 1)
 
@@ -34,7 +36,9 @@ script: |
   else:
     color <- black
 
-  @viewer "z-plane" vanish=tol
+  @viewer "z-plane"
+  setup:
+    vanishing radius: tol
   y := 0.5 / z
   x := 0.5 * t / z
 

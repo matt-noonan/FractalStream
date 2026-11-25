@@ -3,7 +3,7 @@
 -- project file written as a single script with @\@config@\/@\@common@\/
 -- @\@viewer@\/@\@tool@ stanzas, e.g.
 --
--- > @viewer "Mandelbrot Set" var=C size=500x500
+-- > @viewer "Mandelbrot Set" over C size=500x500
 -- > z : C := 0
 -- > iterate z -> z^2 + C until z escapes
 -- >
@@ -11,7 +11,7 @@
 -- > maxIters : Z := 100  as "Iteration limit:"
 --
 -- This module only turns script text into a list of 'ParsedStanza's -- it
--- does not yet resolve cross-stanza references (a tool's @for=@ attribute,
+-- does not yet resolve cross-stanza references (a tool's @for@ attribute,
 -- a viewer's @limit=@\/@escape=@\/@vanish=@ attributes naming a config
 -- variable) or build any 'Actor.Ensemble.Ensemble'\/'Actor.Viewer.Viewer'\/
 -- 'Actor.Tool.Tool' values; that cross-stanza resolution is a later layer.
@@ -51,6 +51,7 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Text.Read (readMaybe)
 import Data.Char (isDigit)
+import Data.List (stripPrefix, nub)
 import Numeric (showFFloat)
 
 ------------------------------------------------------------
@@ -140,7 +141,7 @@ data ParsedStanza
   | ViewerStanza
       { vsTitle       :: String
       , vsCoord       :: Coordinate
-        -- ^ The viewer's coordinate: one complex variable (@var=@), or a
+        -- ^ The viewer's coordinate: one complex variable (@over@), or a
         -- pair of real ones (@xvar=@ and @yvar=@).
       , vsCenter      :: Maybe String
       , vsPixelSize   :: Maybe String
@@ -149,11 +150,11 @@ data ParsedStanza
         -- ^ The @view=@ attribute: how the viewer starts out showing its
         -- points, on the plane (the default) or on the Riemann sphere.
       , vsGroup       :: Maybe String
-        -- ^ The @group=@ attribute of a viewer of the hyperbolic plane:
+        -- ^ The @modulo the group@ attribute of a viewer of the hyperbolic plane:
         -- a table of side pairings, or a built-in group (see
         -- "Actor.Viewer.Group").
       , vsGroupCenter :: Maybe String
-        -- ^ The @groupCenter=@ attribute: the center of its fundamental
+        -- ^ The @centered at@ attribute: the center of its fundamental
         -- polygon, as written.
         -- ^ The @aspect=@ attribute (a real viewer's pixel height over
         -- its pixel width), as written.
@@ -174,15 +175,15 @@ data ParsedStanza
         -- e.g. @Rainbow@ or @Smooth(z)@.
       , vsShowIf      :: Maybe String
       , vsLattice     :: Maybe String
-        -- ^ The @lattice=@ attribute, if given: the periods of a lattice
+        -- ^ The `modulo the lattice` attribute, if given: the periods of a lattice
         -- the viewer's points are folded by (see "Actor.Viewer.Lattice").
       , vsLatticeCenter :: Maybe String
-        -- ^ The @latticeCenter=@ attribute: its parallelogram's center.
+        -- ^ The @centered at@ attribute: its parallelogram's center.
       , vsTiled       :: Maybe String
-        -- ^ The @tiled=@ attribute: whether a viewer with a lattice or a
+        -- ^ The @tiled:@ attribute: whether a viewer with a lattice or a
         -- group starts out showing all of its tiles (@true@, the default)
         -- or only its fundamental domain (@false@).
-        -- ^ The @show_if=@ attribute, if given: a truth value, over the
+        -- ^ The @show if:@ attribute, if given: a truth value, over the
         -- configuration, for whether the viewer is shown, as written.
       , vsColoring    :: [ColorizerSetting]
         -- ^ The settings of an optional @coloring:@ block: values for its
@@ -195,7 +196,7 @@ data ParsedStanza
         -- read.
       , vsCommon      :: CommonDefs
         -- ^ The project's @\@common@ definitions (and the standard
-        -- library's), for its @show_if=@, which is outside its code.
+        -- library's), for its @show if:@, which is outside its code.
       }
   | CommonStanza
       { cmBody :: ParsedCode
@@ -264,7 +265,7 @@ data ColorizerParam = ColorizerParam
 ------------------------------------------------------------
 
 -- | Parse a whole unified project script into its stanzas. Does not
--- resolve cross-stanza references (a tool's @for=@, a viewer's
+-- resolve cross-stanza references (a tool's @for@, a viewer's
 -- @limit=@\/@escape=@\/@vanish=@); see the module header.
 --
 -- @\@common@ stanzas are parsed first, since their statements (and the
@@ -278,8 +279,8 @@ parseScript :: String -> Either (SourceRange, String) [ParsedStanza]
 parseScript input = do
   let chunks = zip [(0 :: Int) ..] (splitStanzas (tokenizeWithIndentation input))
       restChunks = [ ic | ic@(_, c) <- chunks, not (isChunk "common" c) ]
-  (commonResults, defs) <- parseCommonChunks chunks
-  restResults <- traverse (\(i, c) -> (i,) <$> parseChunk defs c) restChunks
+  (commonResults, defs) <- parseCommonChunks input chunks
+  restResults <- traverse (\(i, c) -> (i,) <$> parseChunk input defs c) restChunks
   pure (fillDefaultSrcs input (map snd (sortOn fst (commonResults ++ restResults))))
 
 -- | What a project script's @\@common@ stanzas give every other piece of
@@ -288,13 +289,13 @@ parseScript input = do
 -- definitions, such as a movie's script ("Actor.Movie").
 scriptCommonDefs :: String -> Either (SourceRange, String) CommonDefs
 scriptCommonDefs input =
-  snd <$> parseCommonChunks (zip [0 ..] (splitStanzas (tokenizeWithIndentation input)))
+  snd <$> parseCommonChunks input (zip [0 ..] (splitStanzas (tokenizeWithIndentation input)))
 
 -- | Parse the @\@common@ stanzas among a script's (numbered) stanzas,
 -- giving them and the definitions they make.
-parseCommonChunks :: [(Int, [SRToken])]
+parseCommonChunks :: String -> [(Int, [SRToken])]
                   -> Either (SourceRange, String) ([(Int, ParsedStanza)], CommonDefs)
-parseCommonChunks chunks = do
+parseCommonChunks input chunks = do
   let commonChunks = [ ic | ic@(_, c) <- chunks, isChunk "common" c ]
       -- every stanza can call the functions defined in any @common stanza,
       -- and the names that the @config and @common stanzas take from the
@@ -302,7 +303,7 @@ parseCommonChunks chunks = do
       configChunks = [ c | (_, c) <- chunks, isChunk "config" c ]
       defs0 = (withDefinedFunctions (concatMap snd commonChunks) noCommonDefs)
                 { ownNames = ownBuiltinNames (concat configChunks ++ concatMap snd commonChunks) }
-  commonResults <- traverse (\(i, c) -> (i,) <$> parseChunk defs0 c) commonChunks
+  commonResults <- traverse (\(i, c) -> (i,) <$> parseChunk input defs0 c) commonChunks
   let common = concat [ stmts | (_, CommonStanza (Stmt _ (SBlock stmts))) <- commonResults ]
   -- (after the built-in functions: see 'noCommonDefs')
   pure (commonResults, defs0 { commonCode = commonCode defs0 ++ common })
@@ -401,18 +402,20 @@ fillDefaultSrcs input = map onStanza
       ConfigTabs tabs  -> ConfigTabs [ (l, map onStmt stmts) | (l, stmts) <- tabs ]
       other            -> other
 
-    sliceLine :: String -> SourceRange -> String
-    sliceLine src sr = case spanOfSourceRange sr of
-      Just (InLine i s e) -> case drop i (lines src) of
-        (line:_) -> take (e + 1 - s) (drop s line)
-        []       -> ""
-      _ -> ""
+
+-- | The text of a script on one line, at a source range.
+sliceLine :: String -> SourceRange -> String
+sliceLine src sr = case spanOfSourceRange sr of
+  Just (InLine i s e) -> case drop i (lines src) of
+    (line:_) -> take (e + 1 - s) (drop s line)
+    []       -> ""
+  _ -> ""
 
 -- | Parse one stanza's own token span (as produced by 'splitStanzas',
 -- without the enclosing file-level Indent\/Dedent) into its 'ParsedStanza'.
-parseChunk :: CommonDefs -> [SRToken] -> Either (SourceRange, String) ParsedStanza
-parseChunk defs chunk =
-  case parse (scriptGrammar (withDefinedFunctions chunk defs)) wrapped of
+parseChunk :: String -> CommonDefs -> [SRToken] -> Either (SourceRange, String) ParsedStanza
+parseChunk input defs chunk =
+  case parse (scriptGrammar input (withDefinedFunctions chunk defs)) wrapped of
     Left err        -> Left (errorLocation &&& unlines . pp $ err)
     Right [estanza] -> estanza
     Right _         -> Left (NoSourceRange,
@@ -472,8 +475,8 @@ splitStanzas allToks = case allToks of
 -- Top-level grammar
 ------------------------------------------------------------
 
-scriptGrammar :: forall r. CommonDefs -> Grammar r (Prod r [Either (SourceRange, String) ParsedStanza])
-scriptGrammar defs = mdo
+scriptGrammar :: forall r. String -> CommonDefs -> Grammar r (Prod r [Either (SourceRange, String) ParsedStanza])
+scriptGrammar input defs = mdo
 
   -- Reuse the existing statement-level grammars for stanza bodies, rather
   -- than re-deriving assignment\/loop\/draw-command syntax here.
@@ -501,7 +504,7 @@ scriptGrammar defs = mdo
   -- next attribute or the header's closing newline survives to a full
   -- parse): a dimension (`size=600x600`), a signed whole number or
   -- decimal (`center=-0.5`), a fraction of either
-  -- (`pixelSize=1/128`), and a boolean (`resizable=false`).
+  -- (`pixel size: 1/128`), and a boolean (`resizable=false`).
   --
   -- A decimal literal is reconstructed via 'showFFloat' (fixed-point
   -- *by construction*), never via plain `show` on a `Double`, which
@@ -557,10 +560,66 @@ scriptGrammar defs = mdo
       (\title as sr -> validateNoAttrs sr as >> pure title)
       <$> (token At *> tok "config" *> quotedP) <*> (attrs <* nl)
 
+  -- The text a production read, as the script writes it (on one line).
+  let raw p = withSourceRange ((\_ sr -> sliceLine input sr) <$> p)
+
+  -- A value in a header's phrase: a name, a number (maybe negative), or
+  -- anything in parentheses. (Anything longer would run on into the next
+  -- phrase: `modulo the lattice τ over z` would multiply τ by `over`.)
+  lineToken <- rule (satisfy (`notElem` [Newline, Indent, Dedent]))
+  inParens <- rule (token OpenParen *> many (void (satisfy (`notElem` [Newline, Indent, Dedent, OpenParen, CloseParen]))
+                                             <|> void inParens) <* token CloseParen)
+  -- (a value of several parts without parentheses is read too, to say
+  -- that it needs them; a plain number, like -1/2 or 2i, doesn't)
+  let partToken = satisfy (\case
+        Identifier n -> n `notElem` phraseWords
+        t -> t `notElem` [Newline, Indent, Dedent, OpenParen, CloseParen, Comma, Equal, Colon])
+  phraseValue <- rule $
+        raw (void inParens)
+    <|> raw (void (satisfy (\case
+          Identifier n -> n `notElem` phraseWords
+          t -> t `notElem` [Newline, Indent, Dedent, OpenParen, CloseParen, Comma, Equal, Colon, Minus])))
+    <|> (\v -> if isPlainNumber v then v else needsParens ++ v)
+          <$> raw (void ((:) <$> partToken <*> some partToken))
+  phraseName <- rule (tokenMatch (\case { Identifier n | n `notElem` phraseWords -> Just n; _ -> Nothing }))
+  the <- rule (void (optional (tok "the")))
+  surface <- ruleChoice
+    [ "plane" <$ tok "plane", "sphere" <$ tok "sphere", "disk" <$ tok "disk"
+    , "halfplane" <$ (tok "half" *> token Minus *> tok "plane"), "halfplane" <$ tok "halfplane"
+    -- (anything else, to say what a viewer can be on)
+    , tokenMatch (\case { Identifier w | w `notElem` ["plane", "sphere", "disk", "half", "halfplane"] -> Just w; _ -> Nothing }) ]
+  -- (an old `key=value` attribute, to say what replaces it)
+  oldAttr <- rule ((\(k, v) -> [(oldAttrMarker ++ k, v)]) <$> attr)
+
+  headerPhrase <- ruleChoice
+    [ (\v -> [("for", v)]) <$> (tok "for" *> quotedP)
+    , (\v -> [("shortcut", stripQuotes v)]) <$> (tok "with" *> tok "shortcut" *> raw (void lineToken))
+    , (\v -> [("var", v)]) <$> (tok "over" *> phraseName)
+    , (\x y -> [("xvar", x), ("yvar", y)])
+        <$> (tok "over" *> token OpenParen *> phraseName) <*> (token Comma *> phraseName <* token CloseParen)
+    , (\v -> [("view", v)]) <$> (tok "on" *> the *> surface)
+    , (\v -> [("lattice", v)]) <$> (tok "modulo" *> the *> tok "lattice" *> phraseValue)
+    , [("group", "modular")] <$ (tok "modulo" *> the *> tok "modular" *> tok "group")
+    , (\g -> [("group", g)]) <$> (tok "modulo" *> the *> tok "group" *> phraseName)
+    , (\c -> [(centeredMarker, c)]) <$> (tok "centered" *> tok "at" *> phraseValue)
+    , oldAttr ]
+
   viewerHeader <- rule $
     withSourceRange $
-      (\title as sr -> validateViewerHeader sr title as)
-      <$> (token At *> tok "viewer" *> quotedP) <*> (attrs <* nl)
+      (\title as sr -> (sr, title, concat as))
+      <$> (token At *> tok "viewer" *> quotedP) <*> (many headerPhrase <* nl)
+
+  -- A `setup:` block, after a stanza's header: `name: value` lines (the
+  -- value is the rest of the line), and a viewer's `coloring:` block.
+  settingWord <- rule (tokenMatch (\case
+    Identifier n -> Just n
+    t -> lookup t wordlikeWords))
+  setupLine <- rule $
+    withSourceRange $
+      (\ws v sr -> Left (sr, unwords ws, stripQuotes v))
+      <$> some settingWord <*> (colon *> raw (void (some lineToken)) <* nl)
+  setupItem <- ruleChoice [ setupLine, Right <$> coloringBlock ]
+  setupBlock <- rule (tok "setup" *> colon *> nl *> token Indent *> many setupItem <* token Dedent)
 
   commonHeader <- rule $
     withSourceRange $
@@ -569,14 +628,14 @@ scriptGrammar defs = mdo
 
   toolHeader <- rule $
     withSourceRange $
-      (\name as sr -> validateToolHeader sr name as)
-      <$> (token At *> tok "tool" *> quotedP) <*> (attrs <* nl)
+      (\name as sr -> (sr, name, concat as))
+      <$> (token At *> tok "tool" *> quotedP) <*> (many headerPhrase <* nl)
 
   -- `@tool overlay`: a bare word, where a tool's name is always quoted
   overlayHeader <- rule $
     withSourceRange $
-      (\as sr -> (sr,) <$> validateOverlayHeader sr as)
-      <$> (token At *> tok "tool" *> tok "overlay" *> attrs <* nl)
+      (\as sr -> (sr,) <$> validateOverlayHeader sr (concat as))
+      <$> (token At *> tok "tool" *> tok "overlay" *> many headerPhrase <* nl)
 
   ------------------------------------------------------------
   -- @config@ stanza bodies: variable declarations, text, buttons
@@ -670,20 +729,31 @@ scriptGrammar defs = mdo
       <$> (tok "coloring" *> colon *> nl *> token Indent *> many coloringSetting <* token Dedent)
 
   viewerStanza <- rule $
-    (\ehdr mcoloringE code ->
-        (\ViewerHeader{..} mcoloring ->
-            ViewerStanza vhTitle vhCoord vhCenter vhPixelSize vhAspect vhView vhGroup vhGroupCenter vhIterLimit vhEscape vhVanish
-                         vhPixelVar vhColorizer vhShowIf vhLattice vhLatticeCenter vhTiled (fromMaybe [] mcoloring) code (funNames defs) defs)
-        <$> ehdr <*> sequence mcoloringE)
-    <$> viewerHeader <*> optional coloringBlock
+    (\(sr, title, phrases) msetup moldColoring code -> do
+        forM_ moldColoring $ \_ ->
+          Left (sr, "A viewer's `coloring:` block now goes inside its `setup:` block, indented under it.")
+        let (settings, colorings) = partitionEithers (fromMaybe [] msetup)
+        setupAttrs <- settingsAttrs sr "viewer" viewerSettings settings
+        mcoloring <- case colorings of
+          [] -> pure Nothing
+          [c] -> Just <$> c
+          _ -> Left (sr, "A viewer's `setup:` has one `coloring:` block.")
+        ViewerHeader{..} <- validateViewerHeader sr title (resolveCentered phrases ++ setupAttrs)
+        pure (ViewerStanza vhTitle vhCoord vhCenter vhPixelSize vhAspect vhView vhGroup vhGroupCenter vhIterLimit vhEscape vhVanish
+                           vhPixelVar vhColorizer vhShowIf vhLattice vhLatticeCenter vhTiled (fromMaybe [] mcoloring) code (funNames defs) defs))
+    <$> viewerHeader <*> optional setupBlock <*> optional coloringBlock
     <*> (withCommon defs <$> viewerBody)
 
   toolStanza <- rule $
-    (\ehdr edecls blocks -> (\ToolHeader{..} decls ->
-        ToolStanza thName thFor thShortcut thIcon
-                   thDrawLayer thRefreshOnActivate thRefreshCanUpdate False decls blocks)
-        <$> ehdr <*> configStmts edecls)
-    <$> toolHeader <*> many configStmt <*> toolBody
+    (\(sr, name, phrases) msetup edecls blocks -> do
+        let (settings, colorings) = partitionEithers (fromMaybe [] msetup)
+        unless (null colorings) $ Left (sr, "Only a viewer's `setup:` has a `coloring:` block.")
+        setupAttrs <- settingsAttrs sr "tool" toolSettings settings
+        ToolHeader{..} <- validateToolHeader sr name (phrases ++ setupAttrs)
+        decls <- configStmts edecls
+        pure (ToolStanza thName thFor thShortcut thIcon
+                         thDrawLayer thRefreshOnActivate thRefreshCanUpdate False decls blocks))
+    <$> toolHeader <*> optional setupBlock <*> many configStmt <*> toolBody
 
   overlayStanza <- rule $
     (\ehdr edecls blocks -> do
@@ -699,8 +769,12 @@ scriptGrammar defs = mdo
 
   colorizerHeader <- rule $
     withSourceRange $
-      (\name as sr -> validateColorizerHeader sr name as)
-      <$> (token At *> tok "colorizer" *> quotedP) <*> (attrs <* nl)
+      (\name as msetup sr -> do
+          let (settings, colorings) = partitionEithers (fromMaybe [] msetup)
+          unless (null colorings) $ Left (sr, "Only a viewer's `setup:` has a `coloring:` block.")
+          setupAttrs <- settingsAttrs sr "colorizer" colorizerSettings settings
+          validateColorizerHeader sr name (concat as ++ setupAttrs))
+      <$> (token At *> tok "colorizer" *> quotedP) <*> (many headerPhrase <* nl) <*> optional setupBlock
 
   -- (Not a top-level pair, `a, b`: the comma is between parameters.)
   paramDefault <- argumentGrammarWithFunctions (funNames defs) (ownNames defs)
@@ -773,18 +847,133 @@ validateNoAttrs sr = checkKnownAttrs sr []
 -- no duplicates), and return the attribute map on success.
 checkKnownAttrs :: SourceRange -> [String] -> [(String, String)] -> Either (SourceRange, String) ()
 checkKnownAttrs sr known attrs = do
+  -- (an old `key=value` attribute says what's written instead now)
+  forM_ attrs $ \(k, v) -> forM_ (stripPrefix oldAttrMarker k) $ \old ->
+    Left (sr, oldAttrMessage old v)
+  when (any ((== centeredMarker) . fst) attrs) $
+    Left (sr, "`centered at` is the center of the fundamental domain of a `modulo the lattice` or a \
+              \`modulo the group`, so it comes with one of those.")
+  forM_ attrs $ \(k, v) -> forM_ (stripPrefix needsParens v) $ \v' ->
+    Left (sr, "In a header, a value of more than one part goes in parentheses: "
+              ++ init (attrDescription k) ++ " (" ++ v' ++ ")`, so that it's clear where it ends.")
   forM_ attrs $ \(k, _) ->
     unless (k `elem` known) $
-      Left (sr, "Unknown attribute `" ++ k ++ "`" ++
-            (if null known then "; this header takes no attributes."
-             else "; expected one of " ++ intercalate ", " known ++ "."))
+      Left (sr, "This header doesn't say " ++ attrDescription k ++
+            (if null known then ": it says nothing but its title."
+             else case nub [ d | d <- map attrDescription known, not (":`" `isSuffixOf` d) ] of
+                    [] -> "."
+                    ds -> ": it can say " ++ intercalate ", " ds ++ "."))
   let seen = map fst attrs
   go Set.empty seen
   where
     go _ [] = Right ()
     go seen (k:ks)
-      | k `Set.member` seen = Left (sr, "Duplicate attribute `" ++ k ++ "`.")
+      | k `Set.member` seen = Left (sr, "The header says " ++ attrDescription k ++ " twice.")
       | otherwise            = go (Set.insert k seen) ks
+
+-- | The words a header's phrases start with (or read on with), which
+-- aren't names in a phrase.
+phraseWords :: [String]
+phraseWords = ["over", "on", "modulo", "centered", "for", "with"]
+
+-- | Whether a value is just a number, like @-0.5@, @-1/2@ or @2i@, which
+-- is clear without parentheses.
+isPlainNumber :: String -> Bool
+isPlainNumber v = any (`elem` ("0123456789" :: String)) v && all (`elem` ("0123456789./ -i𝑖" :: String)) v
+
+oldAttrMarker, centeredMarker, needsParens :: String
+needsParens = "[needs parentheses] "
+oldAttrMarker = "[old attribute] "
+centeredMarker = "[centered at]"
+
+-- | @centered at c@ is the center of the lattice's parallelogram, or of the
+-- group's polygon, whichever the header has.
+resolveCentered :: [(String, String)] -> [(String, String)]
+resolveCentered as = map rename as
+  where
+    rename (k, v)
+      | k == centeredMarker, any ((== "lattice") . fst) as = ("latticeCenter", v)
+      | k == centeredMarker, any ((== "group") . fst) as = ("groupCenter", v)
+      | otherwise = (k, v)
+
+-- | The tokens the tokenizer makes of words, by the words.
+wordlikeWords :: [(Token, String)]
+wordlikeWords = [ (t, w) | (w, t) <- Map.toList wordlikeTokens ]
+
+-- | A value without the quotes around it, if it's a quoted string.
+stripQuotes :: String -> String
+stripQuotes v = case v of
+  '"' : rest@(_ : _) | last rest == '"', '"' `notElem` init rest -> init rest
+  _ -> v
+
+-- | The settings a stanza's @setup:@ block can have, by name, and the
+-- attribute each one sets.
+viewerSettings, toolSettings, colorizerSettings :: [(String, String)]
+viewerSettings =
+  [ ("center", "center"), ("pixel size", "pixelSize"), ("aspect", "aspect"), ("tiled", "tiled")
+  , ("colorizer", "colorizer"), ("show if", "show_if"), ("iteration limit", "limit")
+  , ("escape radius", "escape"), ("vanishing radius", "vanish") ]
+toolSettings =
+  [ ("icon", "icon"), ("draw layer", "drawLayer"), ("refresh on activate", "refreshOnActivate")
+  , ("refresh can update", "refreshCanUpdate") ]
+colorizerSettings = [ ("description", "description") ]
+
+-- | A @setup:@ block's settings, as the attributes they set.
+settingsAttrs :: SourceRange -> String -> [(String, String)] -> [(SourceRange, String, String)]
+              -> Either (SourceRange, String) [(String, String)]
+settingsAttrs _ kind table settings = do
+  forM_ (zip [0 :: Int ..] settings) $ \(k, (sr, name, _)) ->
+    when (name `elem` [ n | (j, (_, n, _)) <- zip [0 ..] settings, j < k ]) $
+      Left (sr, "The `setup:` block sets `" ++ name ++ "` twice.")
+  forM settings $ \(sr, name, v) -> case lookup name table of
+    Just a -> Right (a, v)
+    Nothing -> Left (sr, "A " ++ kind ++ "'s `setup:` has no `" ++ name ++ "` setting; it can have "
+                         ++ intercalate ", " [ "`" ++ n ++ ":`" | (n, _) <- table ] ++ ".")
+
+-- | How a header says an attribute now, for messages.
+attrDescription :: String -> String
+attrDescription = \case
+  "var" -> "`over`"
+  "xvar" -> "`over`"
+  "yvar" -> "`over`"
+  "view" -> "`on the ...`"
+  "lattice" -> "`modulo the lattice`"
+  "group" -> "`modulo the group`"
+  "latticeCenter" -> "`centered at`"
+  "groupCenter" -> "`centered at`"
+  "for" -> "`for`"
+  "shortcut" -> "`with shortcut`"
+  k -> case [ n | (n, a) <- viewerSettings ++ toolSettings ++ colorizerSettings, a == k ] of
+    n : _ -> "`" ++ n ++ ":`"
+    [] -> "`" ++ k ++ "`"
+
+-- | What replaces an old @key=value@ attribute.
+oldAttrMessage :: String -> String -> String
+oldAttrMessage k v
+  | k `elem` ["size", "position", "resizable"] =
+      "A viewer's window (its `" ++ k ++ "`) isn't part of the script: it's saved with the project."
+  | k `notElem` (["var", "xvar", "yvar", "view", "lattice", "group", "latticeCenter", "groupCenter", "for", "shortcut", "pixelVar"]
+                 ++ map snd (viewerSettings ++ toolSettings ++ colorizerSettings)) =
+      "Headers don't take `key=value` attributes, and `" ++ k ++ "` isn't anything a header says."
+  | otherwise = "Headers don't take `key=value` attributes any more: `" ++ k ++ "=" ++ v ++ "` is now " ++
+  case k of
+    "var" -> "`over " ++ v ++ "`, as in `@viewer \"Parameter plane\" over " ++ v ++ "`."
+    "xvar" -> "`over (x, y)`, naming both of a real viewer's coordinates."
+    "yvar" -> "`over (x, y)`, naming both of a real viewer's coordinates."
+    "view" -> "`on the " ++ (if v == "halfplane" then "half-plane" else v) ++ "`."
+    "lattice" -> "`modulo the lattice " ++ phrased v ++ "`."
+    "group" | v == "modular" -> "`modulo the modular group`."
+            | otherwise -> "`modulo the group " ++ v ++ "`."
+    "latticeCenter" -> "`centered at " ++ phrased v ++ "`, after the `modulo the lattice`."
+    "groupCenter" -> "`centered at " ++ phrased v ++ "`, after the `modulo the group`."
+    "for" -> "`for \"" ++ v ++ "\"`, as in `@tool \"Trace\" for \"" ++ v ++ "\"`."
+    "shortcut" -> "`with shortcut " ++ v ++ "`."
+    "pixelVar" -> "gone: a viewer's pixel size is always `pixel_size`."
+    _ -> case [ n | (n, a) <- viewerSettings ++ toolSettings ++ colorizerSettings, a == k ] of
+      n : _ -> "a line in a `setup:` block, right after the header: `" ++ n ++ ": " ++ v ++ "`."
+      [] -> "not something a header has."
+  where
+    phrased s = if all (`notElem` (" +-*/" :: String)) s then s else "(" ++ s ++ ")"
 
 lookupAttr :: String -> [(String, String)] -> Maybe String
 lookupAttr = lookup
@@ -863,8 +1052,8 @@ validateViewerHeader sr vhTitle attrs = do
     when (k `elem` ["size", "position", "resizable"]) $
       Left (sr, "The `" ++ k ++ "` attribute is no longer part of a `@viewer` stanza.")
   checkKnownAttrs sr
-    [ "var", "xvar", "yvar", "center", "pixelSize", "aspect", "view", "group", "groupCenter"
-    , "limit", "escape", "vanish", "pixelVar", "colorizer", "show_if", "lattice", "latticeCenter", "tiled" ]
+    [ "var", "xvar", "yvar", "view", "lattice", "group", "latticeCenter", "groupCenter"
+    , "center", "pixelSize", "aspect", "limit", "escape", "vanish", "colorizer", "show_if", "tiled" ]
     attrs
   -- A beginner's first viewer doesn't need to think about a
   -- coordinate-variable name at all -- `z` is a reasonable default,
@@ -875,16 +1064,16 @@ validateViewerHeader sr vhTitle attrs = do
     (Just _, _, Just _) -> Left (sr, varAndXY)
     (mv, Nothing, Nothing) -> Right (ComplexCoordinate (fromMaybe "z" mv))
     (Nothing, Just x, Just y)
-      | x == y -> Left (sr, "A viewer's `xvar` and `yvar` must be different variables, \
+      | x == y -> Left (sr, "A real viewer is `over` two different coordinates, \
                             \but both are `" ++ x ++ "`.")
       | otherwise -> Right (RealCoordinates x y)
-    (Nothing, Just _, Nothing) -> Left (sr, "A viewer with `xvar=` also needs `yvar=`.")
-    (Nothing, Nothing, Just _) -> Left (sr, "A viewer with `yvar=` also needs `xvar=`.")
+    (Nothing, Just _, Nothing) -> Left (sr, "A real viewer is `over (x, y)`, naming both of its coordinates.")
+    (Nothing, Nothing, Just _) -> Left (sr, "A real viewer is `over (x, y)`, naming both of its coordinates.")
   let vhAspect = lookupAttr "aspect" attrs
   case (vhCoord, vhAspect) of
     (ComplexCoordinate _, Just _) ->
-      Left (sr, "Only a real viewer (one with `xvar=` and `yvar=`) can have an \
-                \`aspect` attribute: a complex viewer's pixels are always square.")
+      Left (sr, "Only a real viewer (one `over (x, y)`) can have an \
+                \`aspect:` setting: a complex viewer's pixels are always square.")
     _ -> Right ()
   vhView <- case lookupAttr "view" attrs of
     Nothing -> Right PlaneView
@@ -892,21 +1081,21 @@ validateViewerHeader sr vhTitle attrs = do
     Just "sphere" -> Right SphereView
     Just "disk" -> Right DiskView
     Just "halfplane" -> Right HalfPlaneView
-    Just v -> Left (sr, "A viewer's `view` must be one of `plane`, `sphere`, `disk`, or `halfplane`, not `" ++ v ++ "`.")
+    Just v -> Left (sr, "A viewer is `on the plane`, `on the sphere`, `on the disk`, or `on the half-plane`, not `on the " ++ v ++ "`.")
   case (vhCoord, vhView) of
     (RealCoordinates _ _, SphereView) ->
-      Left (sr, "Only a complex viewer (one with `var=`) can be shown on the sphere \
-                \(`view=sphere`): a real viewer's points are pairs of real numbers.")
+      Left (sr, "Only a complex viewer (one `over z`) can be `on the sphere`: \
+                \a real viewer's points are pairs of real numbers.")
     (RealCoordinates _ _, v) | v `elem` [DiskView, HalfPlaneView] ->
-      Left (sr, "Only a complex viewer (one with `var=`) can show the hyperbolic plane \
-                \(`view=disk` or `view=halfplane`): a real viewer's points are pairs of real numbers.")
+      Left (sr, "Only a complex viewer (one `over z`) can show the hyperbolic plane \
+                \(`on the disk` or `on the half-plane`): a real viewer's points are pairs of real numbers.")
     _ -> Right ()
   let vhGroup = lookupAttr "group" attrs
       vhGroupCenter = lookupAttr "groupCenter" attrs
   when ((isJust vhGroup || isJust vhGroupCenter) && vhView `notElem` [DiskView, HalfPlaneView]) $
-    Left (sr, "Only a viewer of the hyperbolic plane (`view=disk` or `view=halfplane`) can have a `group`.")
+    Left (sr, "Only a viewer of the hyperbolic plane (`on the disk` or `on the half-plane`) can be `modulo` a group.")
   when (isJust vhGroupCenter && isNothing vhGroup) $
-    Left (sr, "A viewer's `groupCenter` is the center of its group's fundamental polygon: it needs a `group` too.")
+    Left (sr, "`centered at` is the center of the group's fundamental polygon: it needs a `modulo the group` too.")
   pure ViewerHeader
     { vhTitle, vhCoord, vhAspect, vhView, vhGroup, vhGroupCenter
     , vhCenter
@@ -932,8 +1121,8 @@ validateViewerHeader sr vhTitle attrs = do
     }
 
   where
-    varAndXY = "A viewer has either one complex coordinate (`var=`) or two \
-               \real ones (`xvar=` and `yvar=`), not both."
+    varAndXY = "A viewer is `over` either one complex coordinate (`over z`) or two \
+               \real ones (`over (x, y)`), not both."
 
 validateColorizerHeader :: SourceRange -> String -> [(String, String)]
                         -> Either (SourceRange, String) (String, Maybe String)
@@ -976,7 +1165,7 @@ overlayDrawLayer = minBound
 validateOverlayHeader :: SourceRange -> [(String, String)] -> Either (SourceRange, String) (Maybe String)
 validateOverlayHeader sr attrs = do
   forM_ attrs $ \(k, _) -> when (k /= "for") $
-    Left (sr, "An overlay can only have a `for=` attribute, not `" ++ k ++ "=`: it isn't a tool " ++
+    Left (sr, "An overlay's header can only say `for \"viewer\"`, not " ++ attrDescription k ++ ": it isn't a tool " ++
               "that gets selected, and it's always drawn above the viewer and below its tools.")
   pure (lookupAttr "for" attrs)
 

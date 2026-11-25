@@ -4,7 +4,9 @@ script: |
   lo : Z as "lo" := -3
   hi : Z as "hi" := 3
 
-  @viewer "List Range" var=z pixelSize="1/64"
+  @viewer "List Range" over z
+  setup:
+    pixel size: 1/64
   ns : List of Z := range(lo, hi)
   n : Z := length(ns)
   closest : R := 1000

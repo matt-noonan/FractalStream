@@ -28,7 +28,7 @@ script: |
     until z = savedZ
     cycle_length <- round(count)
 
-  @viewer "Parameter plane" var=C
+  @viewer "Parameter plane" over C
   z := 0
   flag_color := default_exit_condition_color
   run script(max_iters)
@@ -39,21 +39,21 @@ script: |
   run script(max_iters)
   color <- if stuck then black else shade(flag_color, iterations / 20)
 
-  @tool "Cycle Length" for="Parameter plane"
+  @tool "Cycle Length" for "Parameter plane"
   cycle_length : Z as "Cycle Length" := 0
   on click:
     clicked := click
     z := 0
     run probe_cycle_length(clicked)
 
-  @tool "Cycle Length" for="Dynamical plane"
+  @tool "Cycle Length" for "Dynamical plane"
   cycle_length : Z as "Cycle Length" := 0
   on click:
     clicked := click
     z := clicked
     run probe_cycle_length(C)
 
-  @tool "Trace" for="Dynamical plane" shortcut=t
+  @tool "Trace" for "Dynamical plane" with shortcut t
   trace_color : Color as "Trace color" := white
 
   on deactivated:

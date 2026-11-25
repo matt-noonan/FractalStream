@@ -4,7 +4,9 @@ script: |
   listA : List of C as "List A" := [0, 1, -1]
   listB : List of C as "List B" := [i, -i, 0.5 + 0.5i]
 
-  @viewer "List Join" var=z pixelSize="1/48"
+  @viewer "List Join" over z
+  setup:
+    pixel size: 1/48
   all : List of C := join(listA, listB)
   closest : R := 1000
   for each c in all:

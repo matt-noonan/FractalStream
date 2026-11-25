@@ -17,7 +17,7 @@ script: |
   @viewer "Reference"
   color <- palette(re z / 4)
 
-  @viewer "Parameter plane" var=C
+  @viewer "Parameter plane" over C
   z := 0
   run draw
 

@@ -23,7 +23,7 @@ FractalStream reads and writes format 1:
 ```yaml
 format: 1
 script: |
-  @viewer "Mandelbrot set" var=C
+  @viewer "Mandelbrot set" over C
   ...
 ```
 

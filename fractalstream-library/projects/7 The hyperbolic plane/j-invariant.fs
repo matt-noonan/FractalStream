@@ -4,7 +4,7 @@ script: |
   # PSL(2, Z) acts, tiled by copies of its fundamental domain: the strip
   # |re z| <= 1/2 above the unit circle.
   #
-  # The viewer folds each pixel's point z into that domain (`group=modular`)
+  # The viewer folds each pixel's point z into that domain (`modulo the modular group`)
   # before the code below sees it. Since j(z) is the same at every point of
   # an orbit, the picture only needs j there, where Im z >= sqrt(3)/2, so
   # q = e^(2 pi i z) is smaller than 0.005 and eight terms of each series
@@ -42,7 +42,7 @@ script: |
     e6 := 1 - 504 s6
     j_invariant <- 1728 e4^3 / (e4^3 - e6^2)
 
-  @viewer "j-invariant" view=halfplane group=modular
+  @viewer "j-invariant" on the half-plane modulo the modular group
   j := j_invariant(z)
   color <- rainbow(arg j / (2 pi))
   if show_bands and |j| > 0:
@@ -53,7 +53,7 @@ script: |
     w := pixel_size / im(z)
     color <- blend(clamp01((1.5 w - side_distance) / w), color, black)
 
-  @tool "Mark" for="j-invariant" shortcut=m
+  @tool "Mark" for "j-invariant" with shortcut m
   j_here : C as "j =" := 0
   on click:
     p := click

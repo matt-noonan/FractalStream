@@ -6,14 +6,22 @@ script: |
   @config "Configuration"
   C : C as "Selected value of C:" := -0.1226 + 0.7449i
 
-  @viewer "Parameter plane" var=C center=0 pixelSize=1/128 colorizer="Binary decomposition"
+  @viewer "Parameter plane" over C
+  setup:
+    center: 0
+    pixel size: 1/128
+    colorizer: Binary decomposition
   z := 0
   iterate z -> f(z) until z escapes
 
-  @viewer "Dynamical plane" center=0 pixelSize=1/128 colorizer="Binary decomposition"
+  @viewer "Dynamical plane"
+  setup:
+    center: 0
+    pixel size: 1/128
+    colorizer: Binary decomposition
   iterate z -> f(z) until z escapes
 
-  @tool "Trace" for="Dynamical plane" shortcut=t
+  @tool "Trace" for "Dynamical plane" with shortcut t
   on deactivated:
     erase
   on click:

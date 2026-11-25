@@ -17,16 +17,24 @@ script: |
   # Each a, colored by where Newton's method takes its free critical point
   # (the inflection point of f, a/3). This viewer only looks colors up: it
   # mustn't add one for each pixel's root a, which is different everywhere.
-  @viewer "Parameter plane" var=a colorizer=Autocolor center=0 pixelSize=1/150
-  coloring:
-    allow_new <- false
+  @viewer "Parameter plane" over a
+  setup:
+    colorizer: Autocolor
+    center: 0
+    pixel size: 1/150
+    coloring:
+      allow_new <- false
   z := a / 3
   run converge
 
-  @viewer "Dynamical plane" colorizer=Autocolor center=0 pixelSize=1/150
+  @viewer "Dynamical plane"
+  setup:
+    colorizer: Autocolor
+    center: 0
+    pixel size: 1/150
   run converge
 
-  @tool "Trace" for="Dynamical plane" shortcut=t
+  @tool "Trace" for "Dynamical plane" with shortcut t
   on deactivated:
     erase
   on click:

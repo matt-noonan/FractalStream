@@ -58,15 +58,15 @@ data ComplexViewer = ComplexViewer
   , cvCode :: Mapped CodeString (Either (SourceRange, String) SomeViewerWithContext)
   , cvTools :: Variable [Tool]
   , cvGroup :: Maybe (Dynamic FoldData)
-    -- ^ Its group (@group=@), ready to fold with, if it has one.
+    -- ^ Its group (@modulo the group@), ready to fold with, if it has one.
   , cvGroupProblem :: Dynamic (Maybe String)
     -- ^ What's wrong with its group's table, if anything (the viewer is
     -- paused, saying so, until it's put right).
   , cvLattice :: Maybe (Dynamic (Maybe Lattice))
-    -- ^ Its lattice (@lattice=@), as the configuration's values give it
+    -- ^ Its lattice (`modulo the lattice`), as the configuration's values give it
     -- (nothing, while they don't), if it has one.
   , cvVisible :: Dynamic Bool
-    -- ^ Whether it's shown: its @show_if=@, over the configuration, or
+    -- ^ Whether it's shown: its @show if:@, over the configuration, or
     -- always, without one.
   , cvOverlay :: Maybe Tool
     -- ^ Its overlay (@\@tool overlay@), if it has one: built like a tool,

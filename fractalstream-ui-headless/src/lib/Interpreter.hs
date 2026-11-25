@@ -211,12 +211,12 @@ execCommand st = \case
   SetViewerView kind -> withCurrentViewer st $ \viewer -> getDynamic (vView viewer) >>= \current ->
     if current `elem` [DiskView, HalfPlaneView]
       then switchView viewer kind >> pure (Right st)
-      else pure (Left "only a viewer of the hyperbolic plane (`view=disk` or `view=halfplane`) can change its view")
+      else pure (Left "only a viewer of the hyperbolic plane (`on the disk` or `on the half-plane`) can change its view")
 
   -- (only a viewer with a lattice or a group has tiles)
   SetViewerTiled tiled -> withCurrentViewer st $ \viewer -> case vTiled viewer of
     Just v -> setValue' v tiled >> pure (Right st)
-    Nothing -> pure (Left "only a viewer with a `lattice=` or a `group=` has tiles to show or hide")
+    Nothing -> pure (Left "only a viewer `modulo` a lattice or a group has tiles to show or hide")
 
   SetViewerPixelSize pv -> withCurrentViewer st $ \viewer ->
     withResolved (resolveReal pv) $ \px -> getDynamic (vView viewer) >>= \case
@@ -233,7 +233,7 @@ execCommand st = \case
         pure (Right st)
 
   SetViewerAspect pv -> withCurrentViewer st $ \viewer -> case vCoordinate viewer of
-    ComplexCoordinate _ -> pure (Left "only a real viewer (one with `xvar=` and `yvar=`) has an \
+    ComplexCoordinate _ -> pure (Left "only a real viewer (one `over (x, y)`) has an \
                                       \aspect ratio: a complex viewer's pixels are square")
     RealCoordinates _ _ -> withResolved (resolveReal pv) $ \aspect ->
       if aspect > 0
@@ -388,13 +388,13 @@ withNamedViewer st name k = case Map.lookup name (isViewers st) of
   Nothing     -> pure (Left ("no viewer named " ++ show name))
   Just viewer -> k viewer
 
--- | A viewer, by its name, to draw: it must be shown (its @show_if=@
+-- | A viewer, by its name, to draw: it must be shown (its @show if:@
 -- holds), since a picture of a hidden viewer is one a user never sees.
 withShownViewer :: InterpState -> String -> (Viewer -> IO (Either String InterpState)) -> IO (Either String InterpState)
 withShownViewer st name k = withNamedViewer st name $ \viewer ->
   getDynamic (vVisible viewer) >>= \case
     True -> k viewer
-    False -> pure (Left ("the viewer " ++ show name ++ " is hidden (its `show_if=` doesn't hold), \
+    False -> pure (Left ("the viewer " ++ show name ++ " is hidden (its `show if:` doesn't hold), \
                          \so it can't be drawn"))
 
 deactivateCurrentTool :: InterpState -> IO ()

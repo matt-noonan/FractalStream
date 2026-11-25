@@ -40,7 +40,7 @@ import Foreign.Ptr (castPtr)
 
 project :: String
 project = unlines
-  [ "@viewer \"V\" xvar=x yvar=y center=(1.0000001, 0) pixelSize=0.0000000000001"
+  [ "@viewer \"V\" over (x, y)\nsetup:\n  center: (1.0000001, 0)\n  pixel size: 0.0000000000001"
   , "t := (x - 1) * 2251799813685248.0"   -- (half x's ulps past 1: 2^51)
   , "color <- if t - floor(t) < 0.25 then black else white"
   ]
@@ -195,7 +195,7 @@ sameImage w piece expected got
 
 mandelbrot :: String
 mandelbrot = unlines
-  [ "@viewer \"M\" var=C center=-0.75 pixelSize=1/50"
+  [ "@viewer \"M\" over C\nsetup:\n  center: -0.75\n  pixel size: 1/50"
   , "z := 0", "k := 0"
   , "while |z| < 10 and k < 100:", "  z <- z^2 + C", "  k <- k + 1"
   , "color <- rgb(k / 100, 0.5, 1 - k / 100)" ]

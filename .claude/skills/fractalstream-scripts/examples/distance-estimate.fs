@@ -10,8 +10,12 @@ script: |
   # A large escape radius makes the estimate accurate.
   big_radius : R as "Escape radius" := 1000
 
-  # escape= makes `escapes` use big_radius instead of escape_radius.
-  @viewer "Mandelbrot boundary" var=C center=-0.75 pixelSize=1/200 escape=big_radius
+  # `escape radius:` makes `escapes` use big_radius instead of escape_radius.
+  @viewer "Mandelbrot boundary" over C
+  setup:
+    center: -0.75
+    pixel size: 1/200
+    escape radius: big_radius
   z := 0
   dz := 0
   # `iterate` updates only one variable, so use a loop body for two.

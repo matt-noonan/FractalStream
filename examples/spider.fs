@@ -21,10 +21,15 @@ script: |
   encloses_zero : Boolean as "Encloses 0?" := false
   foot : R as "Foot radius:" := 0.03
 
-  @viewer "Standard spider" center=0 pixelSize=1/128
+  @viewer "Standard spider"
+  setup:
+    center: 0
+    pixel size: 1/128
   color <- white
 
-  @tool "Draw standard spider" for="Standard spider" shortcut=s refreshCanUpdate=true
+  @tool "Draw standard spider" for "Standard spider" with shortcut s
+  setup:
+    refresh can update: true
   on refresh:
     # Save p and q to restore later, so we can manipulate
     # them in the script without changing the user's input
@@ -146,10 +151,13 @@ script: |
     p <- savedP
     q <- savedQ
 
-  @viewer "Iterated spider" center=0 pixelSize=1/128
+  @viewer "Iterated spider"
+  setup:
+    center: 0
+    pixel size: 1/128
   color <- white
 
-  @tool "Reset spider" for="Iterated spider" shortcut=r
+  @tool "Reset spider" for "Iterated spider" with shortcut r
   button "Apply spider map"
   on refresh:
     if not spider_ready:

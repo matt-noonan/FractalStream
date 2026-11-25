@@ -11,7 +11,7 @@ script: |
   else:
     color <- blue
 
-  @tool "Show circles" shortcut=s
+  @tool "Show circles" with shortcut s
   on refresh:
     erase
     for each center in myList:

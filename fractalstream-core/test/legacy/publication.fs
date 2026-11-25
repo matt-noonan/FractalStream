@@ -55,7 +55,7 @@ script: |
       iters <- 0
       gave_up <- false
 
-  @viewer "Parameter plane" var=C
+  @viewer "Parameter plane" over C
   z := 0
   flag_color := default_exit_condition_color
   iters := 0
@@ -70,7 +70,7 @@ script: |
   run script(max_iters, false)
   color <- if gave_up then black else shade(flag_color, iters / 20)
 
-  @tool "Trace" for="Dynamical plane" shortcut=t
+  @tool "Trace" for "Dynamical plane" with shortcut t
   trace_color : Color as "Trace color" := white
 
   on deactivated:

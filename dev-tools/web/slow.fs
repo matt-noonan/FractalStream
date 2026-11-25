@@ -5,7 +5,11 @@ script: |
   @config "Configuration"
   work : Z := 1000
 
-  @viewer "Slow" var=z center=0 pixelSize=1/128 limit=work
+  @viewer "Slow" over z
+  setup:
+    center: 0
+    pixel size: 1/128
+    iteration limit: work
   s := 0
   k := 0
   while k < work:

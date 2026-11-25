@@ -497,7 +497,7 @@ iterate z -> g(2, z) until z escapes
 The body of a function is a single expression. Besides its parameters, it
 can use the project's names: configuration values, `@common`'s
 definitions, the viewer's or tool's variables (like the viewer's `z`, or
-`C` in a viewer with `var=C`), and built-in ones like `pixel_size` and
+`C` in a viewer `over C`), and built-in ones like `pixel_size` and
 `escape_radius`, as they are where the function is used. It can't use the
 variables that the viewer's or tool's own code declares (give the function
 a parameter for those instead), and it can call the functions defined
@@ -700,10 +700,10 @@ a : C as "a =" := 1
 f(z) := z^3 - a
 newton(z) := z - f(z) / f'(z)
 
-@viewer "Newton's method" var=z
+@viewer "Newton's method" over z
 iterate z -> newton(z) until f(z) vanishes
 
-@tool "Trace" for="Newton's method"
+@tool "Trace" for "Newton's method"
 on click:
   z := click
   erase
@@ -1014,7 +1014,7 @@ is useful for building tools that directly manipulate the configuration,
 such as selecting a parameter value.
 
 A viewer's variable can have the name of a configuration variable, as a
-parameter plane's does (`@viewer "Parameter plane" var=C`, with `C` in an
+parameter plane's does (`@viewer "Parameter plane" over C`, with `C` in an
 `@config` stanza): then, in that viewer's code, `C` is each pixel's own
 value of the parameter. Everywhere else, its tools included, `C` is the
 configuration's value, the one the parameter plane's "Select" tool sets.
@@ -1024,17 +1024,70 @@ other viewer. A tool that wants to work with the point clicked uses
 `click` (see "Tool scripts"), and passes it to what it calls:
 `g(click, 0)`, with `g(c, z) := z^2 + c`, say.
 
+### A viewer's header, and its `setup:`
+
+A viewer's header line says what the viewer *is*, in a few phrases after
+its title, in any order:
+
+| Phrase | Means | Without it |
+|---|---|---|
+| `over z` | its pixels are complex numbers, named `z` in its code | `over z` |
+| `over (x, y)` | its pixels are pairs of real numbers (see "Viewers over the real plane") | |
+| `on the sphere`, `on the disk`, `on the half-plane` | what it shows (see "Viewers on the Riemann sphere", "Viewers of the hyperbolic plane") | `on the plane` |
+| `modulo the lattice τ` | the plane modulo a lattice (see "Lattices") | |
+| `modulo the modular group`, `modulo the group T` | the hyperbolic plane modulo a group (see "Groups") | |
+| `centered at c` | the center of that lattice's or group's fundamental domain | 0 (or `i`) |
+
+```
+@viewer "Torus" modulo the lattice τ over z
+@viewer "j-invariant" on the half-plane modulo the modular group
+```
+
+A value in a phrase is a name, a number, or something in parentheses
+(`modulo the lattice (1, τ)`, `centered at (0.5 + 0.5 i)`): anything
+longer would run on into the next phrase.
+
+Everything else about a viewer goes in a `setup:` block right after its
+header, one `name: value` line each, the value being the rest of the
+line:
+
+```
+@viewer "Parameter plane" over C
+setup:
+  center: -0.5
+  pixel size: 1/200
+  iteration limit: plane_iters
+  show if: show_parameters
+  colorizer: Smooth
+  coloring:
+    color_speed <- 3
+z := 0
+iterate z -> z^2 + C until z escapes
+```
+
+| Setting | Is |
+|---|---|
+| `center:`, `pixel size:` | where the view starts, and its zoom |
+| `aspect:` | a real viewer's pixel height over its width |
+| `tiled:` | `false` to start showing only the fundamental domain (see "Showing only the fundamental domain") |
+| `colorizer:` | the colorizer it starts with (see "Colorizers"); `coloring:`, a block inside `setup:`, changes its settings |
+| `show if:` | a truth value saying when it's shown (see "Showing a viewer only some of the time") |
+| `iteration limit:`, `escape radius:`, `vanishing radius:` | the values its loops use for these, if not the configuration's `max_iters`, `escape_radius` and `vanishing_radius` (so two viewers can have different limits) |
+
 ### Viewers over the real plane
 
 A viewer's pixels are usually points of the complex plane, named by its
-`var=` attribute (`z` if there isn't one). A viewer with `xvar=` and
-`yvar=` instead is a *real viewer*: each pixel is a pair of real
+`over` phrase (`z` if there isn't one). A viewer `over (x, y)` instead is a
+*real viewer*: each pixel is a pair of real
 numbers, the first the horizontal coordinate and the second the
 vertical one, so there's no need to split a complex number into
 `re(z)` and `im(z)`:
 
 ```
-@viewer "Hénon map" xvar=x yvar=y center=(0, 0) pixelSize=1/200
+@viewer "Hénon map" over (x, y)
+setup:
+  center: (0, 0)
+  pixel size: 1/200
 until x² + y² > 100:
   t := x
   x ⭠ 1 - a x² + y
@@ -1043,14 +1096,14 @@ color ⭠ if stuck then black else rainbow(iterations / 20)
 ```
 
 Either coordinate can be the name of a real configuration variable
-(`xvar=a yvar=b`, say), for a plane of parameters; inside the viewer,
-it then means the pixel's coordinate, just as `var=C` does in a complex
+(`over (a, b)`, say), for a plane of parameters; inside the viewer,
+it then means the pixel's coordinate, just as `over C` does in a complex
 viewer. With both coordinates configuration variables, the viewer gets a
 "Select" tool that sets them both to a clicked point.
 
-A real viewer's `center=` is a point, `center=(1, -1/2)` (or a complex
-number, `center="1 - 0.5i"`). Its pixels needn't be square: `aspect=`
-gives the height of a pixel over its width (`aspect=2` stretches the
+A real viewer's `center:` is a point, `center: (1, -1/2)` (or a complex
+number, `center: 1 - 0.5i`). Its pixels needn't be square: `aspect:`
+gives the height of a pixel over its width (`aspect: 2` stretches the
 view vertically, so twice as much of the `y` axis fits), and the
 viewer's menu has an "Aspect ratio..." item to change it. Besides
 `pixel_size` (the width of a pixel), a real viewer's script and its
@@ -1073,7 +1126,7 @@ the disk's drawing (0 until it's zoomed somewhere else). These names can't be de
 
 ### Showing a viewer only some of the time
 
-A viewer with `show_if=` is only shown while its truth value holds. The
+A viewer with `show if:` in its `setup:` is only shown while its truth value holds. The
 value is an expression over the configuration's values (with `@common`'s
 values and one-line functions, and the standard library's), worked out
 again whenever one of them changes. It's worked out apart from any code, so
@@ -1084,20 +1137,21 @@ it can't call a function with a body:
 C : C := 0
 selected_C : Bool := false
 
-@viewer "Mandelbrot set" var=C
+@viewer "Mandelbrot set" over C
 ...
 
-@viewer "Julia set" show_if=selected_C
+@viewer "Julia set"
+setup:
+  show if: selected_C
 ...
 
-@tool "Pick C" for="Mandelbrot set"
+@tool "Pick C" for "Mandelbrot set"
 on click:
   C <- click
   selected_C <- true
 ```
 
-An expression with spaces needs quotes, as other attribute values do:
-`show_if="selected_C and not compare_mode"`. While a viewer is hidden,
+While a viewer is hidden,
 its window is hidden, it isn't drawn (even as the configuration
 changes), and its tools and overlay don't run. When it's shown again,
 its window comes back where it was, with the same view, and it's drawn
@@ -1118,19 +1172,19 @@ tile:
 @config "Lattice"
 τ : C := 0.3 + 1.1 i
 
-@viewer "Torus" lattice=τ
+@viewer "Torus" modulo the lattice τ
 color <- if side_distance < 2 pixel_size then black else domain_color(wp(z, 1, τ))
 ```
 
-In a complex viewer, `lattice=τ` is the lattice ℤ + τℤ, and
-`lattice="(ω1, ω2)"` is the lattice ω1ℤ + ω2ℤ. In a real viewer, it's a
-pair of vectors: `lattice="((1, 0), (0, 1))"` is ℤ². The periods are worked
+In a complex viewer, `modulo the lattice τ` is the lattice ℤ + τℤ, and
+`modulo the lattice (ω1, ω2)` is the lattice ω1ℤ + ω2ℤ. In a real viewer,
+it's a pair of vectors: `modulo the lattice ((1, 0), (0, 1))` is ℤ². The periods are worked
 out from the configuration's values (and the standard library's
 functions), and again whenever one of them changes, so a configuration
 value (or a tool) can change the lattice, and the viewer redraws.
 
 The fundamental parallelogram is the one centered at 0: the points
-`s ω1 + t ω2` with `s` and `t` between -1/2 and 1/2. `latticeCenter=`
+`s ω1 + t ω2` with `s` and `t` between -1/2 and 1/2. `centered at c`
 moves it, to be centered at another point (of the viewer's kind: a complex
 number, or a pair of real numbers).
 
@@ -1147,17 +1201,17 @@ Its tools' points are folded too, and their drawings are drawn in each tile
 on the screen, except when the tiles are too small to see (more than a few
 thousand of them on the screen).
 
-With `tiled=false`, or its menu's "Show fundamental domain", it shows
+With `tiled: false` in its `setup:`, or its menu's "Show fundamental domain", it shows
 only the parallelogram, the rest greyed out: see "Showing only the
 fundamental domain", below.
 
 ### Viewers on the Riemann sphere
 
 A complex viewer can show the Riemann sphere instead of the plane: as a
-globe, with `view=sphere`.
+globe, with `on the sphere`.
 
 ```
-@viewer "Newton's method" var=z view=sphere
+@viewer "Newton's method" over z on the sphere
 iterate z ⟼ z - (z³ - 1) / (3 z²) until z stops
 color ⟵ if re(affine(1, z)) < 0 then yellow else blue
 ```
@@ -1168,11 +1222,11 @@ is the globe's north pole, ∞ its south pole, and the unit circle its
 equator. It's exact everywhere, ∞ included, so a rational map is right
 all over the globe; for the complex number a point is, use `affine(1, z)`.
 A viewer whose variable is a field, as a parameter space is
-(`var=c`), needs the field to be a point of the sphere too: `c : Ĉ := 0`.
+(`over c`), needs the field to be a point of the sphere too: `c : Ĉ := 0`.
 
 The globe always fills the window. With no rotation, 0 faces you, with
 the real axis to the right and the imaginary axis up, as on the plane;
-`center=` is the point that faces you to start with. Scrolling zooms in
+`center:` is the point that faces you to start with. Scrolling zooms in
 or out about the point under the pointer: a dilation of the globe, as you
 see it, about that point, which shows the piece of the sphere there
 magnified (and the rest of the sphere squeezed towards the rim). Zoomed
@@ -1181,9 +1235,9 @@ turns the globe as you see it, rigidly, whatever the zoom: zoomed in, that
 pans. The point under each
 pixel is exact however far you zoom in, anywhere on the sphere, ∞
 included. A viewer shows the sphere, or the plane, for good, as its
-`view=` says.
+phrase says.
 
-`pixelSize=` is the size of a pixel in the middle of the globe, measured
+`pixel size:` is the size of a pixel in the middle of the globe, measured
 on the sphere (whose radius is 1); leave it out to start with the
 front half of the sphere filling the globe. In the code, `pixel_size` is
 the size of that pixel on the sphere, which is smaller towards the
@@ -1205,10 +1259,12 @@ off the globe does nothing.
 ### Viewers of the hyperbolic plane (the Poincaré disk, the half-plane)
 
 A complex viewer can show the hyperbolic plane, as the Poincaré disk,
-with `view=disk`:
+with `on the disk`:
 
 ```
-@viewer "Hyperbolic plane" var=z view=disk center=0.5
+@viewer "Hyperbolic plane" over z on the disk
+setup:
+  center: 0.5
 r := 2 atanh(|z|)      -- the hyperbolic distance from 0
 color <- if mod(floor(2 r), 2) = 0 then light grey else dark grey
 ```
@@ -1219,9 +1275,9 @@ hyperbolic plane: dragging with the Navigate tool moves the view by the
 hyperbolic translation that keeps the point under the pointer there, and
 a click moves the clicked point to the middle of the window, so the whole
 plane can be visited. Scrolling (and pinching) zooms in on the disk as it
-is drawn, anywhere on it, to see small details near its edge. `center=` is
+is drawn, anywhere on it, to see small details near its edge. `center:` is
 the point of the disk shown in the middle to start with (it must be in
-the disk), and `pixelSize=` is measured on the disk, whose radius is 1 (by
+the disk), and `pixel size:` is measured on the disk, whose radius is 1 (by
 default, the disk fills most of the window). Off the disk, there's
 nothing to draw.
 
@@ -1243,19 +1299,19 @@ For a size in the model that depends on how large `p` is shown,
 `pixel_size`, and on the sphere it's the size of a pixel facing you.) A
 disk viewer can't be shown on the plane or the sphere.
 
-A script can work in the upper half-plane instead, with `view=halfplane`:
+A script can work in the upper half-plane instead, with `on the half-plane`:
 `z` is then a point with a positive imaginary part. The half-plane is drawn
-with its real axis along the window's bottom edge, and `center=` (by
+with its real axis along the window's bottom edge, and `center:` (by
 default `i`) shown 1/`pixelSize` pixels above it (by default 150), halfway
 across, or in the middle of the window if that's lower. So for
-`center=i`, `pixelSize=` is the width of a pixel at `i`. In the
+`center: i`, `pixel size:` is the width of a pixel at `i`. In the
 half-plane, a pixel's hyperbolic size is `pixel_size / im(z)`.
 
 Either way, the viewer's menu can show the hyperbolic plane as the disk or
 as the half-plane ("Show as the half-plane"), keeping the view: the script
 still sees points of its own model, and the view's center goes from the
 middle of the disk to its place above the half-plane's axis (and back).
-`pixelSize=` is for the drawing the script's `view=` names; the other
+`pixel size:` is for the drawing the script's header names; the other
 starts at its own zoom (1/150 for the half-plane; the disk filling most of
 the window for the disk). On the half-plane drawing, zooming (with the
 scroll wheel or a pinch) is about the point of the real axis below the
@@ -1272,13 +1328,13 @@ sees it, so the code works on the quotient (a surface, or an orbifold),
 and the picture is repeated over the plane, one copy per tile:
 
 ```
-@viewer "j-invariant" view=halfplane group=modular
+@viewer "j-invariant" on the half-plane modulo the modular group
 ...
 ```
 
-`group=modular` is the modular group PSL(2, ℤ), whose polygon is the
+`modulo the modular group` is the modular group PSL(2, ℤ), whose polygon is the
 familiar one: |re z| ≤ 1/2 and |z| ≥ 1, in the half-plane (moved to the
-disk by the Cayley map, for a `view=disk` script). Otherwise, `group=` names
+disk by the Cayley map, for a `on the disk` script). Otherwise, `modulo the group T` names
 a `Table 2 of C` of the configuration: column `k` is the polygon's side
 `k`, and `T @ (1, k)` .. `T @ (4, k)` are the `a`, `b`, `c`, `d` of its
 *pairing*, the map `s ↦ (a s + b)/(c s + d)` of the script's model (the disk
@@ -1287,7 +1343,7 @@ side itself is halfway between the polygon's center and the point that the
 pairing takes to the center (so the polygon is the Dirichlet polygon about
 its center, when the pairings generate the group and include each one's
 inverse). The center is the middle of the model (0, or `i`), or
-`groupCenter=`, which no pairing may fix. Further rows of the table are the
+`centered at`, which no pairing may fix. Further rows of the table are the
 script's own (to keep data about each side, say). A tool can write the
 table, and the viewer redraws. A table with nothing in it yet folds
 nothing; one that can't be used (a pairing that isn't invertible, doesn't
@@ -1319,7 +1375,7 @@ view's numbers small, however far it's moved.
 A viewer with a lattice or a group shows all of its tiles, but it can
 instead show only its fundamental domain (the parallelogram, or the
 polygon), with the rest of the plane greyed out: the picture outside it
-is still drawn, but faded toward grey. `tiled=false` in its header starts
+is still drawn, but faded toward grey. `tiled: false` in its `setup:` starts
 it that way, and its menu's "Show fundamental domain" switches between the
 two (as `set viewer tiled to false` does in a scenario). Which one it
 shows is saved with the project, when it isn't what its header says.
@@ -1343,10 +1399,12 @@ and which the project file remembers.
 
 When nothing says which colorizer a viewer uses, it gets `Manual` if its
 script sets `color` itself, and `Rainbow` if it doesn't. A viewer can
-name its own default with the `colorizer=` attribute:
+name its own default with the `colorizer:` setting:
 
 ```
-@viewer "Julia set" colorizer=Smooth
+@viewer "Julia set"
+setup:
+  colorizer: Smooth
 iterate z ⟼ z² + C until z escapes
 ```
 
@@ -1376,7 +1434,9 @@ angle of `z`, which is a good way to show the basins of a Newton's
 method:
 
 ```
-@viewer "Newton's method" colorizer="Rainbow(arg z / (2π))"
+@viewer "Newton's method"
+setup:
+  colorizer: Rainbow(arg z / (2π))
 lastZ := 0
 repeat:
   lastZ ⭠ z
@@ -1385,8 +1445,7 @@ until z = lastZ
 ```
 
 Arguments can be any expressions, using any of the viewer's variables
-and functions. Quote the attribute's value if it has anything but a name
-in it.
+and functions.
 
 The viewer menu's "Colorizer" submenu lists the colorizers the viewer can
 use, with the one in use checked. Picking one with parameters uses the
@@ -1402,11 +1461,13 @@ copy of them. A viewer can change their defaults with a `coloring:`
 block at the start of its script:
 
 ```
-@viewer "Mandelbrot set" var=C colorizer=Smooth
-coloring:
-  palette ⭠ "Two colors"
-  color1 ⭠ red
-  period ⭠ 100
+@viewer "Mandelbrot set" over C
+setup:
+  colorizer: Smooth
+  coloring:
+    palette ⭠ "Two colors"
+    color1 ⭠ red
+    period ⭠ 100
 z ≔ 0
 iterate z ⟼ z² + C until z escapes
 ```
@@ -1425,7 +1486,9 @@ A `@colorizer` stanza has the colorizer's settings, declared like a
 `colorize`:
 
 ```
-@colorizer "Smooth gradient" description="Smooth color between two colors."
+@colorizer "Smooth gradient"
+setup:
+  description: "Smooth color between two colors."
 period : ℝ as "Color period" ≔ 20
 inside : Color as "Interior color" ≔ black
 
@@ -1454,33 +1517,41 @@ and is used instead of it.
 
 ### Tool scripts
 
-A tool in a viewer's `tools:` list responds to user input (clicks, drags,
-button presses, and so on) by running a single `script:`, made up of one
-or more blocks. Each block starts with an `on <event>:` header and is
-followed by an indented body, the same way an `if:` or `until:` block is
-written in ordinary script code:
+A tool responds to the user's input (clicks, drags, button presses, and so
+on) by running *handlers*. Its header names it and says which viewer it's
+for, and, if it has one, its keyboard shortcut:
 
-```yaml
-tools:
-  - name: Trace
-    shortcut: t
-    script: |
-      on refresh:
-        erase
+```
+@tool "Trace" for "Julia set" with shortcut t
+```
 
-      on deactivated:
-        erase
+Without `for`, a tool is for the project's only viewer; with several
+viewers, it has to say. A `setup:` block after the header can give it an
+`icon:` and a `draw layer:` (a whole number: tools with higher layers draw
+over those with lower ones). Then come its own settings (declared as in
+`@config`, shown in a panel while it's selected), and its handlers. Each
+handler starts with an `on <event>:` line and is followed by an indented
+body, the same way an `if:` or `until:` block is written in ordinary
+script code:
 
-      on click:
-        z := click
-        use white for line
-        erase
-        prevZ : C := z
-        until z escapes:
-          prevZ <- z
-          draw point at z
-          z <- z^2 + C
-          draw line from z to prevZ
+```
+@tool "Trace" for "Julia set" with shortcut t
+on refresh:
+  erase
+
+on deactivated:
+  erase
+
+on click:
+  z := click
+  use white for line
+  erase
+  prevZ : C := z
+  until z escapes:
+    prevZ <- z
+    draw point at z
+    z <- z^2 + C
+    draw line from z to prevZ
 ```
 
 The available headers are:
@@ -1533,7 +1604,7 @@ drawings. It's written as a tool named with the bare word `overlay` (a
 quoted `"overlay"` is an ordinary tool), with only an `on refresh:` block:
 
 ```
-@tool overlay for="Mandelbrot set"
+@tool overlay for "Mandelbrot set"
 on refresh:
   erase
   use yellow for fill
@@ -1543,8 +1614,8 @@ on refresh:
 Its `on refresh:` block runs when the project opens, whenever the viewer's
 view changes, and whenever any configuration value changes, so what it
 draws follows the parameters even when they're changed somewhere else
-(another viewer's tool, or the configuration window). An overlay can only
-have a `for=` attribute (it's never selected, so it has no shortcut), and
+(another viewer's tool, or the configuration window). An overlay's header
+only says which viewer it's for (it's never selected, so it has no shortcut), and
 no declarations of its own (it has no panel); a viewer has at most one.
 
 ### Drawing commands
@@ -1559,7 +1630,7 @@ to window coordinates.
 
 Points can be specified either with ordered pairs of real numbers, or
 with complex numbers which will be interpreted as ordered pairs. A tool
-of a sphere viewer (`view=sphere`) draws at points of `Ĉ` (see "The
+of a sphere viewer (`on the sphere`) draws at points of `Ĉ` (see "The
 Riemann sphere: Ĉ and ℙ¹"), ∞ included: a complex number is the point it
 is on the sphere.
 
@@ -1610,10 +1681,10 @@ complex numbers or by ordered pairs of real numbers.
 A line is the shortest path between its ends in the viewer's own geometry:
 
 - in the plane, a straight segment;
-- on the sphere (`view=sphere`), the shorter arc of the great circle through
+- on the sphere (`on the sphere`), the shorter arc of the great circle through
   the two points, which can go through ∞ (between two opposite points,
   every great circle through them is as short, and it takes one);
-- in the hyperbolic plane (`view=disk` or `view=halfplane`), the hyperbolic
+- in the hyperbolic plane (`on the disk` or `on the half-plane`), the hyperbolic
   segment: an arc of a circle that meets the disk's edge (or the
   half-plane's real axis) at right angles, or a straight segment when it's
   in line with the middle of the disk (or vertical, in the half-plane).
@@ -1991,7 +2062,7 @@ apart as you would any tuple:
 @config "Critical points"
 crits : Table 2 of C x Z    # a critical point, and whether it was found
 
-@viewer "c plane" var=c
+@viewer "c plane" over c
 (crit, found) := crits @ point c else (0, 0)
 ```
 
@@ -2120,14 +2191,14 @@ plane, and a dynamical plane looks up the value at its own parameter:
 C : C := 0
 data : Table 2 of C
 
-@viewer "Parameter plane" var=C
+@viewer "Parameter plane" over C
 (w, h) := table_size(data)
 color <- if w = 0 then grey else rainbow(arg(data @ point C) / (2 pi))
 
 @viewer "Dynamical plane"
 ...  # can read `data @ point C`
 
-@tool "Compute" for="Parameter plane"
+@tool "Compute" for "Parameter plane"
 on click:
   reset data to (viewer_width, viewer_height)
   for each j in range(1, viewer_width):

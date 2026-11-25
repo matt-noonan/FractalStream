@@ -31,7 +31,7 @@ import Data.Word (Word8)
 
 mandelbrot :: String
 mandelbrot = unlines
-  [ "@viewer \"M\" var=C center=-0.75 pixelSize=1/50"
+  [ "@viewer \"M\" over C\nsetup:\n  center: -0.75\n  pixel size: 1/50"
   , "z := 0", "k := 0"
   , "while |z| < 10 and k < 100:", "  z <- z^2 + C", "  k <- k + 1"
   , "color <- rgb(k / 100, 0.5, 1 - k / 100)" ]

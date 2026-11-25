@@ -73,7 +73,7 @@ spec = do
 
     it "builds a single viewer with no config/setup/tools" $
       shouldBuild [r|
-@viewer "Mandelbrot Set" var=C
+@viewer "Mandelbrot Set" over C
 z : C := 0
 iterate z -> z^2 + C until z escapes
 color <- if stuck then black else rainbow(iterations / 20)
@@ -86,11 +86,11 @@ color <- if stuck then black else rainbow(iterations / 20)
 
     it "attaches a tool to its named viewer" $
       shouldBuild [r|
-@viewer "Mandelbrot Set" var=C
+@viewer "Mandelbrot Set" over C
 z : C := 0
 iterate z -> z^2 + C until z escapes
 
-@tool "Trace" for="Mandelbrot Set" shortcut="T"
+@tool "Trace" for "Mandelbrot Set" with shortcut T
 on refresh:
   erase
 on click:
@@ -108,15 +108,15 @@ on click:
 @config "C"
 p : C := 0
 
-@viewer "V" var=z
+@viewer "V" over z
 pass
 
-@tool overlay for="V"
+@tool overlay for "V"
 on refresh:
   erase
   draw point at p
 
-@tool "Trace" for="V"
+@tool "Trace" for "V"
 on click:
   pass
 |] $ \ens -> do
@@ -130,21 +130,21 @@ on click:
 
     it "rejects two overlays for one viewer" $
       [r|
-@viewer "V" var=z
+@viewer "V" over z
 pass
 
 @tool overlay
 on refresh:
   pass
 
-@tool overlay for="V"
+@tool overlay for "V"
 on refresh:
   pass
 |] `shouldFailWith` "has more than one `@tool overlay`"
 
     it "type-checks an overlay when the project is built" $
       [r|
-@viewer "V" var=z
+@viewer "V" over z
 pass
 
 @tool overlay
@@ -154,17 +154,21 @@ on refresh:
 
     it "wires the new viewer/tool attributes through to the built values" $
       shouldBuild [r|
-@viewer "Mandelbrot Set" var=C pixelVar=px
+@viewer "Mandelbrot Set" over C
 z : C := 0
 iterate z -> z^2 + C until z escapes
 
-@tool "Trace" for="Mandelbrot Set" drawLayer="5" refreshOnActivate="false" refreshCanUpdate="true"
+@tool "Trace" for "Mandelbrot Set"
+setup:
+  draw layer: 5
+  refresh on activate: false
+  refresh can update: true
 on refresh:
   pass
 |] $ \ens -> do
         [viewer] <- getDynamic (ensembleViewers ens)
         pixelVar <- getDynamic (cvPixel viewer)
-        pixelVar `shouldBe` Right (Just "px")
+        pixelVar `shouldBe` Right (Just "pixel_size")
         [tool] <- getDynamic (cvTools viewer)
         layer <- getDynamic (toolDrawLayer tool)
         layer `shouldBe` 5
@@ -175,10 +179,10 @@ on refresh:
 
     it "builds a tool's own declarations into its own configuration panel" $
       shouldBuild [r|
-@viewer "V" var=z
+@viewer "V" over z
 pass
 
-@tool "Demo" for="V" shortcut="x"
+@tool "Demo" for "V" with shortcut x
 r : R as "R =" := 1
 theta : R as "θ =" := pi/4
 on refresh:
@@ -220,10 +224,10 @@ on refresh:
 
     it "defaults a tool with no declarations to no configuration panel" $
       shouldBuild [r|
-@viewer "V" var=z
+@viewer "V" over z
 pass
 
-@tool "Demo" for="V"
+@tool "Demo" for "V"
 on refresh:
   pass
 |] $ \ens -> do
@@ -238,7 +242,7 @@ on refresh:
 
     it "defaults a tool's target to the sole viewer when `for=` is omitted" $
       shouldBuild [r|
-@viewer "Only One" var=z
+@viewer "Only One" over z
 pass
 
 @tool "T"
@@ -260,7 +264,9 @@ b : Z := 2
 @config "Dynamics"
 c : Z := 3
 
-@viewer "V" var=z colorizer=Manual
+@viewer "V" over z
+setup:
+  colorizer: Manual
 pass
 |] $ \ens -> do
         mcfg <- getDynamic (ensembleConfiguration ens)
@@ -440,7 +446,9 @@ xs : List of Z := [1, 2, 3]
        \\"Iteration settings\" tab, with the right types and defaults, \
        \even when the script declares no @config at all" $
       shouldBuild [r|
-@viewer "V" var=z colorizer=Manual
+@viewer "V" over z
+setup:
+  colorizer: Manual
 pass
 |] $ \ens -> do
         Just cfg <- getDynamic (ensembleConfiguration ens)
@@ -468,7 +476,7 @@ pass
             other -> expectationFailure ("expected \"Color settings\" and the implicit tab, got " ++ show (length other))
           _ -> expectationFailure "expected the top-level Configuration layout to be Tabbed"
 
-    it "lets an explicit `limit=`/`escape=`/`vanish=`/`pixelVar=` override \
+    it "lets explicit `iteration limit:`/`escape radius:`/`vanishing radius:` settings override \
        \still point at the script's own custom-named variable instead of \
        \the automatic max_iters/escape_radius/vanishing_radius/pixel_size" $
       shouldBuild [r|
@@ -477,8 +485,12 @@ myLimit : Z := 50
 myEscape : R := 5
 myVanish : R := 0.01
 
-@viewer "V" var=z limit="myLimit" escape="myEscape" vanish="myVanish" pixelVar="myPixel"
-color <- if myPixel > 0 then black else white
+@viewer "V" over z
+setup:
+  iteration limit: myLimit
+  escape radius: myEscape
+  vanishing radius: myVanish
+color <- if pixel_size > 0 then black else white
 |] $ \_ -> pure ()
 
     it "lets a script declare an automatic setting itself, in the \
@@ -487,7 +499,9 @@ color <- if myPixel > 0 then black else white
 @config "Iteration settings"
 vanishing_radius : R as "Vanishing radius: " := 0.01
 
-@viewer "V" var=z colorizer=Manual
+@viewer "V" over z
+setup:
+  colorizer: Manual
 iterate z -> z^2 until z vanishes
 |] $ \ens -> do
         Just cfg <- getDynamic (ensembleConfiguration ens)
@@ -518,7 +532,9 @@ iterate z -> z^2 until z vanishes
 @config "Configuration"
 max_iters : Z := 50
 
-@viewer "V" var=z colorizer=Manual
+@viewer "V" over z
+setup:
+  colorizer: Manual
 iterate z -> z^2 until z escapes
 |] $ \ens -> do
         Just cfg <- getDynamic (ensembleConfiguration ens)
@@ -537,7 +553,7 @@ iterate z -> z^2 until z escapes
 @config "Configuration"
 max_iters : R := 50
 
-@viewer "V" var=z
+@viewer "V" over z
 pass
 |] `shouldFailWith` "automatic iteration settings"
 
@@ -547,7 +563,7 @@ pass
 max_iters : Z := 50
 max_iters : Z := 60
 
-@viewer "V" var=z
+@viewer "V" over z
 pass
 |] `shouldFailWith` "defined twice"
 
@@ -555,22 +571,22 @@ pass
        \automatically-provided `pixel_size` (regression: it previously had \
        \no way to name the per-pixel scale at all for this handler kind)" $
       shouldBuild [r|
-@viewer "V" var=z
+@viewer "V" over z
 color <- black
 
-@tool "T" shortcut="t"
+@tool "T" with shortcut t
 on refresh:
   scale : R := pixel_size * 2
 |] $ \_ -> pure ()
 
     it "remembers its own source text, for a frontend's save path to write back out" $
-      let src = "@viewer \"V\" var=z\npass\n"
+      let src = "@viewer \"V\" over z\npass\n"
       in shouldBuild src $ \ens -> do
            msrc <- getDynamic (ensembleSourceScript ens)
            msrc `shouldBe` src
 
     it "encodeEnsemble writes a script-built ensemble's text back out verbatim" $
-      let src = "@viewer \"V\" var=z\npass\n"
+      let src = "@viewer \"V\" over z\npass\n"
       in shouldBuild src $ \ens -> do
            bytes <- encodeEnsemble ens
            case YAML.decodeEither' bytes of
@@ -583,12 +599,12 @@ on refresh:
     it "encodeEnsemble writes the script as a readable block that reads back \
        \exactly, even with characters libyaml won't put in one by itself" $
       forM_ [ ("a character outside the Basic Multilingual Plane",
-                 "@viewer \"V\" var=z\n# 𝑖 is U+1D456\npass\n", True)
-            , ("no final newline", "@viewer \"V\" var=z\npass", True)
-            , ("extra final newlines", "@viewer \"V\" var=z\npass\n\n\n", True)
-            , ("trailing spaces", "@viewer \"V\" var=z   \npass  \n", True)
-            , ("a tab", "@viewer \"V\" var=z\n# a\ttab\npass\n", True)
-            , ("a carriage return", "@viewer \"V\" var=z\r\npass\r\n", False)
+                 "@viewer \"V\" over z\n# 𝑖 is U+1D456\npass\n", True)
+            , ("no final newline", "@viewer \"V\" over z\npass", True)
+            , ("extra final newlines", "@viewer \"V\" over z\npass\n\n\n", True)
+            , ("trailing spaces", "@viewer \"V\" over z\npass  \n", True)
+            , ("a tab", "@viewer \"V\" over z\n# a\ttab\npass\n", True)
+            , ("a carriage return", "@viewer \"V\" over z\r\npass\r\n", False)
             ] $ \(what, src, readable) -> shouldBuild src $ \ens -> do
         bytes <- encodeEnsemble ens
         (what, BS.isPrefixOf "format: 1\nscript: |" bytes) `shouldBe` (what, readable)
@@ -600,12 +616,12 @@ on refresh:
        \its file, gives the project with that state and its own script, \
        \metadata and manifest" $ do
       let original = BS.concat
-            [ "script: |\n  @viewer \"V\" var=z\n  pass\n"
+            [ "script: |\n  @viewer \"V\" over z\n  pass\n"
             , "metadata:\n  title: The original\n"
             , "manifest:\n  tables:\n    T: kept\n"
             , "values:\n  x: '1'\n" ]
           changed = BS.concat
-            [ "script: |\n  @viewer \"V\" var=z\n  # edited\n  pass\n"
+            [ "script: |\n  @viewer \"V\" over z\n  # edited\n  pass\n"
             , "metadata:\n  title: Another\n"
             , "manifest:\n  tables:\n    T: other\n"
             , "values:\n  x: '2'\n"
@@ -615,7 +631,7 @@ on refresh:
       combined <- either (fail . ("withProjectKeys: " ++)) pure (withProjectKeys keys original)
       case YAML.decodeEither' combined of
         Right (Object o) -> do
-          KM.lookup "script" o `shouldBe` Just (String "@viewer \"V\" var=z\npass\n")
+          KM.lookup "script" o `shouldBe` Just (String "@viewer \"V\" over z\npass\n")
           (KM.lookup "metadata" o >>= \case Object m -> KM.lookup "title" m; _ -> Nothing)
             `shouldBe` Just (String "The original")
           (KM.lookup "manifest" o >>= \case
@@ -628,7 +644,7 @@ on refresh:
     it "encodeEnsemble omits scenarios: when there are none, and includes it \
 
        \with the scenario's name and commands when there are" $
-      let src = "@viewer \"V\" var=z\npass\n"
+      let src = "@viewer \"V\" over z\npass\n"
       in shouldBuild src $ \ens -> do
            bytesEmpty <- encodeEnsemble ens
            case YAML.decodeEither' bytesEmpty of
@@ -653,7 +669,7 @@ on refresh:
       let path = dir </> "fractalstream-frontend-properties-test.fs"
       writeFile path (unlines
         [ "script: |"
-        , "  @viewer \"V\" var=z"
+        , "  @viewer \"V\" over z"
         , "  pass"
         , "wx-properties:"
         , "  viewers:"
@@ -688,7 +704,7 @@ on refresh:
         , "  preview: " ++ BS8.unpack (B64.encode png)
         , "  author: Someone"
         , "script: |"
-        , "  @viewer \"V\" var=z"
+        , "  @viewer \"V\" over z"
         , "  pass"
         ]) parseEnsembleFromFile
       case result of
@@ -714,7 +730,7 @@ on refresh:
     it "writes metadata with characters outside the Basic Multilingual \
        \Plane (like 𝝎) as they are, not escaped" $ do
       let src = TE.encodeUtf8 (Text.pack (unlines
-            [ "script: |", "  @viewer \"V\" var=z", "  pass"
+            [ "script: |", "  @viewer \"V\" over z", "  pass"
             , "metadata:", "  title: 𝝎 and 𝑖", "  description: |"
             , "    For each 𝝎_0;", "    and θ." ]))
       loadProjectBytes "test.fs" src >>= \case
@@ -736,7 +752,7 @@ on refresh:
        \the project" $ do
       result <- withProjectFile (unlines
         [ "script: |"
-        , "  @viewer \"V\" var=z"
+        , "  @viewer \"V\" over z"
         , "  pass"
         , "metadata:"
         , "  title: Still here"
@@ -753,7 +769,7 @@ on refresh:
        \to a rebuilt ensemble" $ do
       result <- withProjectFile (unlines
         [ "script: |"
-        , "  @viewer \"V\" var=z"
+        , "  @viewer \"V\" over z"
         , "  pass"
         , "metadata:"
         , "  title: Carried"
@@ -764,7 +780,7 @@ on refresh:
         , "wx-properties:"
         , "  viewers: {}"
         ]) parseEnsembleFromFile
-      Right rebuilt <- buildEnsembleFromScript "@viewer \"V\" var=z\npass\n"
+      Right rebuilt <- buildEnsembleFromScript "@viewer \"V\" over z\npass\n"
       case result of
         Left err -> expectationFailure err
         Right ens -> do
@@ -783,7 +799,7 @@ on refresh:
           tableNamed ens n = tablesOf ens >>= \ts -> case [ v | (n', _, v) <- ts, n' == n ] of
             v : _ -> pure v
             [] -> fail ("no table named " ++ n)
-          declares decls = unlines (["@config \"Configuration\""] ++ decls ++ ["@viewer \"V\" var=z", "pass"])
+          declares decls = unlines (["@config \"Configuration\""] ++ decls ++ ["@viewer \"V\" over z", "pass"])
       Right old <- buildEnsembleFromScript (declares
         [ "T : Table 2 of C", "U : Table 1 of Z", "W : Table 2 of R" ])
       Right new <- buildEnsembleFromScript (declares
@@ -805,7 +821,7 @@ on refresh:
             , "T : Table 3 of C x Z"
             , "B : Table 1 of Boolean"
             , "E : Table 2 of R"
-            , "@viewer \"V\" var=z"
+            , "@viewer \"V\" over z"
             , "pass" ]
           tableNamed ens n = ensembleTables ens >>= \ts -> case [ v | (n', _, v) <- ts, n' == n ] of
             v : _ -> pure v
@@ -864,7 +880,7 @@ on refresh:
 
     it "skips a saved table whose data isn't what its manifest says" $ do
       Right ens <- buildEnsembleFromScript (unlines
-        [ "@config \"Configuration\"", "T : Table 1 of R", "@viewer \"V\" var=z", "pass" ])
+        [ "@config \"Configuration\"", "T : Table 1 of R", "@viewer \"V\" over z", "pass" ])
       Just t <- newTable RealType [4] (0, 0) (1, 1)
       ensembleTables ens >>= mapM_ (\(_, _, v) -> setValue' v t)
       ensembleTables ens >>= captureTables >>= setValue' (ensembleSavedTables ens)
@@ -878,10 +894,10 @@ on refresh:
     it "skips a saved table that no longer fits the project, with a warning" $ do
       Right old <- buildEnsembleFromScript (unlines
         [ "@config \"Configuration\"", "T : Table 1 of R", "U : Table 1 of R", "W : Table 1 of R"
-        , "@viewer \"V\" var=z", "pass" ])
+        , "@viewer \"V\" over z", "pass" ])
       Right new <- buildEnsembleFromScript (unlines
         [ "@config \"Configuration\"", "T : Table 1 of Z", "W : Table 1 of R"
-        , "@viewer \"V\" var=z", "pass" ])
+        , "@viewer \"V\" over z", "pass" ])
       Just t <- newTable RealType [4] (0, 0) (1, 1)
       ensembleTables old >>= mapM_ (\(_, _, v) -> setValue' v t)
       saved <- ensembleTables old >>= captureTables
@@ -894,7 +910,7 @@ on refresh:
 
     it "counts a change to a table as a change to the project's values" $ do
       Right ens <- buildEnsembleFromScript (unlines
-        [ "@config \"Configuration\"", "T : Table 1 of R", "@viewer \"V\" var=z", "pass" ])
+        [ "@config \"Configuration\"", "T : Table 1 of R", "@viewer \"V\" over z", "pass" ])
       changes <- newIORef (0 :: Int)
       stop <- watchValues ens (modifyIORef' changes (+ 1))
       Just t <- newTable RealType [4] (0, 0) (1, 1)
@@ -909,9 +925,9 @@ on refresh:
             , "a : R as \"a\" := 1/2"
             , "b : C as \"b\" := 0"
             , "show_it : Boolean as \"Show it\" := false"
-            , "@viewer \"V\" var=z"
+            , "@viewer \"V\" over z"
             , "pass"
-            , "@tool \"T\" for=\"V\""
+            , "@tool \"T\" for \"V\""
             , "n : Z as \"n\" := 3"
             , "on click:"
             , "  pass"
@@ -955,7 +971,7 @@ on refresh:
         , "p : R x R as \"p\" := (1, 2.5)"
         , "t : Text as \"t\" := \"hello\""
         , "xs : List of Z as \"xs\" := [1, 2, 3]"
-        , "@viewer \"V\" var=z colorizer=Manual"
+        , "@viewer \"V\" over z\nsetup:\n  colorizer: Manual"
         , "pass"
         ]
       fields <- ensembleFields ens
@@ -966,7 +982,7 @@ on refresh:
         , ("max_iters", "100"), ("escape_radius", "10"), ("vanishing_radius", "0.0001") ]
 
     it "reads a project file's format, and refuses a format it doesn't know" $ do
-      let file fmt = BS8.pack (fmt ++ "script: |\n  @viewer \"V\" var=z\n  pass\n")
+      let file fmt = BS8.pack (fmt ++ "script: |\n  @viewer \"V\" over z\n  pass\n")
           opened bytes = loadProjectBytes "p.fs" bytes >>= \case
             Left err -> pure (Left err)
             Right (Built _) -> pure (Right ())
@@ -984,9 +1000,9 @@ on refresh:
       fmap (const ()) (readProjectMetadata (file "format: 2\n")) `shouldSatisfy` either (const True) (const False)
       -- (written back with the format this version writes, once)
       rewriteProjectFile id id (file "format: 1\n")
-        `shouldBe` Right "format: 1\nscript: |\n  @viewer \"V\" var=z\n  pass\n"
+        `shouldBe` Right "format: 1\nscript: |\n  @viewer \"V\" over z\n  pass\n"
       rewriteProjectFile id id (file "")
-        `shouldBe` Right "format: 1\nscript: |\n  @viewer \"V\" var=z\n  pass\n"
+        `shouldBe` Right "format: 1\nscript: |\n  @viewer \"V\" over z\n  pass\n"
 
     it "loads a project whose script doesn't build, keeping its file's \
        \other keys, and puts its saved values in place once it's fixed" $ do
@@ -994,7 +1010,7 @@ on refresh:
             [ "script: |"
             , "  @config \"Configuration\""
             , "  a : R as \"a\" := 1"
-            , "  @viewer \"V\" var=z"
+            , "  @viewer \"V\" over z"
             , "  " ++ script
             , "metadata:"
             , "  title: Kept"
@@ -1011,7 +1027,7 @@ on refresh:
           KM.keys <$> getDynamic (ensembleFrontendProperties ens) >>= (`shouldBe` ["values"])
           -- fixed and rebuilt: the file's saved value goes in
           Right fixed <- buildEnsembleFromScript
-            "@config \"Configuration\"\na : R as \"a\" := 1\n@viewer \"V\" var=z\npass\n"
+            "@config \"Configuration\"\na : R as \"a\" := 1\n@viewer \"V\" over z\npass\n"
           carryOverProjectState ens fixed
           changedValues fixed >>= (`shouldBe` SavedValues (Map.singleton "a" "5") Map.empty)
         Right (Built _) -> expectationFailure "expected the script not to build"
@@ -1027,7 +1043,7 @@ on refresh:
 
 
       Right ens <- buildEnsembleFromScript
-        "@config \"Configuration\"\na : R as \"a\" := 1\n@viewer \"V\" var=z\npass\n"
+        "@config \"Configuration\"\na : R as \"a\" := 1\n@viewer \"V\" over z\npass\n"
       warnings <- applySavedValues ens
         (SavedValues (Map.fromList [("a", "not a number"), ("gone", "1")]) Map.empty)
       length warnings `shouldBe` 2
@@ -1036,7 +1052,7 @@ on refresh:
     it "carries changed configuration values over to a rebuilt project, \
        \leaving untouched ones to the edited script's defaults" $ do
       let script defaultB = "@config \"Configuration\"\na : R as \"a\" := 1\nb : R as \"b\" := "
-                            ++ defaultB ++ "\n@viewer \"V\" var=z\npass\n"
+                            ++ defaultB ++ "\n@viewer \"V\" over z\npass\n"
       Right old <- buildEnsembleFromScript (script "2")
       fs <- ensembleFields old
       forM_ [ f | (ProjectConfig, f) <- fs, fieldName f == "a" ] $ \f -> void (setFieldText f "10")
@@ -1072,33 +1088,33 @@ pass
 
     it "rejects a tool targeting an unknown viewer" $
       [r|
-@viewer "A" var=z
+@viewer "A" over z
 pass
 
-@tool "T" for="B"
+@tool "T" for "B"
 on refresh:
   pass
 |] `shouldFailWith` "targets an unknown viewer `B`"
 
     it "rejects a tool with no `for=` when there's more than one viewer" $
       [r|
-@viewer "A" var=z
+@viewer "A" over z
 pass
 
-@viewer "B" var=z
+@viewer "B" over z
 pass
 
 @tool "T"
 on refresh:
   pass
-|] `shouldFailWith` "doesn't specify `for=`"
+|] `shouldFailWith` "doesn't say which viewer it's for"
 
     it "rejects two viewers sharing a title" $
       [r|
-@viewer "A" var=z
+@viewer "A" over z
 pass
 
-@viewer "A" var=w
+@viewer "A" over w
 pass
 |] `shouldFailWith` "share the title `A`"
 
@@ -1113,13 +1129,13 @@ foo : Z := "hello"
 @config "C"
 foo : Z as "Pick" choice {"a", "b"} := 5
 
-@viewer "V" var=z
+@viewer "V" over z
 pass
 |] `shouldFailWith` "out of range"
 
     it "rejects a viewer body that references an undeclared variable" $
       [r|
-@viewer "V" var=z
+@viewer "V" over z
 w <- w + 1
 |] `shouldFailWith` "No variable named"
 
@@ -1130,14 +1146,16 @@ w <- w + 1
 C : C := 0
 selected_C : Bool := false
 
-@viewer "Mandelbrot set" var=C
+@viewer "Mandelbrot set" over C
 z := 0
 iterate z -> z^2 + C until z escapes
 
-@viewer "Julia set" show_if=selected_C
+@viewer "Julia set"
+setup:
+  show if: selected_C
 iterate z -> z^2 + C until z escapes
 
-@tool "Pick C" for="Mandelbrot set"
+@tool "Pick C" for "Mandelbrot set"
 on click:
   C <- click
   selected_C <- true
@@ -1165,7 +1183,9 @@ on click:
 n : Z := 3
 show_julia : Bool := true
 
-@viewer "V" show_if="show_julia and max(n, 2) > 2"
+@viewer "V"
+setup:
+  show if: show_julia and max(n, 2) > 2
 pass
 |] $ \ens -> do
         [viewer] <- getDynamic (ensembleViewers ens)
@@ -1176,18 +1196,24 @@ pass
 @config "Parameters"
 n : Z := 3
 
-@viewer "V" show_if=n
+@viewer "V"
+setup:
+  show if: n
 pass
 |] `shouldFailWith` "must be a truth value"
       [r|
-@viewer "V" show_if=nope
+@viewer "V"
+setup:
+  show if: nope
 pass
-|] `shouldFailWith` "show_if="
+|] `shouldFailWith` "show if:"
       -- (the viewer's own variable has no value outside a pixel)
       [r|
-@viewer "V" show_if="|z| < 1"
+@viewer "V"
+setup:
+  show if: |z| < 1
 pass
-|] `shouldFailWith` "show_if="
+|] `shouldFailWith` "show if:"
 
     it "can use @common's values and one-line functions, following the configuration" $
       shouldBuild [r|
@@ -1198,7 +1224,9 @@ n : Z := 3
 threshold := 2
 big(k) := k > threshold
 
-@viewer "V" show_if="big(n)"
+@viewer "V"
+setup:
+  show if: big(n)
 pass
 |] $ \ens -> do
         [viewer] <- getDynamic (ensembleViewers ens)
@@ -1219,7 +1247,9 @@ n : Z := 3
 function big(k):
   big <- k > 2
 
-@viewer "V" show_if="big(n)"
+@viewer "V"
+setup:
+  show if: big(n)
 pass
 |] `shouldFailWith` "one-line functions"
 
@@ -1230,7 +1260,7 @@ pass
 @config "Lattice"
 τ : C := 0.5 + 1.5 i
 
-@viewer "Torus" lattice=τ
+@viewer "Torus" modulo the lattice τ
 (m, n) := cell
 color <- if side_distance < pixel_size then black else rgb(m / 4, n / 4, 0.5)
 |] $ \ens -> do
@@ -1248,7 +1278,7 @@ color <- if side_distance < pixel_size then black else rgb(m / 4, n / 4, 0.5)
 
     it "takes a pair of periods, and a center" $
       shouldBuild [r|
-@viewer "Torus" lattice="(2, 1 + i)" latticeCenter="0.5 i"
+@viewer "Torus" modulo the lattice (2, 1 + i) centered at (0.5 i)
 pass
 |] $ \ens -> do
         [viewer] <- getDynamic (ensembleViewers ens)
@@ -1256,7 +1286,7 @@ pass
 
     it "takes a pair of vectors in a real viewer" $
       shouldBuild [r|
-@viewer "Square torus" xvar=x yvar=y lattice="((1, 0), (0, 1))"
+@viewer "Square torus" over (x, y) modulo the lattice ((1, 0), (0, 1))
 color <- if side_distance < pixel_width then black else rgb(x + 0.5, y + 0.5, 0.5)
 |] $ \ens -> do
         [viewer] <- getDynamic (ensembleViewers ens)
@@ -1264,39 +1294,43 @@ color <- if side_distance < pixel_width then black else rgb(x + 0.5, y + 0.5, 0.
 
     it "is only for viewers of the plane, and only uses the configuration's values" $ do
       [r|
-@viewer "V" view=sphere lattice="i"
+@viewer "V" on the sphere modulo the lattice i
 pass
 |] `shouldFailWith` "only a viewer of the plane"
       [r|
-@viewer "V" xvar=x yvar=y lattice="i"
+@viewer "V" over (x, y) modulo the lattice i
 pass
 |] `shouldFailWith` "pair of vectors"
       [r|
-@viewer "V" latticeCenter=0
+@viewer "V" centered at 0
 pass
-|] `shouldFailWith` "needs a `lattice=` too"
+|] `shouldFailWith` "comes with one of those"
       [r|
-@viewer "V" lattice="nope"
+@viewer "V" modulo the lattice nope
 pass
-|] `shouldFailWith` "lattice="
+|] `shouldFailWith` "modulo the lattice"
 
   describe "a viewer's tiled=" $ do
 
     it "starts a viewer with a lattice or a group showing all of its tiles, or only its domain" $ do
       shouldBuild [r|
-@viewer "Torus" lattice="i"
+@viewer "Torus" modulo the lattice i
 pass
 |] $ \ens -> do
         [viewer] <- getDynamic (ensembleViewers ens)
         traverse getDynamic (cvTiledV viewer) >>= (`shouldBe` Just True)
       shouldBuild [r|
-@viewer "Torus" lattice="i" tiled=false
+@viewer "Torus" modulo the lattice i
+setup:
+  tiled: false
 pass
 |] $ \ens -> do
         [viewer] <- getDynamic (ensembleViewers ens)
         traverse getDynamic (cvTiledV viewer) >>= (`shouldBe` Just False)
       shouldBuild [r|
-@viewer "Modular" view=halfplane group=modular tiled=false
+@viewer "Modular" on the half-plane modulo the modular group
+setup:
+  tiled: false
 pass
 |] $ \ens -> do
         [viewer] <- getDynamic (ensembleViewers ens)
@@ -1310,11 +1344,15 @@ pass
 
     it "is only for a viewer with a lattice or a group, and is true or false" $ do
       [r|
-@viewer "V" tiled=false
+@viewer "V"
+setup:
+  tiled: false
 pass
-|] `shouldFailWith` "needs a `lattice=` or a `group=`"
+|] `shouldFailWith` "needs a `modulo the lattice` or a `modulo the group`"
       [r|
-@viewer "V" lattice="i" tiled=maybe
+@viewer "V" modulo the lattice i
+setup:
+  tiled: maybe
 pass
 |] `shouldFailWith` "`true` or `false`"
 
@@ -1389,7 +1427,7 @@ pass
         [ "@viewer \"V\""
         , "color <- if sin(re z) > 0 then red else blue"
         , ""
-        , "@tool \"T\" for=\"V\""
+        , "@tool \"T\" for \"V\""
         , "sin : R as \"sin\" := 1"
         , "on click:"
         , "  sin <- sin + 1" ])
@@ -1416,7 +1454,7 @@ pass
 
     it "accepts a simple, valid single-viewer script" $
       checkAccepts [r|
-@viewer "Mandelbrot Set" var=C
+@viewer "Mandelbrot Set" over C
 z : C := 0
 iterate z -> z^2 + C until z escapes
 color <- if stuck then black else rainbow(iterations / 20)
@@ -1425,7 +1463,7 @@ color <- if stuck then black else rainbow(iterations / 20)
     it "catches a viewer body referencing an undeclared variable, live, \
        \without building an Ensemble" $
       checkFailsWith [r|
-@viewer "V" var=z
+@viewer "V" over z
 w <- w + 1
 |] "No variable named"
 
@@ -1434,7 +1472,7 @@ w <- w + 1
 @config "C"
 radius : R := 2
 
-@viewer "V" var=z
+@viewer "V" over z
 color <- if |z| > raduis then black else white
 |] "No variable named"
 
@@ -1443,7 +1481,7 @@ color <- if |z| > raduis then black else white
 @config "C"
 radius : R := 2
 
-@viewer "V" var=z
+@viewer "V" over z
 color <- if |z| > radius then black else white
 |]
 
@@ -1458,31 +1496,31 @@ foo : Z := "hello"
 @config "C"
 foo : Z as "Pick" choice {"a", "b"} := 5
 
-@viewer "V" var=z
+@viewer "V" over z
 pass
 |] "out of range"
 
     it "still catches cross-stanza errors (unchanged from before this was extended)" $ do
       checkFailsWith [r|
-@viewer "A" var=z
+@viewer "A" over z
 pass
 
-@tool "T" for="B"
+@tool "T" for "B"
 on refresh:
   pass
 |] "targets an unknown viewer `B`"
       checkFailsWith [r|
-@viewer "A" var=z
+@viewer "A" over z
 pass
 
-@viewer "A" var=w
+@viewer "A" over w
 pass
 |] "share the title `A`"
 
     it "agrees with buildEnsembleFromScript on acceptance/rejection, across a \
        \mix of valid and invalid scripts" $ do
       agree [r|
-@viewer "Mandelbrot Set" var=C
+@viewer "Mandelbrot Set" over C
 z : C := 0
 iterate z -> z^2 + C until z escapes
 |]
@@ -1490,11 +1528,11 @@ iterate z -> z^2 + C until z escapes
 @config "C"
 radius : R := 2
 
-@viewer "V" var=z
+@viewer "V" over z
 color <- if |z| > radius then black else white
 |]
       agree [r|
-@viewer "V" var=z
+@viewer "V" over z
 w <- w + 1
 |]
       agree [r|
@@ -1505,24 +1543,24 @@ foo : Z := "hello"
 @config "C"
 foo : Z as "Pick" choice {"a", "b"} := 5
 
-@viewer "V" var=z
+@viewer "V" over z
 pass
 |]
       agree [r|
 @common
 f(z) := z^2 + C
 
-@viewer "Mandelbrot" var=C
+@viewer "Mandelbrot" over C
 z : C := 0
 iterate z -> f(z) until z escapes
 |]
 
     it "catches a tool body referencing an undeclared variable" $
       checkFailsWith [r|
-@viewer "V" var=z
+@viewer "V" over z
 pass
 
-@tool "T" for="V"
+@tool "T" for "V"
 on click:
   draw point at badvar
 |] "No variable named"
@@ -1532,20 +1570,20 @@ on click:
 @config "C"
 center : C := 0
 
-@viewer "V" var=z
+@viewer "V" over z
 pass
 
-@tool "T" for="V"
+@tool "T" for "V"
 on click:
   draw point at center
 |]
 
     it "accepts a tool body that references the tool's own declaration" $
       checkAccepts [r|
-@viewer "V" var=z
+@viewer "V" over z
 pass
 
-@tool "T" for="V"
+@tool "T" for "V"
 center : C := 0
 on click:
   draw point at center
@@ -1558,10 +1596,10 @@ on click:
 @config "C"
 center : C := 0
 
-@viewer "V" var=z
+@viewer "V" over z
 pass
 
-@tool "T" for="V"
+@tool "T" for "V"
 center : C := 1
 on click:
   draw point at center
@@ -1569,10 +1607,10 @@ on click:
 
     it "catches a tool error at build time, not only when the tool is first used" $
       agree [r|
-@viewer "V" var=z
+@viewer "V" over z
 pass
 
-@tool "T" for="V"
+@tool "T" for "V"
 on click:
   draw point at badvar
 |]
@@ -1607,10 +1645,10 @@ a : C as "a =" := 1
 f(z) := z^3 - a
 step := 1
 
-@viewer "V" var=z
+@viewer "V" over z
 iterate z -> z - step * f(z) / f'(z) until f(z) vanishes
 
-@tool "T" for="V"
+@tool "T" for "V"
 on click:
   z := click
   z <- z - step * f(z) / f'(z)
@@ -1621,7 +1659,7 @@ on click:
 
     it "can come after the stanzas that use it, and can be split up" $
       accepts [r|
-@viewer "V" var=z
+@viewer "V" over z
 color <- if g(z) < 1 then black else white
 
 @common
@@ -1636,10 +1674,10 @@ g(w) := f(w) / 2
 @common
 k := 2
 
-@viewer "V" var=z
+@viewer "V" over z
 pass
 
-@tool "T" for="V"
+@tool "T" for "V"
 k : Z as "k" := 1
 on click:
   k <- k + 1
@@ -1654,10 +1692,10 @@ on click:
 g(w) := w + z
 c := 2
 
-@viewer "V" var=z
+@viewer "V" over z
 color <- if |g(z)| < c then black else white
 
-@tool "T" for="V"
+@tool "T" for "V"
 on refresh:
   erase
 on click:
@@ -1668,10 +1706,10 @@ on click:
 @common
 g(w) := w + z
 
-@viewer "V" var=z
+@viewer "V" over z
 pass
 
-@tool "T" for="V"
+@tool "T" for "V"
 on refresh:
   draw point at g(1)
 |] "No variable named z"
@@ -1684,7 +1722,7 @@ unused := 4
 f(t) := a t
 g(t) := f(t) + 1
 
-@viewer "V" var=z
+@viewer "V" over z
 color <- if |g(z)| < 1 then black else white
 |]
       code `shouldSatisfy` isInfixOf "let `a` = 3"
@@ -1695,7 +1733,7 @@ color <- if |g(z)| < 1 then black else white
 @common
 erase
 
-@viewer "V" var=z
+@viewer "V" over z
 pass
 |] "can only contain variable declarations"
       rejects [r|
@@ -1703,7 +1741,7 @@ pass
 f(z) := z
 color <- black
 
-@viewer "V" var=z
+@viewer "V" over z
 pass
 |] "can only contain variable declarations"
 
@@ -1712,7 +1750,7 @@ pass
 @common bogus=1
 f(z) := z
 
-@viewer "V" var=z
+@viewer "V" over z
 pass
 |] "bogus"
 
@@ -1731,11 +1769,11 @@ define trace:
     z <- z^2 + 0.25
   until z escapes
 
-@viewer "V" var=z
+@viewer "V" over z
 iterate z -> z^2 + 0.25 until z escapes
 run shade(blue)
 
-@tool "T" for="V"
+@tool "T" for "V"
 on click:
   z := click
   run trace

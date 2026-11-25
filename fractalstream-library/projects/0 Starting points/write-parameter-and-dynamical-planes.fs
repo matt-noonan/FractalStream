@@ -19,12 +19,16 @@ script: |
   @config "Configuration"
   C : C as "C =" := 0
 
-  @viewer "Parametric complex dynamics parameter plane" var=C pixelSize=1/100
+  @viewer "Parametric complex dynamics parameter plane" over C
+  setup:
+    pixel size: 1/100
   dynamic := false
   z := z0
   run script
 
-  @viewer "Parametric complex dynamics dynamical plane" pixelSize=1/100
+  @viewer "Parametric complex dynamics dynamical plane"
+  setup:
+    pixel size: 1/100
   dynamic := true
   run script
 metadata:

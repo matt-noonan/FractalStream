@@ -996,7 +996,7 @@ hyperbolicDisplay = \case
   _ -> Nothing
 
 -- | Where a script's points are, by the view its script names: the
--- half-plane for @view=halfplane@, else the disk.
+-- half-plane for @on the half-plane@, else the disk.
 hyperbolicModel :: ViewKind -> HyperbolicModel
 hyperbolicModel = \case
   HalfPlaneView -> HalfPlaneModel

@@ -1,6 +1,8 @@
 format: 1
 script: |
-  @viewer "List Remove" var=z pixelSize="1/64"
+  @viewer "List Remove" over z
+  setup:
+    pixel size: 1/64
   all : List of R := [-3, -2, -1, 0, 1, 2, 3]
   negatives : List of R := remove(all, x -> x >= 0)
   closest : R := 1000

@@ -9,14 +9,22 @@ script: |
   # one of the two preimages of z under f (the other is its negative)
   preimage(z) := sqrt((-C + z) / (z - 1))
 
-  @viewer "C-plane" var=C center=0 pixelSize=1/128
+  @viewer "C-plane" over C
+  setup:
+    center: 0
+    pixel size: 1/128
   z := C
   iterate z -> f(z) until z escapes
 
-  @viewer "Dynamics" center=0 pixelSize=1/128
+  @viewer "Dynamics"
+  setup:
+    center: 0
+    pixel size: 1/128
   iterate z -> f(z) until z escapes
 
-  @tool "Preimages" for=Dynamics shortcut="i" drawLayer=10
+  @tool "Preimages" for "Dynamics" with shortcut i
+  setup:
+    draw layer: 10
   pre1 : C as "Value" := 0
   color2 : Color as "Color" := red
   pre2 : C as "Value" := 0
@@ -35,7 +43,9 @@ script: |
     use color3 for line
     draw point at pre2
 
-  @tool "Mark orbit of critical point" for=Dynamics shortcut=o drawLayer=11
+  @tool "Mark orbit of critical point" for "Dynamics" with shortcut o
+  setup:
+    draw layer: 11
   follow : Boolean as "Draw lines between iterations?" := false
   zero_orbit_color : Color as "Orbit of 0" := blue
   one_color : Color as "Mark 1" := green
@@ -57,7 +67,9 @@ script: |
       z <- f(z)
     while z != 0
 
-  @tool "Pullback" for=Dynamics shortcut=p drawLayer=12
+  @tool "Pullback" for "Dynamics" with shortcut p
+  setup:
+    draw layer: 12
   follow : Boolean as "Follow previous preimages?" := false
   last_z : C as "Selected point" := 0
   last_pre1 : C as "Value" := 0

@@ -1,4 +1,4 @@
--- | Viewers with a group (@group=@): each pixel's point folded into the
+-- | Viewers with a group (@modulo the group@): each pixel's point folded into the
 -- group's fundamental polygon, tools' points too, tools' drawings repeated
 -- in each tile, and views kept precise however far they're moved, end to
 -- end.
@@ -24,22 +24,22 @@ project = unlines
   [ "@config \"Mark\""
   , "mark : C := 5 + 5i"
   , ""
-  , "@viewer \"G\" view=halfplane group=modular"
+  , "@viewer \"G\" on the half-plane modulo the modular group"
   , "color <- if side_distance < 1.5 pixel_size / im(z) then black ..."
   , "         else if |z - mark| < 0.08 then yellow ..."
   , "         else if fold_count = 0 then red else if fold_count = 1 then blue else grey"
   , ""
   -- (colored by the folded point alone, which the group doesn't change:
   -- red on the right half of the domain, blue on the left)
-  , "@viewer \"I\" view=halfplane group=modular"
+  , "@viewer \"I\" on the half-plane modulo the modular group"
   , "color <- if side_distance < 1.5 pixel_size / im(z) then black else if re(z) > 0 then red else blue"
   , ""
-  , "@tool \"Set\" for=\"G\""
+  , "@tool \"Set\" for \"G\""
   , "on click:"
   , "  p := click"
   , "  mark <- p"
   , ""
-  , "@tool \"Dot\" for=\"G\""
+  , "@tool \"Dot\" for \"G\""
   , "on click:"
   , "  p := click"
   , "  erase"
@@ -47,7 +47,7 @@ project = unlines
   , "  use rgb(0, 1, 0) for stroke"
   , "  draw filled circle at p with radius 0.05"
   , ""
-  , "@tool \"Marker\" for=\"G\""
+  , "@tool \"Marker\" for \"G\""
   , "on click:"
   , "  p := click"
   , "  erase"
@@ -65,10 +65,10 @@ tableProject bad = unlines $
   [ "@config \"Group\""
   , "T : Table 2 of C"
   , ""
-  , "@viewer \"G\" view=halfplane group=T groupCenter=\"2i\""
+  , "@viewer \"G\" on the half-plane modulo the group T centered at 2i"
   , "color <- if fold_count = 0 then red else blue"
   , ""
-  , "@tool overlay for=\"G\""
+  , "@tool overlay for \"G\""
   , "on refresh:"
   , "  (rows, n) := table_size(T)"
   , "  if n = 0:" ]

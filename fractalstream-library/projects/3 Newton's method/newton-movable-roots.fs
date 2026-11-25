@@ -15,7 +15,9 @@ script: |
   # one step of Newton's method
   newton(z) := z - f(z) / f'(z)
 
-  @viewer "Roots of f" vanish=tol
+  @viewer "Roots of f"
+  setup:
+    vanishing radius: tol
   lastZ := 0
   repeat:
     lastZ <- z
@@ -34,7 +36,7 @@ script: |
   else:
     color <- black
 
-  @tool "Trace" shortcut=t
+  @tool "Trace" with shortcut t
   on deactivated:
     erase
 
@@ -49,7 +51,7 @@ script: |
 
     draw point at z
 
-  @tool "Move roots" shortcut=m
+  @tool "Move roots" with shortcut m
   on activated:
     draw point at a
     draw point at b

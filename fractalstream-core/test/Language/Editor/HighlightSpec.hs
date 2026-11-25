@@ -35,19 +35,21 @@ f(z) := z^2 + C
 define shade(c):
   color <- blend(0.5, dark c, light c)
 
-@viewer "Julia set" pixelSize=1/150
+@viewer "Julia set"
+setup:
+  pixel size: 1/150
 iterate z -> f(z) until z escapes  # the usual
 if stuck:
   run shade(blue)
 else:
   color <- rainbow(iterations / steps)
 
-@viewer "Parameter plane" var=C
+@viewer "Parameter plane" over C
 z := 0
 iterate z -> f(z) until z escapes
 color <- if stuck then black else white
 
-@tool "Trace" for="Julia set"
+@tool "Trace" for "Julia set"
 radius : R := 0.1
 on click:
   w := click
@@ -87,7 +89,7 @@ spec = describe "highlighting scripts" $ do
     let src = unlines
           [ "@config \"P\"", "T : Table 3 of R", ""
           , "@viewer \"V\"", "color <- red", ""
-          , "@tool \"Fill\" for=\"V\"", "on click:", "  p := click"
+          , "@tool \"Fill\" for \"V\"", "on click:", "  p := click"
           , "  reset T to (viewer_width, viewer_height, 2) filled with 1"
           , "  resize T to (viewer_width, viewer_height, 3)"
           , "  T @ (point p, *) <- [1, 2, 3]" ]
@@ -143,7 +145,7 @@ spec = describe "highlighting scripts" $ do
     c "p" 0 `shouldBe` Just Variable
 
   it "gives a tool its handlers' points, not its viewer's coordinate" $ do
-    let src = "@viewer \"V\" var=w\npass\n\n@tool \"T\"\non click:\n  draw point at click\n  draw point at w\n"
+    let src = "@viewer \"V\" over w\npass\n\n@tool \"T\"\non click:\n  draw point at click\n  draw point at w\n"
     classOf src "click" 1 `shouldBe` Just BuiltinValue
     classOf src "w" 1 `shouldBe` Just Undefined
 
@@ -155,7 +157,7 @@ spec = describe "highlighting scripts" $ do
     classOf src "end" 0 `shouldBe` Just BuiltinValue
 
   it "knows a real viewer's coordinates and pixel dimensions, in it and its tools" $ do
-    let src = "@viewer \"V\" xvar=a yvar=b\ncolor <- if a < b and pixel_height > 0 then red else blue\n\n"
+    let src = "@viewer \"V\" over (a, b)\ncolor <- if a < b and pixel_height > 0 then red else blue\n\n"
            ++ "@tool \"T\"\non click:\n  (a, b) := click\n  write text(pixel_width) at (a, b)\n"
     classOf src "a" 1 `shouldBe` Just Variable
     classOf src "b" 1 `shouldBe` Just Variable
@@ -164,8 +166,8 @@ spec = describe "highlighting scripts" $ do
     classOf src "pixel_width" 0 `shouldBe` Just Parameter
 
   it "knows what a viewer's group or lattice gives its code" $ do
-    let src = "@viewer \"V\" lattice=i\n(m, n) := cell\ncolor <- if side_distance < m then red else blue\n\n"
-           ++ "@viewer \"G\" view=disk group=modular\ncolor <- if side_distance < fold_count + side_index then red else blue\n\n"
+    let src = "@viewer \"V\" modulo the lattice i\n(m, n) := cell\ncolor <- if side_distance < m then red else blue\n\n"
+           ++ "@viewer \"G\" on the disk modulo the modular group\ncolor <- if side_distance < fold_count + side_index then red else blue\n\n"
            ++ "@viewer \"P\"\ncolor <- if side_distance < 1 then red else blue\n"
     classOf src "cell" 0 `shouldBe` Just Variable
     classOf src "side_distance" 0 `shouldBe` Just Variable
@@ -200,6 +202,16 @@ spec = describe "highlighting scripts" $ do
     let src = "@viewer \"V\"\nd := diff_bar(|z|^2, z) + ℘'(z, 1, i)\ncolor <- domain_color(d)\n"
     classOf src "diff_bar" 0 `shouldBe` Just BuiltinFunction
     classOf src "℘" 0 `shouldBe` Just BuiltinFunction
+
+  it "knows a header's phrases and a setup: block's settings" $ do
+    let src = "@config \"P\"\nn : Z := 2\n\n@viewer \"V\" over w\nsetup:\n  center: 0\n  show if: n > 1\n  coloring:\n    color_speed <- 3\ncolor <- if |w| < n then red else blue\n"
+    classOf src "setup" 0 `shouldBe` Just Keyword
+    classOf src "center" 0 `shouldBe` Just Keyword
+    classOf src "show" 0 `shouldBe` Just Keyword
+    classOf src "n" 2 `shouldBe` Just Parameter        -- `show if: n > 1`
+    classOf src "color_speed" 0 `shouldBe` Just Parameter
+    classOf src "w" 1 `shouldBe` Just Variable          -- the code's `w`, from `over w`
+    classOf src "center" 0 `shouldNotBe` Just Variable
 
   it "knows `stops` and `stopped`" $ do
     let src = "iterate z -> z^2 until z stops\nrepeat:\n  pass\nuntil z stopped\n"

@@ -227,7 +227,11 @@ script: |
     else:
       color <- black
 
-  @viewer "Parameter plane" var=t5 center=0 pixelSize=1/120 limit=iters
+  @viewer "Parameter plane" over t5
+  setup:
+    center: 0
+    pixel size: 1/120
+    iteration limit: iters
   cls5 : Z := 0
   cap5 : Z := 0
   if bib5 or solid5:
@@ -292,7 +296,11 @@ script: |
       pick <- k4
     run per5_paint(pick)
 
-  @viewer "Julia set" center=0 pixelSize=1/150 limit=iters
+  @viewer "Julia set"
+  setup:
+    center: 0
+    pixel size: 1/150
+    iteration limit: iters
   pa := 0.0
   pb := 0.0
   run per5_param(t5)
@@ -300,13 +308,13 @@ script: |
   iterate u -> 1 + (pa u + pb)/u^2 until captured5(u)
   run shade5
 
-  @tool overlay for="Parameter plane"
+  @tool overlay for "Parameter plane"
   on refresh:
     erase
     use white for stroke
     draw circle at t5 with radius 3 pixel_size
 
-  @tool "Trace orbit" for="Julia set" shortcut=t
+  @tool "Trace orbit" for "Julia set" with shortcut t
   on click:
     w0 := click
     erase

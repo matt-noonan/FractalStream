@@ -94,18 +94,30 @@ script: |
   @config "Orbit Tracker"
   start : C as "orbit start = " := 0
 
-  @viewer "Parameter space" var=c limit=maxIters escape=maxRadius vanish=minRadius center=-0.5 pixelSize=1/200
+  @viewer "Parameter space" over c
+  setup:
+    iteration limit: maxIters
+    escape radius: maxRadius
+    vanishing radius: minRadius
+    center: -0.5
+    pixel size: 1/200
   z := critical_point(c)
   w := z
   z0 := z
   run draw_rays(false)
 
-  @viewer "Dynamical plane" limit=maxIters escape=maxRadius vanish=minRadius center=0 pixelSize=1/200
+  @viewer "Dynamical plane"
+  setup:
+    iteration limit: maxIters
+    escape radius: maxRadius
+    vanishing radius: minRadius
+    center: 0
+    pixel size: 1/200
   w := z
   z0 := z
   run draw_rays(true)
 
-  @tool "Trace" for="Dynamical plane" shortcut=t
+  @tool "Trace" for "Dynamical plane" with shortcut t
   on click:
     z := click
     start <- z

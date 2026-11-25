@@ -30,15 +30,15 @@ script: |
     else:
       color <- cycle (iterations / 10, white, blue)
 
-  @viewer "a-plane" var=a
+  @viewer "a-plane" over a
   run draw_henon(0, false)
 
-  @viewer "c-plane" var=c
+  @viewer "c-plane" over c
   run draw_henon(0, false)
 
   @viewer "Hénon dynamics"
   run draw_henon(z, true)
 
-  @tool "Select saddle" for="Hénon dynamics" shortcut=s
+  @tool "Select saddle" for "Hénon dynamics" with shortcut s
   on click:
     pass

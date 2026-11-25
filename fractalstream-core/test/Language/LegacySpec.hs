@@ -126,8 +126,8 @@ spec = describe "translating original-FractalStream scripts" $ do
       , "  report x^2 + y^2."
       , "end." ]
     let s = scriptOf t
-    s `shouldSatisfy` any ("@viewer \"Dynamical plane\" xvar=x yvar=y" `isInfixOf`)
-    s `shouldSatisfy` any ("@viewer \"Parameter plane\" xvar=a yvar=b" `isInfixOf`)
+    s `shouldSatisfy` any ("@viewer \"Dynamical plane\" over (x, y)" `isInfixOf`)
+    s `shouldSatisfy` any ("@viewer \"Parameter plane\" over (a, b)" `isInfixOf`)
     s `shouldSatisfy` any ("a : R as \"a =\" := 0" `isInfixOf`)
     s `shouldSatisfy` any ("x, y := 0, 0" `isInfixOf`)
     s `shouldSatisfy` any ("iterate (x, y) -> (x^2 - y^2 + a, 2 * x * y + b) until (x, y) escapes" `isInfixOf`)
@@ -224,7 +224,7 @@ spec = describe "translating original-FractalStream scripts" $ do
   it "gives the dynamical plane a Trace tool, running the script one pass at a time" $ do
     t <- translated "set w to z.\ndo\nset z to z^2 + c.\nuntil z escapes or z = w.\nif z = w then [Back]."
     let s = scriptOf t
-    s `shouldSatisfy` any ("@tool \"Trace\" for=\"Dynamical plane\" shortcut=t" `isInfixOf`)
+    s `shouldSatisfy` any ("@tool \"Trace\" for \"Dynamical plane\" with shortcut t" `isInfixOf`)
     s `shouldSatisfy` any ("trace_color : Color as \"Trace color\" := white" `isInfixOf`)
     s `shouldSatisfy` any ("z := click" `isInfixOf`)
     s `shouldSatisfy` any ("repeat up to 100 times:" `isInfixOf`)
@@ -278,6 +278,6 @@ spec = describe "translating original-FractalStream scripts" $ do
   it "names the Trace tool differently from a probe called Trace" $ do
     t <- translated "probe real \"Trace\":\n  report re(z).\nend.\niterate z^2 + c until z escapes."
     let s = scriptOf t
-    s `shouldSatisfy` any ("@tool \"Trace\" for=\"Dynamical plane\"" `isInfixOf`)
-    s `shouldSatisfy` any ("@tool \"Trace_2\" for=\"Dynamical plane\" shortcut=t" `isInfixOf`)
+    s `shouldSatisfy` any ("@tool \"Trace\" for \"Dynamical plane\"" `isInfixOf`)
+    s `shouldSatisfy` any ("@tool \"Trace_2\" for \"Dynamical plane\" with shortcut t" `isInfixOf`)
     loads t

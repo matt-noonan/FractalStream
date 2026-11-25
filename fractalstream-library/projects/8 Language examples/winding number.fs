@@ -19,7 +19,7 @@ script: |-
   else:
     color ⟵ red
 
-  @tool overlay for="z plane"
+  @tool overlay for "z plane"
   on refresh:
     erase
     use black for line

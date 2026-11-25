@@ -5,7 +5,9 @@ script: |
   # one step of Newton's method
   newton(z) := z - f(z) / f'(z)
 
-  @viewer "Newton's method on the sphere" var=z view=sphere center=-1.5
+  @viewer "Newton's method on the sphere" over z on the sphere
+  setup:
+    center: -1.5
   iterate z -> newton(z) until z stops
   if stuck:
     color <- black
@@ -18,7 +20,7 @@ script: |
       color ⟵ green
     color <- cycle(iterations / 20, light color, dark color)
 
-  @tool "Trace" for="Newton's method on the sphere" shortcut=t
+  @tool "Trace" for "Newton's method on the sphere" with shortcut t
   on deactivated:
     erase
   on click:

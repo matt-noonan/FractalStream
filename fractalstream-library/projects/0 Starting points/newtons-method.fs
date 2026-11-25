@@ -8,14 +8,16 @@ script: |
   # one step of Newton's method
   newton(z) := z - f(z) / f'(z)
 
-  @viewer "Newton's method on ℂ" colorizer="Rainbow(arg z / (2π))"
+  @viewer "Newton's method on ℂ"
+  setup:
+    colorizer: Rainbow(arg z / (2π))
   lastZ := 0
   repeat:
     lastZ <- z
     z <- newton(z)
   until z = lastZ
 
-  @tool "Trace" shortcut=t
+  @tool "Trace" with shortcut t
   on refresh:
     erase
   on deactivated:

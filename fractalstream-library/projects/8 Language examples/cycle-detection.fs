@@ -7,14 +7,14 @@ script: |
   @common
   f(z) ≔ z² + C
 
-  @viewer "Parameter plane" var=C
+  @viewer "Parameter plane" over C
   z ≔ 0
   iterate z ⟼ f(z) until z escapes
 
   @viewer "Dynamics"
   iterate z ⟼ f(z) until z escapes
 
-  @tool overlay for="Dynamics"
+  @tool overlay for "Dynamics"
   on refresh:
     erase
     found, z, period ≔ find_cycle(f, 0, 10000, 100, (x,y) ⟼ x = y, x ⟼ |x| < 2)

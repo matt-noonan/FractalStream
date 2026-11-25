@@ -11,7 +11,10 @@ script: |
   L : Table 1 of Z
   U : Table 2 of C
 
-  @viewer "V" center=0 pixelSize=1/64
+  @viewer "V"
+  setup:
+    center: 0
+    pixel size: 1/64
   a := T @ point z else 0
   lit := B @ point z else false
   (r, n) := P @ (point z, 2) else (0, 0)

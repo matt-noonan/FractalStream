@@ -46,7 +46,7 @@ spec = describe "editing scripts" $ do
     let errorAt src = case checkScript src of
           Left (loc, msg) -> Just (fmap (+ 1) (errorLine loc), unwords (words msg))
           Right () -> Nothing
-        viewer = "@viewer \"V\" var=z\nz <- z\n"
+        viewer = "@viewer \"V\" over z\nz <- z\n"
 
     it "says a block has nothing in it yet, on the line under its header" $ do
       let says = maybe False (("This block has nothing in it yet" `isPrefixOf`) . snd)

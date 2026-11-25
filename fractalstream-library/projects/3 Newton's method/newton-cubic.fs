@@ -8,7 +8,11 @@ script: |
   @config "Newton's method configuration"
   tol : R as "closeness" := 0.01
 
-  @viewer "Roots of f" vanish=tol center=0 pixelSize=1/128
+  @viewer "Roots of f"
+  setup:
+    vanishing radius: tol
+    center: 0
+    pixel size: 1/128
   lastZ := 0
   while z != lastZ:
     lastZ <- z
@@ -19,7 +23,7 @@ script: |
   else:
     color <- black
 
-  @tool "Trace" for="Roots of f" shortcut=t
+  @tool "Trace" for "Roots of f" with shortcut t
   on deactivated:
     erase
   on click:

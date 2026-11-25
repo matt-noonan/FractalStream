@@ -29,7 +29,7 @@ script: |
     until z = w
     period_counter <- round(p)
 
-  @viewer "Parameter plane" var=C
+  @viewer "Parameter plane" over C
   z := 0
   flag_color := default_exit_condition_color
   run script(max_iters)
@@ -40,21 +40,21 @@ script: |
   run script(max_iters)
   color <- if stuck then black else shade(flag_color, iterations / 20)
 
-  @tool "Period Counter" for="Parameter plane"
+  @tool "Period Counter" for "Parameter plane"
   period_counter : Z as "Period Counter" := 0
   on click:
     clicked := click
     z := 0
     run probe_period_counter(clicked)
 
-  @tool "Period Counter" for="Dynamical plane"
+  @tool "Period Counter" for "Dynamical plane"
   period_counter : Z as "Period Counter" := 0
   on click:
     clicked := click
     z := clicked
     run probe_period_counter(C)
 
-  @tool "Trace" for="Dynamical plane" shortcut=t
+  @tool "Trace" for "Dynamical plane" with shortcut t
   trace_color : Color as "Trace color" := white
 
   on deactivated:

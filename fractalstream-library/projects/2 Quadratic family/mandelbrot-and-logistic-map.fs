@@ -8,7 +8,10 @@ script: |
   cycle_length : Z as "Cycle check iterations" := 200
   offset : R as "Vertical offset" := 0.5
 
-  @viewer "Mandelbrot set + logistic map bifurcations" var=C center="-0.8 + 0.3 i" pixelSize=0.005
+  @viewer "Mandelbrot set + logistic map bifurcations" over C
+  setup:
+    center: -0.8 + 0.3 i
+    pixel size: 0.005
   z := 0
 
   # Draw the Mandelbrot set
@@ -30,7 +33,7 @@ script: |
       x <- x r (1 - x)
     color <- if hit then invert(color) else color
 
-  @tool "Vertical line" for="Mandelbrot set + logistic map bifurcations" shortcut=v
+  @tool "Vertical line" for "Mandelbrot set + logistic map bifurcations" with shortcut v
   on click:
     C := click
     erase

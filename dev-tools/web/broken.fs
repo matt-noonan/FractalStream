@@ -6,7 +6,10 @@ script: |
   @config "Configuration"
   shade : R := 0.5
 
-  @viewer "V" center=0 pixelSize=1/64
+  @viewer "V"
+  setup:
+    center: 0
+    pixel size: 1/64
   color <- if shade > 0.3 then white else black (
 values:
   config:

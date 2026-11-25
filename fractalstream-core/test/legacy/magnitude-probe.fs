@@ -25,14 +25,14 @@ script: |
   run script(max_iters)
   color <- if stuck then black else shade(flag_color, iterations / 20)
 
-  @tool "Magnitude" for="Dynamical plane"
+  @tool "Magnitude" for "Dynamical plane"
   magnitude : R as "Magnitude" := 0
   on click:
     clicked := click
     z := clicked
     run probe_magnitude
 
-  @tool "Trace" for="Dynamical plane" shortcut=t
+  @tool "Trace" for "Dynamical plane" with shortcut t
   trace_color : Color as "Trace color" := white
 
   on deactivated:

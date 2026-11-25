@@ -30,10 +30,10 @@ script: |
     else:
       color <- cycle (iterations / 10, white, blue)
 
-  @viewer "a-plane" var=a
+  @viewer "a-plane" over a
   run draw_henon(0, false)
 
-  @viewer "b-plane" var=b
+  @viewer "b-plane" over b
   run draw_henon(0, false)
 
   @viewer "Hénon dynamics"

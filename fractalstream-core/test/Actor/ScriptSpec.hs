@@ -6,7 +6,7 @@ import Test.Hspec
 import Language.Type
 
 import Actor.Script
-import Actor.Event (Coordinate(..))
+import Actor.Event (Coordinate(..), ViewKind(..))
 
 
 import Data.List (isInfixOf)
@@ -38,7 +38,7 @@ spec = do
 
     it "accepts a single viewer stanza" $
       shouldParseTo [r|
-@viewer "Mandelbrot Set" var=C
+@viewer "Mandelbrot Set" over C
 z : C := 0
 iterate z -> z^2 + C until z escapes
 |] $ \case
@@ -54,7 +54,13 @@ iterate z -> z^2 + C until z escapes
 
     it "accepts optional viewer attributes" $
       shouldParseTo [r|
-@viewer "Mandelbrot Set" var=C center="0" pixelSize="1/128" limit="maxIters" escape="maxRadius" vanish="minRadius" pixelVar=px
+@viewer "Mandelbrot Set" over C
+setup:
+  center: 0
+  pixel size: 1/128
+  iteration limit: maxIters
+  escape radius: maxRadius
+  vanishing radius: minRadius
 pass
 |] $ \case
         [ViewerStanza{..}] -> do
@@ -63,13 +69,13 @@ pass
           vsIterLimit `shouldBe` Just "maxIters"
           vsEscape `shouldBe` Just "maxRadius"
           vsVanish `shouldBe` Just "minRadius"
-          vsPixelVar `shouldBe` Just "px"
+          vsPixelVar `shouldBe` Just "pixel_size"
         other -> expectationFailure ("expected a single viewer stanza, got " ++ show (length other) ++ " stanzas")
 
     it "defaults pixelVar to a reference to the automatically-provided \
        \`pixel_size`" $
       shouldParseTo [r|
-@viewer "Mandelbrot Set" var=C
+@viewer "Mandelbrot Set" over C
 pass
 |] $ \case
         [ViewerStanza{..}] -> do
@@ -79,17 +85,17 @@ pass
     it "rejects the window-geometry attributes `size`, `position`, and \
        \`resizable`, pointing at where that state is saved now" $ do
       [r|
-@viewer "Mandelbrot Set" var=C size=500x500
+@viewer "Mandelbrot Set" over C size=500x500
 pass
-|] `shouldFailWith` "`size` attribute is no longer part of a `@viewer` stanza"
+|] `shouldFailWith` "it's saved with the project"
       [r|
-@viewer "Mandelbrot Set" var=C position="10x20"
+@viewer "Mandelbrot Set" over C position="10x20"
 pass
-|] `shouldFailWith` "`position` attribute is no longer part of a `@viewer` stanza"
+|] `shouldFailWith` "it's saved with the project"
       [r|
-@viewer "Mandelbrot Set" var=C resizable=false
+@viewer "Mandelbrot Set" over C resizable=false
 pass
-|] `shouldFailWith` "`resizable` attribute is no longer part of a `@viewer` stanza"
+|] `shouldFailWith` "it's saved with the project"
 
     it "defaults a viewer's `var` to `z` when the attribute is omitted" $
       shouldParseTo [r|
@@ -103,11 +109,17 @@ pass
     it "accepts unquoted attribute values: a whole number (negative \
        \too), a whole-number fraction, and a boolean" $
       shouldParseTo [r|
-@viewer "Mandelbrot Set" var=C center=-2 pixelSize=1/128
+@viewer "Mandelbrot Set" over C
+setup:
+  center: -2
+  pixel size: 1/128
 pass
 
 
-@tool "Demo" drawLayer=-1 refreshOnActivate=false
+@tool "Demo"
+setup:
+  draw layer: -1
+  refresh on activate: false
 on click:
   pass
 |] $ \case
@@ -123,7 +135,10 @@ on click:
        \(0.0001 :: Double) == \"1.0e-4\", which re-parses as 1.0 * e - 4, \
        \since `e` is the Euler's-number keyword)" $
       shouldParseTo [r|
-@viewer "Mandelbrot Set" center=-0.5 pixelSize=0.0001
+@viewer "Mandelbrot Set"
+setup:
+  center: -0.5
+  pixel size: 0.0001
 pass
 |] $ \case
         [ViewerStanza{..}] -> do
@@ -133,15 +148,22 @@ pass
 
     it "rejects a viewer stanza with an unknown attribute" $
       [r|
-@viewer "Mandelbrot Set" var=C bogus="1"
+@viewer "Mandelbrot Set" over C bogus="1"
 pass
-|] `shouldFailWith` "Unknown attribute `bogus`"
+|] `shouldFailWith` "`bogus` isn't anything a header says"
 
-    it "rejects a viewer stanza with a duplicate attribute" $
+    it "rejects a viewer stanza that says something twice" $ do
       [r|
-@viewer "Mandelbrot Set" var=C var=z
+@viewer "Mandelbrot Set" over z over w
 pass
-|] `shouldFailWith` "Duplicate attribute `var`"
+|] `shouldFailWith` "says `over` twice"
+      [r|
+@viewer "Mandelbrot Set"
+setup:
+  center: 0
+  center: 1
+pass
+|] `shouldFailWith` "sets `center` twice"
 
 
 
@@ -258,10 +280,51 @@ foo : R := 1.5
         [ConfigStanza "Configuration" [ConfigDecl{cdLabel = Nothing}]] -> pure ()
         other -> expectationFailure ("unexpected stanzas: " ++ show (length other))
 
+    it "reads a header's phrases in any order, and its setup: block" $ do
+      shouldParseTo [r|
+@config "P"
+τ : C := i
+
+@viewer "Torus" modulo the lattice (1, τ) centered at -0.5 over w
+setup:
+  pixel size: 1/150
+  show if: τ ≠ 0 and true
+  colorizer: "Smooth"
+  coloring:
+    color_speed <- 3
+pass
+|] $ \case
+        [_, ViewerStanza{..}] -> do
+          vsCoord `shouldBe` ComplexCoordinate "w"
+          vsLattice `shouldBe` Just "(1, τ)"
+          vsLatticeCenter `shouldBe` Just "-0.5"
+          vsPixelSize `shouldBe` Just "1/150"
+          vsShowIf `shouldBe` Just "τ ≠ 0 and true"
+          vsColorizer `shouldBe` Just "Smooth"
+          map czsName vsColoring `shouldBe` ["color_speed"]
+        other -> expectationFailure ("expected two stanzas, got " ++ show (length other))
+      shouldParseTo "@viewer \"J\" on the half-plane modulo the modular group over z\npass\n" $ \case
+        [ViewerStanza{..}] -> (vsView, vsGroup) `shouldBe` (HalfPlaneView, Just "modular")
+        other -> expectationFailure ("expected one stanza, got " ++ show (length other))
+      shouldParseTo "@viewer \"R\" over (a, b)\npass\n\n@tool \"T\" with shortcut t for \"R\"\nsetup:\n  draw layer: 3\non click:\n  pass\n" $ \case
+        [ViewerStanza{..}, ToolStanza{..}] -> do
+          vsCoord `shouldBe` RealCoordinates "a" "b"
+          (tsFor, tsShortcut, tsDrawLayer) `shouldBe` (Just "R", "t", 3)
+        other -> expectationFailure ("expected two stanzas, got " ++ show (length other))
+
+    it "says what's wrong with a header, and what replaces an old attribute" $ do
+      "@viewer \"V\" var=C\npass\n" `shouldFailWith` "`var=C` is now `over C`"
+      "@viewer \"V\" pixelSize=1/100\npass\n" `shouldFailWith` "`pixel size: 1/100`"
+      "@tool \"T\" for=\"V\"\non click:\n  pass\n" `shouldFailWith` "`for \"V\"`"
+      "@viewer \"V\" modulo the lattice τ + 1\npass\n" `shouldFailWith` "`modulo the lattice (τ + 1)`"
+      "@viewer \"V\" with shortcut t\npass\n" `shouldFailWith` "doesn't say `with shortcut`"
+      "@viewer \"V\"\nsetup:\n  zoom: 2\npass\n" `shouldFailWith` "no `zoom` setting"
+      "@viewer \"V\"\ncoloring:\n  x <- 1\npass\n" `shouldFailWith` "inside its `setup:` block"
+
     it "rejects attributes on a config stanza header" $
       [r|
 @config "Configuration" foo="1"
-|] `shouldFailWith` "takes no attributes"
+|] `shouldFailWith` "says nothing but its title"
 
     it "accepts a selection (choice) declaration on an integer type" $
       shouldParseTo [r|
@@ -296,7 +359,11 @@ q : Cinf x R := (∞, 2.0)
 
     it "accepts a tool stanza with multiple event blocks" $
       shouldParseTo [r|
-@tool "Trace" for="Mandelbrot Set" shortcut="T" drawLayer="5" refreshOnActivate="false" refreshCanUpdate="true"
+@tool "Trace" for "Mandelbrot Set" with shortcut T
+setup:
+  draw layer: 5
+  refresh on activate: false
+  refresh can update: true
 on refresh:
   erase
 on click:
@@ -316,7 +383,7 @@ on click:
 
     it "accepts declarations before a tool's event blocks as its own config" $
       shouldParseTo [r|
-@tool "Demo" shortcut="x"
+@tool "Demo" with shortcut x
 r : R as "R =" := 1
 theta : R as "θ =" := pi/4
 on refresh:
@@ -357,7 +424,9 @@ on refresh:
 
     it "rejects a non-numeric drawLayer attribute" $
       [r|
-@tool "Trace" drawLayer="high"
+@tool "Trace"
+setup:
+  draw layer: high
 on refresh:
   pass
 |] `shouldFailWith` "must be a whole number"
@@ -376,11 +445,11 @@ on refresh:
 @tool "Trace" bogus="1"
 on refresh:
   pass
-|] `shouldFailWith` "Unknown attribute `bogus`"
+|] `shouldFailWith` "`bogus` isn't anything a header says"
 
     it "parses `@tool overlay` as a viewer's overlay, on the lowest draw layer" $
       shouldParseTo [r|
-@tool overlay for="V"
+@tool overlay for "V"
 on refresh:
   erase
 |] $ \case
@@ -397,12 +466,12 @@ on click:
         [ToolStanza{tsOverlay = False, tsName = "overlay"}] -> pure ()
         other -> expectationFailure ("unexpected stanzas: " ++ show (length other))
 
-    it "rejects an overlay's attributes other than `for=`" $
+    it "rejects anything but `for` in an overlay's header" $
       [r|
-@tool overlay for="V" shortcut=o
+@tool overlay for "V" with shortcut o
 on refresh:
   pass
-|] `shouldFailWith` "An overlay can only have a `for=` attribute, not `shortcut=`"
+|] `shouldFailWith` "can only say `for \"viewer\"`, not `with shortcut`"
 
     it "rejects an overlay's own declarations" $
       [r|
@@ -437,11 +506,13 @@ f(z) := z^2 + C
 @config "Configuration"
 maxIters : Z as "Iteration limit:" := 100
 
-@viewer "Mandelbrot Set" var=C limit="maxIters"
+@viewer "Mandelbrot Set" over C
+setup:
+  iteration limit: maxIters
 z : C := 0
 iterate z -> f(z) until z escapes
 
-@tool "Trace" for="Mandelbrot Set" shortcut="T"
+@tool "Trace" for "Mandelbrot Set" with shortcut T
 on refresh:
   erase
 on click:
@@ -453,34 +524,34 @@ on click:
 @setup "Setup"
 f : C as "f(z) =" := 0
 
-@viewer "V" var=z
+@viewer "V" over z
 pass
 |] `shouldFailWith` "couldn't parse"
       [r|
-@viewer "V" var=z
+@viewer "V" over z
 z <- «f»
 |] `shouldFailWith` "couldn't parse"
 
     it "finds the stanza boundary right after a nested block closes \
        \(regression: Indent/Dedent used to wrongly reset line-start status)" $
       shouldParseTo [r|
-@viewer "V" var=z
+@viewer "V" over z
 if z = 0:
   color <- black
 else:
   color <- white
 
-@tool "T" for="V"
+@tool "T" for "V"
 on refresh:
   pass
 |] $ \stanzas -> length stanzas `shouldBe` 2
 
     it "allows a stanza body ending in a variable declaration (the Let-slurp case)" $
       shouldParseTo [r|
-@viewer "Mandelbrot Set" var=C
+@viewer "Mandelbrot Set" over C
 color : Color := black
 
-@tool "Trace" for="Mandelbrot Set"
+@tool "Trace" for "Mandelbrot Set"
 on refresh:
   pass
 |] $ \stanzas -> length stanzas `shouldBe` 2

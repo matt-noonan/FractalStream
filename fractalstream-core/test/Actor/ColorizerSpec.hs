@@ -69,7 +69,7 @@ C : C as "C" := -1
 @viewer "J"
 iterate z -> z^2 + C until z escapes
 
-@viewer "M" var=C
+@viewer "M" over C
 z := 0
 iterate z -> z^2 + C until z escapes
 |]
@@ -104,19 +104,21 @@ run shade
 
     it "is the one named by the viewer's `colorizer=` attribute, if it has one" $ do
       ens <- buildWith Map.empty [r|
-@viewer "V" colorizer=Rainbow
+@viewer "V"
+setup:
+  colorizer: Rainbow
 iterate z -> z^2 - 1 until z escapes
 color <- white
 |]
       colorizers ens `shouldBe` Map.singleton "V" ("Rainbow", "Rainbow")
 
     it "rejects a `colorizer=` attribute naming no colorizer" $
-      buildEnsembleFromScript "@viewer \"V\" colorizer=Plaid\npass\n" >>= \case
+      buildEnsembleFromScript "@viewer \"V\"\nsetup:\n  colorizer: Plaid\npass\n" >>= \case
         Left (_, err) -> err `shouldSatisfy` isInfixOf "no colorizer called \"Plaid\""
         Right _ -> expectationFailure "expected an unknown colorizer to be an error"
 
     it "rejects arguments for a colorizer without parameters" $
-      checkScript "@viewer \"V\" colorizer=\"Glow(z)\"\npass\n" `shouldSatisfy` \case
+      checkScript "@viewer \"V\"\nsetup:\n  colorizer: Glow(z)\npass\n" `shouldSatisfy` \case
         Left (_, err) -> "doesn't take any arguments" `isInfixOf` err
         Right () -> False
 
@@ -268,7 +270,9 @@ iterate z -> z^2 + 0.25 until z escapes
 
   describe "@colorizer stanzas" $ do
     let smooth = [r|
-@colorizer "Smooth" description="Smoothed escape time."
+@colorizer "Smooth"
+setup:
+  description: "Smoothed escape time."
 period : R as "Color period" := 20
 inside : Color as "Interior color" := black
 
@@ -285,11 +289,15 @@ define colorize(v):
 @config "Parameters"
 C : C as "C =" := -0.12 + 0.75i
 
-@viewer "Parameter plane" var=C colorizer="Smooth(z)"
+@viewer "Parameter plane" over C
+setup:
+  colorizer: Smooth(z)
 z := 0
 iterate z -> z^2 + C until z escapes
 
-@viewer "Julia set" colorizer="Smooth(z)"
+@viewer "Julia set"
+setup:
+  colorizer: Smooth(z)
 m := 1
 iterate z -> z^2 + C until z escapes
 |])
@@ -314,7 +322,9 @@ iterate z -> z^2 + C until z escapes
 @common
 f(w) := w^2 - 1
 
-@viewer "V" colorizer="Smooth(f(z))"
+@viewer "V"
+setup:
+  colorizer: Smooth(f(z))
 iterate z -> f(z) until z escapes
 |])
       pure ()
@@ -329,8 +339,8 @@ k := 3
 define colorize:
   color <- if g(k) > 4 then white else black
 |]
-      _ <- buildWith Map.empty (common ++ "@viewer \"V\" colorizer=\"Uses common\"\npass\n")
-      _ <- buildWith Map.empty (common ++ "@viewer \"V\" colorizer=\"Uses common\"\nw := g(k)\n")
+      _ <- buildWith Map.empty (common ++ "@viewer \"V\"\nsetup:\n  colorizer: Uses common\npass\n")
+      _ <- buildWith Map.empty (common ++ "@viewer \"V\"\nsetup:\n  colorizer: Uses common\nw := g(k)\n")
       pure ()
 
     it "replace a built-in colorizer of the same name" $ do
@@ -351,12 +361,12 @@ define colorize:
           Right () -> False
 
     it "need the right number of arguments" $
-      checkScript (smooth ++ "@viewer \"V\" colorizer=Smooth\npass\n") `shouldSatisfy` \case
+      checkScript (smooth ++ "@viewer \"V\"\nsetup:\n  colorizer: Smooth\npass\n") `shouldSatisfy` \case
         Left (_, err) -> "needs a value for `v`" `isInfixOf` err
         Right () -> False
 
     it "report errors in their code where they are in the script" $ do
-      let src = "@colorizer \"Broken\"\ndefine colorize:\n  color <- nope\n@viewer \"V\" colorizer=Broken\npass\n"
+      let src = "@colorizer \"Broken\"\ndefine colorize:\n  color <- nope\n@viewer \"V\"\nsetup:\n  colorizer: Broken\npass\n"
       case checkScript src of
         Left err -> formatScriptError src err `shouldSatisfy` isInfixOf "color <- nope"
         Right () -> expectationFailure "expected an error"
@@ -368,19 +378,23 @@ define colorize(z):
   color <- if z escaped then white else black
 |]
       ens <- buildWith Map.empty (byName ++ [r|
-@viewer "Julia" colorizer=Escaped
+@viewer "Julia"
+setup:
+  colorizer: Escaped
 iterate z -> z^2 - 1 until z escapes
 
-@viewer "Mandelbrot" var=C colorizer=Escaped
+@viewer "Mandelbrot" over C
+setup:
+  colorizer: Escaped
 z := 0
 iterate z -> z^2 + C until z escapes
 |])
       Map.map fst (colorizers ens) `shouldBe` Map.fromList [("Julia", "Escaped"), ("Mandelbrot", "Escaped")]
-      case checkScript (byName ++ "@viewer \"V\" var=w colorizer=Escaped\npass\n") of
+      case checkScript (byName ++ "@viewer \"V\" over w\nsetup:\n  colorizer: Escaped\npass\n") of
         Left (_, err) -> err `shouldSatisfy` isInfixOf "the viewer has no `z` to use"
         Right () -> expectationFailure "expected a missing `z` to be an error"
       -- (and with an argument, any viewer can use it)
-      _ <- buildWith Map.empty (byName ++ "@viewer \"V\" var=w colorizer=\"Escaped(w)\"\npass\n")
+      _ <- buildWith Map.empty (byName ++ "@viewer \"V\" over w\nsetup:\n  colorizer: Escaped(w)\npass\n")
       pure ()
 
     it "with several parameters, take them all from the viewer, or all as arguments" $ do
@@ -393,10 +407,10 @@ define colorize(z, k):
 k : R as "k" := 2
 |]
       -- `z` is the viewer's coordinate, and `k` is in the configuration
-      ens <- buildWith Map.empty (two ++ "@viewer \"V\" colorizer=Two\npass\n")
+      ens <- buildWith Map.empty (two ++ "@viewer \"V\"\nsetup:\n  colorizer: Two\npass\n")
       Map.map fst (colorizers ens) `shouldBe` Map.singleton "V" "Two"
-      _ <- buildWith Map.empty (two ++ "@viewer \"V\" var=w colorizer=\"Two(w, k + 1)\"\npass\n")
-      let errorFor attr = case checkScript (two ++ "@viewer \"V\" var=w colorizer=" ++ attr ++ "\npass\n") of
+      _ <- buildWith Map.empty (two ++ "@viewer \"V\" over w\nsetup:\n  colorizer: Two(w, k + 1)\npass\n")
+      let errorFor attr = case checkScript (two ++ "@viewer \"V\" over w\nsetup:\n  colorizer: " ++ attr ++ "\npass\n") of
             Left (_, err) -> err
             Right () -> ""
       errorFor "Two" `shouldSatisfy` isInfixOf "the viewer has no `z` to use"
@@ -411,7 +425,7 @@ offset : R as "Offset" := 0.5
 define colorize(t = iterations / 20, u = t + offset):
   color <- rainbow(u)
 |]
-          viewer = "@viewer \"V\" colorizer="
+          viewer = "@viewer \"V\"\nsetup:\n  colorizer: "
       -- no variable `t` or `u` needed, and a viewer's own `t` isn't used
       _ <- buildWith Map.empty (defaulted ++ viewer ++ "Shift\npass\n")
       ens <- buildWith Map.empty (defaulted ++ viewer ++ "Shift\nt := 1 + i\n")
@@ -424,7 +438,9 @@ define colorize(t = iterations / 20, u = t + offset):
 
     it "include Rainbow, which can color by any real value" $ do
       ens <- buildWith Map.empty [r|
-@viewer "Newton" colorizer="Rainbow(arg z / (2 pi))"
+@viewer "Newton"
+setup:
+  colorizer: Rainbow(arg z / (2 pi))
 lastZ := 0
 repeat:
   lastZ <- z
@@ -435,8 +451,8 @@ until z = lastZ
 
   describe "a viewer's coloring: block" $ do
     let viewer coloring = unlines $
-          [ "@viewer \"V\" colorizer=Smooth"
-          , "coloring:" ] ++ map ("  " ++) coloring ++
+          [ "@viewer \"V\"\nsetup:\n  colorizer: Smooth"
+          , "  coloring:" ] ++ map ("    " ++) coloring ++
           [ "iterate z -> z^2 - 1 until z escapes" ]
         fieldText' ens name = do
           fs <- ensembleFields ens

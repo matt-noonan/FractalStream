@@ -9,14 +9,14 @@ script: |
   @config "Configuration"
   C : C as "Selected value of C:" := -0.1226 + 0.7449i
 
-  @viewer "Parametric complex dynamics parameter plane" var=C
+  @viewer "Parametric complex dynamics parameter plane" over C
   z := initialZ(C)
   iterate z -> f(z) until z escapes
 
   @viewer "Parametric complex dynamics"
   iterate z -> f(z) until z escapes
 
-  @tool "Trace" shortcut=t for="Parametric complex dynamics"
+  @tool "Trace" for "Parametric complex dynamics" with shortcut t
   on refresh:
     erase
   on deactivated:

@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 -- | Groups acting on the hyperbolic plane, for a hyperbolic viewer's
--- @group=@ (see HYPERBOLIC_PLAN.md, phase 2).
+-- @modulo the group@ (see HYPERBOLIC_PLAN.md, phase 2).
 --
 -- A group is given by its /side pairings/: Möbius maps of the script's
 -- model (the disk or the half-plane) and a /center/, a point no pairing

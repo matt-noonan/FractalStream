@@ -37,13 +37,19 @@ script: |
     color ⟵ rainbow(θ / (12 π))
     color ⟵ if stuck then black else cycle(iterations / 20, light color, dark color)
 
-  @viewer "Parameter plane" xvar=γ yvar=𝝎_0 center=(0.5, 1.5) pixelSize=1/200
+  @viewer "Parameter plane" over (γ, 𝝎_0)
+  setup:
+    center: (0.5, 1.5)
+    pixel size: 1/200
   # (starting from the pendulum at rest, hanging down)
   θ, dθ ≔ 0.0, 0.0
   run settle
   run color_basin
 
-  @viewer "Dynamical plane" xvar=θ yvar=dθ center=(0, 0) pixelSize=1/64
+  @viewer "Dynamical plane" over (θ, dθ)
+  setup:
+    center: (0, 0)
+    pixel size: 1/64
   run settle
   run color_basin
 metadata:

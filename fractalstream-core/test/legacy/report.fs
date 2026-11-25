@@ -20,7 +20,7 @@ script: |
   run script(max_iters)
   color <- if stuck then black else shade(flag_color, iterations / 20)
 
-  @tool "Trace" for="Dynamical plane" shortcut=t
+  @tool "Trace" for "Dynamical plane" with shortcut t
   trace_color : Color as "Trace color" := white
 
   on deactivated:

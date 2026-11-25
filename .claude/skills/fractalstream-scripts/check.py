@@ -35,13 +35,22 @@ def find_fsrun():
     return path
 
 
-def header_attr(line, name):
-    m = re.search(name + r'=(?:"([^"]*)"|(\([^)]*\))|(\S+))', line)
-    return (m.group(1) or m.group(2) or m.group(3)) if m else None
+def setup_setting(lines, i, name):
+    """A setting in the `setup:` block right after the header on line i."""
+    if i + 1 >= len(lines) or lines[i + 1].strip() != "setup:":
+        return None
+    indent = len(lines[i + 1]) - len(lines[i + 1].lstrip())
+    for line in lines[i + 2:]:
+        if line.strip() and len(line) - len(line.lstrip()) <= indent:
+            break
+        m = re.match(r'\s*' + re.escape(name) + r':\s*(.*)$', line)
+        if m:
+            return m.group(1).strip()
+    return None
 
 
 def center_expr(center):
-    """A viewer's center= as a complex expression: a real viewer's is a
+    """A viewer's `center:` as a complex expression: a real viewer's is a
     point, (x, y), which is x + y i."""
     m = re.fullmatch(r'\s*\(([^,]*),([^)]*)\)\s*', center)
     return "(%s) + (%s) i" % (m.group(1), m.group(2)) if m else center
@@ -55,16 +64,18 @@ def main():
     os.makedirs(outdir, exist_ok=True)
     src = open(project).read()
 
+    lines = src.splitlines()
     viewers = {}  # title -> center expression
-    for line in src.splitlines():
+    for i, line in enumerate(lines):
         m = re.match(r'\s*@viewer\s+"([^"]+)"(.*)', line)
         if m:
-            viewers[m.group(1)] = center_expr(header_attr(m.group(2), "center") or "0")
+            viewers[m.group(1)] = center_expr(setup_setting(lines, i, "center") or "0")
     tools = []  # (name, viewer)
-    for line in src.splitlines():
+    for line in lines:
         m = re.match(r'\s*@tool\s+"([^"]+)"(.*)', line)
         if m:
-            target = header_attr(m.group(2), "for")
+            f = re.search(r'\bfor\s+"([^"]*)"', m.group(2))
+            target = f.group(1) if f else None
             if target is None and len(viewers) == 1:
                 target = next(iter(viewers))
             tools.append((m.group(1), target))

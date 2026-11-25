@@ -7,7 +7,7 @@ script: |
   # to 2 pi.)
   #
   # The group's side pairings are a table, which the overlay works out from
-  # the genus; the viewer (`group=sides`) folds each point into the polygon
+  # the genus; the viewer (`modulo the group sides`) folds each point into the polygon
   # before the code below sees it, and the picture is the surface, repeated
   # over the disk.
   #
@@ -26,7 +26,9 @@ script: |
   @common
   clamp01(v) := if v < 0 then 0.0 else if v > 1 then 1.0 else v
 
-  @viewer "Surface" view=disk group=sides pixelSize=1/280
+  @viewer "Surface" on the disk modulo the group sides
+  setup:
+    pixel size: 1/280
   (rows, n) := table_size(sides)
   if n = 0:
     color <- grey
@@ -47,7 +49,7 @@ script: |
   # is the translation by 2d back toward the opposite side, which as a
   # Moebius map is (a s + b)/(conj(b) s + conj(a)), a = cosh d,
   # b = -sinh d e^(i t). (Worked out when the genus changes.)
-  @tool overlay for="Surface"
+  @tool overlay for "Surface"
   on refresh:
     (rows, n) := table_size(sides)
     p := 4 genus
@@ -63,7 +65,7 @@ script: |
         sides @ (3, k) <- conj(b)
         sides @ (4, k) <- conj(a)
 
-  @tool "Circle" for="Surface" shortcut=c
+  @tool "Circle" for "Surface" with shortcut c
   radius : R as "Radius (hyperbolic)" := 1.5
   on click:
     p := click
@@ -76,7 +78,7 @@ script: |
   on deactivated:
     erase
 
-  @tool "Geodesic" for="Surface" shortcut=g
+  @tool "Geodesic" for "Surface" with shortcut g
   on drag:
     p := drag end
     s := drag start

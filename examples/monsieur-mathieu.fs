@@ -3,7 +3,9 @@ script: |
   @config "Configuration"
   tol : R as "Tolerance" := 0.01
 
-  @viewer "Monsieur Mathieu" vanish=tol
+  @viewer "Monsieur Mathieu"
+  setup:
+    vanishing radius: tol
   a := (107 + 7*sqrt(11)*i)/486
   b := -13*a/567 + 5/1701
   d := 23*a/7 + 256 / 567

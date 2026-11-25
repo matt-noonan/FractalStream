@@ -19,7 +19,9 @@ script: |
     else:
       color <- interior_color
 
-  @viewer "Parameter plane" var=C vanish=tiny
+  @viewer "Parameter plane" over C
+  setup:
+    vanishing radius: tiny
   z := 0
   tol := pixel_size fatness / 2
 
@@ -34,7 +36,9 @@ script: |
 
   run shade(|z / dzdc| < tol)
 
-  @viewer "Dynamical plane" vanish=tiny
+  @viewer "Dynamical plane"
+  setup:
+    vanishing radius: tiny
   dz := 1
   w := z
   tol := 2 pixel_size fatness

@@ -6,10 +6,12 @@ script: |
   @common
   f(z) := z^2 + C
 
-  @viewer "Julia set" colorizer="Glow"
+  @viewer "Julia set"
+  setup:
+    colorizer: Glow
   iterate z -> f(z) until z escapes
 
-  @tool "Trace" for="Julia set" shortcut=t
+  @tool "Trace" for "Julia set" with shortcut t
   on click:
     z := click
     erase

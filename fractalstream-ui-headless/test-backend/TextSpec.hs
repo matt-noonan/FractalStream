@@ -25,7 +25,7 @@ project = unlines
   , "@viewer \"V\""
   , "color <- grey"
   , ""
-  , "@tool \"T\" for=\"V\""
+  , "@tool \"T\" for \"V\""
   , "on click:"
   , "  z := click"
   , "  u <- text(t, \"; z = \", z, \", k = \", 3, \", r = \", 0.01, \", big = \", 10000000000.0, \", neg = \", -2.5, \" ünï ✓\")"

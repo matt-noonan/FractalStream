@@ -29,7 +29,7 @@ import qualified Data.Map as Map
 import Data.Map (Map)
 import qualified Data.Set as Set
 import Data.Set (Set)
-import Data.Maybe (fromMaybe, listToMaybe, maybeToList)
+import Data.Maybe (listToMaybe, maybeToList)
 
 import Language.Parser.Tokenizer (Token(..), functionDefinitionBody)
 import Language.Editor.Lines
@@ -125,28 +125,30 @@ splitStanzas ls = case break isHeader ls of
           (kind, title, attrs) = parseHeader h
       in Stanza kind title attrs (Just h) (h : body) : go more
 
--- | A header's kind, title, and @name=value@ attributes.
+-- | A header's kind, title, and what its phrases say, as attributes
+-- (@over z@ as @var@, @over (x, y)@ as @xvar@ and @yvar@, @modulo the
+-- lattice ...@ as @lattice@, @modulo the ... group@ as @group@, @for "V"@
+-- as @for@).
 parseHeader :: Line -> (String, Maybe String, Map.Map String String)
 parseHeader l =
   let kind = takeWhile isAlphaNum (drop 1 (lnText l))
       toks = [ t | (_, _, t) <- lnTokens l ]
       title = listToMaybe [ s | Quoted s <- toks ]
-      attrs = Map.fromList (go toks)
+      attrs = Map.fromList (go (drop 1 (dropWhile (not . isQuoted) toks)))
+      isQuoted = \case { Quoted _ -> True; _ -> False }
       go = \case
-        -- (an attribute whose value is some other token, like @lattice=i@,
-        -- is still there, its value unknown)
-        Identifier k : Equal : v : rest -> (k, fromMaybe "" (value v)) : go rest
+        Identifier "over" : OpenParen : Identifier x : Comma : Identifier y : CloseParen : rest ->
+          ("xvar", x) : ("yvar", y) : go rest
+        Identifier "over" : Identifier v : rest -> ("var", v) : go rest
+        Identifier "modulo" : rest | Identifier "lattice" `elem` take 2 rest -> ("lattice", "") : go rest
+                                   | otherwise -> ("group", "") : go rest
+        Identifier "for" : Quoted v : rest -> ("for", v) : go rest
         _ : rest -> go rest
         [] -> []
-      value = \case
-        Identifier v -> Just v
-        Quoted v -> Just v
-        NumberI n -> Just (show n)
-        _ -> Nothing
   in (kind, title, attrs)
 
 -- | The names a viewer defines for its code (and its tools'): its
--- coordinate variable (@var=@, by default @z@), or both of a real
+-- coordinate variable (@over@, by default @z@), or both of a real
 -- viewer's (@xvar=@ and @yvar=@), along with a real viewer's pixel width
 -- and height, and the viewer's geometry (its size and center).
 viewerNames :: Stanza -> [(String, Highlight)]
@@ -208,9 +210,12 @@ definitions s = Map.fromListWith (\_ old -> old) (concatMap lineDefs (zip [0 :: 
       k' | k' `elem` ["config", "colorizer"] -> True
       "tool" -> maybe True (k <) firstHandler
       _ -> False
-    lineDefs (k, l) =
-      let toks = [ t | (_, _, t) <- lnTokens l ]
-      in fieldDef k toks ++ codeDefs toks ++ coloringDefs l
+    lineDefs (k, l)
+      | inSetup s l && not (isWord "coloring" l) && not (insideColoring l) = []
+      | otherwise =
+          let toks = [ t | (_, _, t) <- lnTokens l ]
+          in fieldDef k toks ++ codeDefs toks ++ coloringDefs l
+    insideColoring l = maybe False (isWord "coloring") (enclosing l)
     -- `name : Type ...` (not `row:` or `coloring:`, which have no type)
     fieldDef k = \case
       Identifier n : Colon : _ : _ | isField k -> [(n, Parameter)]
@@ -261,6 +266,19 @@ codeDefs toks = case toks of
     params ts = [ (n, Variable) | (before, Identifier n) <- zip (OpenParen : ts) ts
                                 , before `elem` [OpenParen, Comma] ]
 
+-- | Whether a line is one of a stanza's @setup:@ settings (indented right
+-- under its @setup:@ line).
+inSetup :: Stanza -> Line -> Bool
+inSetup s l = lnIndent l > 0 && case parentOf of
+    Just p -> lnIndent p == 0 && case lnTokens p of
+      [(_, _, Identifier "setup"), (_, _, Colon)] -> True
+      _ -> False
+    Nothing -> False
+  where
+    parentOf = listToMaybe
+      [ p | p <- reverse (takeWhile ((/= lnStart l) . lnStart) (stLines s))
+          , not (null (lnTokens p)), lnIndent p < lnIndent l ]
+
 -- | A tool handler's first line, @on ...:@.
 isHandler :: Line -> Bool
 isHandler l = lnIndent l == 0 && case lnTokens l of
@@ -280,9 +298,10 @@ lineSpans s defs l
     codeEnd = maybe lineEnd id (lnComment l)
     comment = [ (c, lineEnd, Comment) | Just c <- [lnComment l] ]
     toks = lnTokens l
-    -- the event words of a handler's first line, up to its ':'
+    -- the event words of a handler's first line, up to its ':', and a
+    -- setting's name in a `setup:` block
     eventWords
-      | isHandler l = Set.fromList
+      | isHandler l || (inSetup s l && Colon `elem` [ t | (_, _, t) <- toks ]) = Set.fromList
           [ from | (from, _, t) <- takeWhile (\(_, _, t) -> t /= Colon) toks
                  , t /= Identifier "on" ]
       | otherwise = Set.empty
@@ -348,7 +367,7 @@ keywords = Set.fromList
   [ "while", "until", "repeat", "iterate", "up", "for", "each", "in", "with", "first"
   , "matching", "define", "function", "run", "pass", "draw", "use", "erase", "write", "point", "at"
   , "circle", "filled", "radius", "pixels", "rectangle", "from", "line", "stroke", "fill", "on"
-  , "as", "choice", "button", "row", "tab", "coloring", "reset", "resize" ]
+  , "as", "choice", "button", "row", "tab", "coloring", "setup", "reset", "resize" ]
 
 builtinFunctions :: Set String
 builtinFunctions = Set.fromList $ concat

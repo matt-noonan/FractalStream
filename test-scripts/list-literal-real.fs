@@ -1,6 +1,8 @@
 format: 1
 script: |
-  @viewer "List Literal — Real" var=z pixelSize="1/64"
+  @viewer "List Literal — Real" over z
+  setup:
+    pixel size: 1/64
   xs : List of R := [-2, -1, 0, 1, 2]
   closest : R := 1000
   for each x in xs:

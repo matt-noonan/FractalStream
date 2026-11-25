@@ -1,6 +1,8 @@
 format: 1
 script: |
-  @viewer "List Literal — Complex" var=z pixelSize="1/64"
+  @viewer "List Literal — Complex" over z
+  setup:
+    pixel size: 1/64
   pts : List of C := [0, 1, -1, i, -i]
   closest : R := 1000
   for each c in pts:
