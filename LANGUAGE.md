@@ -736,6 +736,25 @@ standard library never changes what an existing project means. The standard
 library's definitions always use each other, never a project's: a project
 that defines its own `wheel8` still gets the standard `rainbow`.
 
+#### Roots, cycles, paths and choices
+
+| Function | Is |
+|---|---|
+| `newton_root(f, x)` | Newton's method on `f` from `x`: `(found, root)`, stopping when a step moves less than `vanishing_radius`, or after `max_iters` steps |
+| `full_newton_root(f, x, N, stop)` | The same, with at most `N` steps, stopping when `stop(new, old)` holds |
+| `capped_newton_root(f, x, cap, N, stop)` | The same, with each step at most `cap` long, so that it settles on a root near `x` rather than jumping to another |
+| `find_cycle(f, z, warmup, max_period, same, χ)` | A cycle the orbit of `z` under `f` settles into: `(found, w, period)`, with `w` on the cycle |
+| `preperiod_and_period(f, z, max_steps, same)` | How many steps `z` takes to reach a cycle of `f`, and the cycle's period: `(found, preperiod, period)`. For example, `preperiod_and_period(t -> mod(2 t, q), p, q, (a, b) -> a = b)` gives those of the angle `p / q` under doubling |
+| `riemann_sum(γ, f, N)` | The integral of `f` along the path `γ(t)`, `0 ≤ t ≤ 1`, as a sum of `N` steps |
+| `residue(f, z, r, N)` | The residue of `f` at `z`, from the integral around the circle of radius `r` |
+| `winding_number(γ, z0, N)` | The number of times the closed path `γ` winds around `z0`, counterclockwise |
+| `polygon_winding_number(points, z0)` | The same for the closed polygon through a list of points (the last joined back to the first) |
+| `closest(points, w)` | The item of a list nearest `w` (the first of those, on a tie): the branch of an inverse that continues a path, say, as in `closest([s, -s], previous_point)` |
+
+A function given to these is a script's own function, or one written in
+place (`w -> sin(w)`): a built-in function like `sin` can't be passed by
+its name.
+
 #### Elliptic functions
 
 The standard library has the Jacobi theta functions and the Weierstrass
