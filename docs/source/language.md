@@ -534,7 +534,10 @@ For example, this viewer colors the plane by $\wp$ for the lattice spanned by 1 
 showing its double poles at the lattice points, and its two zeros in each period parallelogram:
 
 ``` fractalstream
-@viewer "Weierstrass p" center=0 pixelSize=1/150
+@viewer "Weierstrass p"
+setup:
+  center: 0
+  pixel size: 1/150
 color <- domain_color(wp(z, 1, 0.3 + 1.1 i))
 ```
 
@@ -841,8 +844,8 @@ Lines and circles are drawn in the geometry of the tool's viewer:
 | Viewer | A line is... | A circle's radius is... |
 | ------ | ------------ | ----------------------- |
 | Real or complex plane | a straight segment | the usual distance |
-| Riemann sphere (`view=sphere`) | the shorter arc of a great circle (any one, between opposite points) | the chordal distance |
-| Hyperbolic plane (`view=disk`, `view=halfplane`) | the hyperbolic geodesic | the hyperbolic distance |
+| Riemann sphere (`on the sphere`) | the shorter arc of a great circle (any one, between opposite points) | the chordal distance |
+| Hyperbolic plane (`on the disk`, `on the half-plane`) | the hyperbolic geodesic | the hyperbolic distance |
 
 On a sphere viewer, the points are points of `Ĉ`, so a tool can draw at `∞`, or draw a line
 through it.
@@ -1024,14 +1027,14 @@ can read the results:
 C : C := 0
 data : Table 2 of C
 
-@viewer "Parameter plane" var=C
+@viewer "Parameter plane" over C
 (w, h) := table_size(data)
 color <- if w = 0 then grey else rainbow(arg(data @ point C) / (2 pi))
 
 @viewer "Dynamical plane"
 ...  # can read `data @ point C`
 
-@tool "Compute" for="Parameter plane"
+@tool "Compute" for "Parameter plane"
 on click:
   reset data to (viewer_width, viewer_height)
   for each j in range(1, viewer_width):

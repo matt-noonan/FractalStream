@@ -41,24 +41,64 @@ FractalStream currently supports three different kinds of viewers:
 | Real plane | `x : R`, `y : R` | Plane |
 | Hyperbolic plane | `z : C` | Disk, upper halfplane; coordinate is bounded in norm by 1 |
 
-To use a different variable name for your viewer, add a `var=NAME` attribute to the end of your
-`@viewer` line. For example, here is a Mandelbrot viewer script that uses `C` instead of `z` for
-the variable name:
+To use a different variable name for your viewer, say so at the end of your `@viewer` line with
+`over NAME`. For example, here is a Mandelbrot viewer script that uses `C` instead of `z` for the
+variable name:
 
 ```{code-block} fs
 ---
-caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=bY9NCsIwEIX3PcWjW2mptvYnIAiuPURaBw2UNiSx_uAF3Lv3Dq5deRRPYmyxVXD3fY-ZeYwulJCG4eQA80bQjhTcJa9WVOaqNtBkXDRczRZ24Ijn-YLAkjCkuKF3cr3j-LhhhAW2lRGlzUgXXJJ2dpR7UtWSlBGkmd3rGloEfmu6DCj2rK1o-TCwLHlBnyEPiZ-RF_Ya-3FE3qT3wA-zOP3SZJJ-VNFa1NVwKvLjNJn-V72xnzCMnRc)
+caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=bY89DoJAEIV7TvFCayAIyF9lQu0hACe6CYHN7gpKvIC9vXewtvIonsQVAmhi930vM_MyshCMqwRnA1g3jFoSMDdZtaUyF7WCJGWibnSa6okOr8sVjiamSGSKPsntge55xwIpDpVipc5IFhknabSUW1zUnIRiJBO9N1T0CPz2DBlQHJO-oufTzLzMChqHLIR2TJY3aWAHPlnu5I7txUH0paEbjSpox-pqPuXbQRSu_qvc608SLI03)
 ---
-@viewer "Mandelbrot set" var=C
+@viewer "Mandelbrot set" over C
 z := 0
 iterate z -> z^2 + C until z escapes
 ```
 
-For real plane viewers, use `xvar=` and `yvar=` instead of `var=` to change the variable names.
+For a real plane viewer, name both of its variables: `over (x, y)`.
+
+### A viewer's header, and its `setup:`
+
+After its title, a viewer's header line says what kind of viewer it is, in a few phrases that can
+come in any order:
+
+| Phrase | Means |
+| ------ | ----- |
+| `over z`, or `over (x, y)` | its variable (or a real viewer's two), `z` if it doesn't say |
+| `on the sphere`, `on the disk`, `on the half-plane` | what it shows, the plane if it doesn't say |
+| `modulo the lattice τ` | the plane modulo a lattice (see {ref}`lattices` below) |
+| `modulo the modular group`, `modulo the group T` | the hyperbolic plane modulo a group |
+| `centered at c` | the center of that lattice's or group's fundamental domain |
+
+A value in a phrase is a name, a number, or something in parentheses, like
+`modulo the lattice (1, τ)`, so that it's clear where it ends.
+
+Everything else about a viewer goes in a `setup:` block right after the header, with one
+`name: value` line for each setting:
+
+```{code-block} fs
+@viewer "Parameter plane" over C
+setup:
+  center: -0.5
+  pixel size: 1/200
+  iteration limit: 200
+  coloring:
+    color_speed <- 3
+z := 0
+iterate z -> z^2 + C until z escapes
+```
+
+| Setting | Is |
+| ------- | -- |
+| `center:`, `pixel size:` | where the view starts, and its zoom |
+| `aspect:` | a real viewer's pixel height over its width |
+| `colorizer:` | the colorizer it starts with; a `coloring:` block inside `setup:` changes its settings |
+| `show if:` | when it's shown (see below) |
+| `tiled:` | `false` to start showing only the fundamental domain (see below) |
+| `iteration limit:`, `escape radius:`, `vanishing radius:` | what its loops use instead of `max_iters`, `escape_radius` and `vanishing_radius`, so that two viewers can differ |
 
 ### Showing a viewer only some of the time
 
-A viewer with a `show_if=` attribute is only shown while its condition holds. The condition is a
+A viewer with a `show if:` setting is only shown while its condition holds. The condition is a
 truth value worked out from the configuration's values, and it's worked out again whenever one of
 them changes. It can also use the values and one-line functions defined in `@common`, and the
 standard library's one-line functions, like `max`. Because it's worked out apart from any viewer
@@ -70,21 +110,23 @@ shows the Julia set only once a point of the Mandelbrot set has been picked with
 C : C := 0
 selected_C : Bool := false
 
-@viewer "Mandelbrot set" var=C
+@viewer "Mandelbrot set" over C
 z := 0
 iterate z -> z^2 + C until z escapes
 
-@viewer "Julia set" show_if=selected_C
+@viewer "Julia set"
+setup:
+  show if: selected_C
 iterate z -> z^2 + C until z escapes
 
-@tool "Pick C" for="Mandelbrot set"
+@tool "Pick C" for "Mandelbrot set"
 on click:
   C <- click
   selected_C <- true
 ```
 
-A condition with spaces in it needs quotes, as other attribute values do:
-`show_if="selected_C and not compare_mode"`. It can only use the configuration's values, not a
+The condition is the rest of its line, as in `show if: selected_C and not compare_mode`. It can
+only use the configuration's values (and `@common`'s), not a
 viewer's own variables (like `z`), which only have values pixel by pixel.
 
 While a viewer is hidden, its window is hidden, and it isn't drawn, even as the configuration
@@ -92,6 +134,7 @@ changes; its tools and its overlay don't run. When it's shown again, its window 
 it was, with the same view, and it's drawn with the configuration as it is then. Whether a viewer
 is shown isn't saved with the project, since it follows from the configuration.
 
+(lattices)=
 ### Lattices: viewers of a torus
 
 A viewer of the plane can have a *lattice* acting on it. The viewer then *folds* each pixel's
@@ -102,23 +145,25 @@ tile. For example, this project draws the Weierstrass ℘ function of the lattic
 
 ```{code-block} fs
 ---
-caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=Jc67CgIxEIXhPk9xSKV4jWKz7IJga6f9ErOzOphNliReEEvfz1cyajcc_g-m9aHTqYAS0QTu8_UUwNp41_IRcqtTYkMyb-8XCmxQVJhPlxhBTRVYfOMr040C5N6HS5Swf1Nl0POd7I4fVKmZWs1zbLz1AeUE3CJyQ3XDMWlnCCUW_76OGSCdyOFgtTmDbCQ0vtPs6p8f3PrBYww1zk8Nh-ID)
+caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=JY29DsIwEIP3PoXViYrfgFiqIiGxMrJXIb3CibSpkhRQxcj78UpcYbNsf3btfKNjDpUE47kT9UqAvXFtzRekRx0jG0rF-7yR44B8h9VigynUQoGTsXxnepBHenK-DykaV_XWIV4J9o8LK71Ase9yEUDHT7IIPJA8L9V2Ja5x1nkUc3AtSUVlxSHqVugC6z9RjsQ43OJstbmBbCBUrtHclj9-8ugmwwxqJpdZlnwB)
 ---
 @config "Lattice"
 τ : C := 0.3 + 1.1 i
 
-@viewer "Torus" lattice=τ pixelSize=1/150
+@viewer "Torus" modulo the lattice τ
+setup:
+  pixel size: 1/150
 color <- if side_distance < 2 pixel_size then black else domain_color(wp(z, 1, τ))
 ```
 
-In a complex viewer, `lattice=τ` is the lattice ℤ + τℤ, and `lattice="(ω1, ω2)"` is the lattice
-ω1ℤ + ω2ℤ. In a real viewer, the lattice is given by a pair of vectors: `lattice="((1, 0), (0, 1))"`
+In a complex viewer, `modulo the lattice τ` is the lattice ℤ + τℤ, and `modulo the lattice (ω1, ω2)` is the lattice
+ω1ℤ + ω2ℤ. In a real viewer, the lattice is given by a pair of vectors: `modulo the lattice ((1, 0), (0, 1))`
 is ℤ². The periods are worked out from the configuration's values (and the standard library's
 functions), and again whenever one of them changes, so changing a configuration value (by hand or
 from a tool) changes the lattice, and the viewer is drawn again.
 
 The fundamental parallelogram is the one centered at 0: the points `s ω1 + t ω2` with `s` and `t`
-between -1/2 and 1/2. A `latticeCenter=` attribute centers it at another point instead (a complex
+between -1/2 and 1/2. A `centered at c` phrase centers it at another point instead (a complex
 number, or a pair of real numbers in a real viewer).
 
 Besides its folded point, a viewer with a lattice has two more variables:
@@ -135,11 +180,11 @@ drawings are drawn in each tile on the screen, unless the tiles are too small to
 
 Instead of all of its tiles, a viewer with a lattice can show only its fundamental domain, with the
 rest of the plane greyed out: the picture outside the domain is still drawn, but faded toward
-grey. Adding `tiled=false` to its header starts it that way, and its menu's "Show fundamental
+grey. A `tiled: false` setting in its `setup:` starts it that way, and its menu's "Show fundamental
 domain" switches between the two. Which one it shows is saved with the project. While it shows
 only its domain, a tool's drawings are only drawn in the domain, not copied into the other tiles.
 
-The same works for a viewer of the hyperbolic plane with a group (`group=`), whose fundamental
+The same works for a viewer of the hyperbolic plane with a group (`modulo the group`), whose fundamental
 domain is a polygon.
 
 ## Shared definitions
@@ -234,8 +279,10 @@ script still declares it with the same name and type.
 ## Tools
 
 Tools are additional scripts attached to a viewer that provide some user interaction customized
-to that viewer. A tool is defined by a header like `@tool NAME for="VIEWER"` where `NAME` is
+to that viewer. A tool is defined by a header like `@tool NAME for "VIEWER"` where `NAME` is
 the name of the tool, and `VIEWER` is the name of the viewer that the tool should attach to.
+With only one viewer, `for` can be left out; a keyboard shortcut goes at the end too:
+`@tool "Trace" for "Julia set" with shortcut t`.
 
 Tools work by running scripts in response to actions taken by the user. A tool can draw on top
 of the viewer's window, and can also change the value of configuration variables. Through these
@@ -273,7 +320,7 @@ pointer, like the "Orbits" tool in the {doc}`scripting tutorial <scripting>`. A 
 block leaves dragging to move the view.
 
 A tool doesn't see its viewer's own variable: in the tool for a viewer of `z`, there is no `z`
-unless the tool declares one. In a parameter plane (a viewer like `@viewer "Parameter plane" var=C`
+unless the tool declares one. In a parameter plane (a viewer like `@viewer "Parameter plane" over C`
 with `C` a configuration value), `C` in the viewer's code is each pixel's own value, but `C` in
 its tools is the configuration's value. So a tool that sets the parameter to the point clicked
 says so: `C <- click`.
@@ -295,12 +342,12 @@ activated, and erases it when a button is pressed:
 
 ``` {code-block} fs
 ---
-caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=bZBNTsMwEIX3OcWT94lCW5I2EhICsecKrjMQCyuOxpOmSNyFU3AhToLz14LEbr55b954HAzbTip8JMD9ydJADPXgdPumYsd45xnfn18YGiuUjCbx3kE9WjaOFF48363-qAqdBeqZKQRIYwOOvYhvIR7EOlBsEsw8G-2Lqp5GbQqIpI3Ykxaqq8hAH6eY6nETnG1patashyUHWpBjsNKAdW37gJsl6G_6nDa9IhnomHbsO2KxFEZlPj3MpumeuYx_cK6Qr_X7te6cNrSaUpTZgdLtBYus2FG6uXCebQ_F_heWm_2KTK_Wt9eoXVbsy9v_MTS6oyqe-AM)
+caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=bZBNTsMwEIX3OcWT94lCW5I0qwrEniu4yUAsrDgaT5oicRdOwYU4Cc5fAxK7-ea9eeOxr9h0UuIjAk4XQwMx1IPV7ZsKncpZx_j-_MLQGKFoNIlzFurRcGVJ4cVt_qAKXQXqmcl7SGM8zr2IayEOxNpTaBKqeTbYF1U9jdoUEEhXYi5aqC4DA32YYqqnTda0NDVr1sOSAy1IMRhpwLo2vcfdEvQ3fU6bXhENdI47dh2xGPKjMp_uZ9N0z1yGP7iWSNf6fas7qytaTTHy5Ejx_oZZkh0o3t04TfbHrPiF-a5YkenVuHaLOiRZkd__j77RHZXhxB8)
 ---
 @viewer "Blank"
 color <- white
 
-@tool "Circle" for="Blank"
+@tool "Circle" for "Blank"
 
 text "Press this button to erase the circle"
 button "Erase"

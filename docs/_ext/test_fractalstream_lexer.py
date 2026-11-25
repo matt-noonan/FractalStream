@@ -27,15 +27,18 @@ define shade:
   if z escaped:
     color ⟵ blend (cos (pi m / 20)^2, dark blue, light yellow)
 
-@viewer "Parameter plane" var=C center="-0.5" pixelSize=1/150
-coloring:
-  period <- 100
+@viewer "Parameter plane" over C
+setup:
+  center: -0.5
+  pixel size: 1/150
+  coloring:
+    period <- 100
 z := 0
 iterate z -> f(z) until z escapes
 run shade
 x := 3.5e-2 + "a\\"b"
 
-@tool "Trace" for="Parameter plane" shortcut=t
+@tool "Trace" for "Parameter plane" with shortcut t
 on click:
   w := click
   draw circle at w with radius 4 pixels
@@ -77,11 +80,11 @@ def test_junk_is_an_error():
 
 
 def test_stanza_headers():
-    assert classes('@viewer "J" var=C center="-0.5"') == [
+    assert classes('@viewer "J" over C on the sphere') == [
         ("@viewer", Name.Decorator),
         ('"J"', String.Double),
-        ("var", Name.Attribute), ("=", Operator), ("C", Name),
-        ("center", Name.Attribute), ("=", Operator), ('"-0.5"', String.Double),
+        ("over", Name.Attribute), ("C", Name),
+        ("on", Name.Attribute), ("the", Name.Attribute), ("sphere", Name.Attribute),
     ]
 
 
@@ -181,7 +184,7 @@ p : ℙ¹ := [1 : 0]
 function critical_point(w, k):
   critical_point <- w
 
-@viewer "Newton" var=z view=sphere
+@viewer "Newton" over z on the sphere
 w : Cinf := infinity
 [a : b] := p
 u, j := chart(w)
@@ -216,6 +219,14 @@ def test_wirtinger_and_wp():
     src = "@viewer \"V\"\nd := diff_bar(|z|^2, z) + ℘'(z, 1, i)\ncolor <- domain_color(d)\n"
     assert class_of(src, "diff_bar") == Name.Builtin
     assert class_of(src, "℘") == Name.Builtin
+    assert not [v for v, t in classes(src) if t is Error]
+
+
+def test_setup_settings():
+    src = '@config "P"\nn : Z := 2\n\n@viewer "V" over w\nsetup:\n  center: 0\n  show if: n > 1\ncolor <- if |w| < n then red else blue\n'
+    assert class_of(src, "setup") == Keyword
+    assert class_of(src, "center") == Keyword
+    assert class_of(src, "show") == Keyword
     assert not [v for v, t in classes(src) if t is Error]
 
 
