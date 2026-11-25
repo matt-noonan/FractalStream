@@ -29,8 +29,13 @@ script: |
       write "Could not find the attracting cycle" at 1.5 i
 metadata:
   title: Cycle detection
-  description: This script demonstrates how to use `find_cycle` to detect an approximate
-    cycle in the orbit of a point.
+  description: |
+    Finds the attracting cycle of z² + C with the standard library's `find_cycle`,
+    which runs the orbit of the critical point 0 for a while, then looks for a
+    cycle in it with Floyd's "tortoise and hare" method, and draws that cycle
+    over the Julia set, with its period. Pick C
+    in the parameter plane with its Select tool: inside a hyperbolic component of
+    the Mandelbrot set, the cycle found is the component's attracting cycle.
   preview-commands: |
     set parameter C to -0.515625 + 0.578125i
     select viewer "Dynamics"

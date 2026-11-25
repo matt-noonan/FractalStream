@@ -22,7 +22,13 @@ script: |-
     draw circle at z0 with radius r
 metadata:
   title: Computing residues
-  description: This short script demonstrates FractalStream’s `residue` function.
+  description: |
+    Colors the plane by f(z) = 1/(z² - 1)², which has double poles at ±1, and
+    writes the residue of f at z0, worked out by the standard library's
+    `residue(f, z0, r, steps)`: the integral of f around the circle of radius r
+    about z0 (drawn over the picture), in `steps` steps, divided by 2πi. Move z0
+    and r in the configuration: the residue is -1/4 at 1, 1/4 at -1, and 0 where
+    the circle encloses no pole.
   preview-commands: |
     select viewer "z plane"
     capture viewer "z plane" as preview

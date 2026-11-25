@@ -25,16 +25,10 @@ script: |
   #
   #     y^2 = 4x^3 - (11/4)x + 3/8,   e1 = 3/4,  e2,3 = (-3 -+ sqrt 17)/8,
   #
-  # with omega1 = 1.5470797535511203, tau = 0.88739417337317839 i, nome
-  # q = e^(i pi tau) = 0.0615546, and a constant C = -0.312026392806344 in
-  # the theta formula
-  #
-  #     p(t)  = C - (log theta1)''/(4 omega1^2),
-  #     p'(t) =     -(log theta1)'''/(8 omega1^3),   v = t/(2 omega1);
-  #
-  # four terms of the theta series are enough for this q (they agree with
-  # mpmath to about 1e-30 relative).  Weierstrass p and p' then go to (a, b)
-  # through Dynamo's chain of rational maps:
+  # with omega1 = 1.5470797535511203 and tau = 0.88739417337317839 i.  The
+  # standard library's Weierstrass p function of that lattice, ℘(t, 2 omega1,
+  # 2 omega2), and its derivative then go to (a, b) through Dynamo's chain of
+  # rational maps:
   #
   #     x = -p - 1/4,  y = (p' + x + 1)/(2x),  x <- x/(y - x - 1),
   #     y <- x - 1/(y - x - 1),  b = (x+1)y/x,  a = x b - 1.
@@ -42,6 +36,8 @@ script: |
   # Because the curve is a torus, the picture repeats in the lattice -- under
   # t -> t + 2 omega1 (3.094 real) and t -> t + 2 omega2 (2.746 i) -- so one
   # cell, |Re t| < 1.547 and |Im t| < 1.373, holds the whole parameter space.
+  # The parameter plane says so (`modulo the lattice`): its menu's "Show
+  # fundamental domain" shows just that cell.
   #
   # There is no attracting infinity in this family (oo maps to 1), so a
   # captured orbit is recognised by its approach to oo, the image of the pole
@@ -107,36 +103,15 @@ script: |
   #     + 33ab + 15b^2 + 7a + 7b + 1 = 0,
   # whose uniformization is C/(2 omega1, 2 omega2), omega2 = tau omega1, for the
   # lattice of y^2 = 4x^3 - (11/4)x + 3/8 (half-periods e1 = 3/4 and
-  # e2,3 = (-3 +- sqrt 17)/8).  The half-period, the nome q = e^(i pi tau) and
-  # the constant in the theta formula were computed once to 25 digits; the theta
-  # sums keep four terms, which is accurate to about 1e-24 for this q.
+  # e2,3 = (-3 +- sqrt 17)/8), computed once to 25 digits.
   per5_omega1 : R := 1.5470797535511203
-  per5_pconst : R := -0.312026392806344
-  per5_q : List of R := [0.49809833880241478, 0.0018872778374306454, 0.000000027094262443660302, 0.0000000000000014738034644543212]
+  per5_tau : C := 0.88739417337317839 i
 
-  # Weierstrass p and p' at t -- p = pconst - d2(log theta1)/(4 omega1^2) and
-  # p' = -d3(log theta1)/(8 omega1^3) -- then Dynamo's rational chain from
-  # (p, p') to the family's (a, b).  Assigns the caller's pa and pb.
+  # Weierstrass p and p' at t, then Dynamo's rational chain from (p, p') to
+  # the family's (a, b).  Assigns the caller's pa and pb.
   define per5_param(t):
-    v := t/(2 per5_omega1)
-    s1 := 0.0
-    s2 := 0.0
-    s3 := 0.0
-    s4 := 0.0
-    n := 0
-    while true up to 4 times:
-      ang := (2 n + 1) pi v
-      sign := if mod(n, 2) === 0 then 1.0 else -1.0
-      coef := sign (per5_q @ (n + 1))
-      s1 <- s1 + coef sin ang
-      s2 <- s2 + coef (2 n + 1) pi cos ang
-      s3 <- s3 - coef ((2 n + 1) pi)^2 sin ang
-      s4 <- s4 - coef ((2 n + 1) pi)^3 cos ang
-      n <- n + 1
-    l2 := s3/s1 - (s2/s1)^2
-    l3 := s4/s1 - 3 (s3 s2)/s1^2 + 2 (s2/s1)^3
-    wp := per5_pconst - l2/(4 per5_omega1^2)
-    wdp := -l3/(8 per5_omega1^3)
+    wp := ℘(t, 2 per5_omega1, 2 per5_omega1 per5_tau)
+    wdp := wp_prime(t, 2 per5_omega1, 2 per5_omega1 per5_tau)
     wx := -wp - 0.25
     wy := wdp + wx + 1
     wy <- wy/(2 wx)
@@ -227,7 +202,7 @@ script: |
     else:
       color <- black
 
-  @viewer "Parameter plane" over t5
+  @viewer "Parameter plane" over t5 modulo the lattice (3.0941595071022406, 2.7457391180897539 i)
   setup:
     center: 0
     pixel size: 1/120
@@ -254,11 +229,7 @@ script: |
       else if solid5:
         # "Less solid": shade the class colour by how long the escape took,
         # over a log scale, so the level sets inside a component show.
-        sh5 := log(ccap / 10) / log(20)
-        if sh5 < 0.0:
-          sh5 <- 0.0
-        if sh5 > 1.0:
-          sh5 <- 1.0
+        sh5 := clamp(log(ccap / 10) / log(20), 0, 1)
         color <- blend(0.6 sh5, rainbow(cr / 5), black)
       else:
         color <- white

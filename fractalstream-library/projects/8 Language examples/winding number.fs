@@ -31,7 +31,13 @@ script: |-
       t ⟵ t + dt
 metadata:
   title: Computing winding numbers
-  description: A demonstration of the builtin function `winding_number`
+  description: |
+    Colors each point z by how many times the closed path
+    t ⟼ (1 + 2 cos 2πt) e^(2πit) - 1, a limaçon with an inner loop drawn over the
+    picture, winds around it: yellow for 0, green for 1, blue for 2. The standard
+    library's `winding_number(path, z, steps)` integrates 1/(w - z) along the
+    path, in `steps` steps: its imaginary part is 2π times the number of turns.
+    With too few steps, points close to the path come out wrong.
   preview-commands: |
     select viewer "z plane"
     capture viewer "z plane" as preview
