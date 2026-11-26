@@ -16,6 +16,7 @@ module UI.LibraryGrid
   , setGridItems
   , selectGridItem
   , gridTileSize
+  , refreshGridColours
   ) where
 
 -- (Hiding layout combinators and attributes whose names this module
@@ -24,6 +25,7 @@ import Graphics.UI.WX hiding (grid, row, column, columns, parent, selection, lin
 import Graphics.UI.WXCore hiding (Event, grid, row, column)
 
 import Control.Monad (forM_)
+import UI.Appearance (systemColour)
 import Data.IORef
 
 data LibraryGrid = LibraryGrid
@@ -59,13 +61,22 @@ data Geometry = Geometry
   , gLineHeight :: Int
   }
 
+-- | Give the grid the system's background color as it is now, and redraw
+-- it (after the system's appearance changes).
+refreshGridColours :: LibraryGrid -> IO ()
+refreshGridColours grid = do
+  background <- systemColour ColorWindow
+  set (lgWindow grid) [ bgcolor := background ]
+  repaint (lgWindow grid)
+
 -- | Make an empty grid. @onSelect@ is told whenever the selection
 -- changes (to 'Nothing' when nothing is selected), and @onActivate@
 -- when a tile is double-clicked or Return is pressed on it.
 libraryGrid :: Window a -> (Maybe Int -> IO ()) -> (Int -> IO ()) -> IO LibraryGrid
 libraryGrid parent onSelect onActivate = do
+  background <- systemColour ColorWindow
   sw <- scrolledWindow parent [ scrollRate := sz 0 scrollStep
-                              , bgcolor := colorSystem ColorWindow
+                              , bgcolor := background
                               , fullRepaintOnResize := False ]
   tiles <- newIORef []
   selection <- newIORef Nothing
@@ -176,10 +187,12 @@ paintGrid grid dc _ = do
   forM_ (zip [0 ..] shownTiles) $ \(i, (title, bmp)) -> do
     let Point x y = cellOrigin g i
         isSelected = current == Just i
-        labelColor = colorSystem (if isSelected then ColorHighlightText else ColorWindowText)
+    -- (asked each time: the system's colours change with its appearance)
+    labelColor <- systemColour (if isSelected then ColorHighlightText else ColorWindowText)
+    highlight <- systemColour ColorHighlight
     when isSelected $
       drawRect dc (rect (pt x y) (sz cellWidth (gCellHeight g)))
-        [ brushKind := BrushSolid, brushColor := colorSystem ColorHighlight
+        [ brushKind := BrushSolid, brushColor := highlight
         , penKind := PenTransparent ]
     drawBitmap dc bmp (pt (x + cellPadding) (y + cellPadding)) True []
     labelLines <- wrapLabel dc (cellWidth - 8) title

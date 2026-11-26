@@ -10,6 +10,7 @@ import Data.DynamicValue
 import FractalStream.Library (projectsDirectory)
 import FractalStream.Settings
 import FractalStream.Backends (BackendId, backendLabel, defaultBackendOrder)
+import UI.Appearance (followAppearance)
 import UI.EditorKeys (emacsKeysByDefault)
 import UI.EditorStyle (Style(..), classStyle, defaultClassStyle, editorBackground)
 import UI.CodeEditor (frameIsLight)
@@ -33,6 +34,7 @@ import Control.Exception (IOException, try)
 preferencesWindow :: [BackendId] -> Variable Settings -> IO (Frame ())
 preferencesWindow available settingsVar = do
   f <- frame [ text := "Preferences", resizeable := True ]
+  followAppearance f (pure ())
   p <- panel f []
   -- a page for each kind of setting, with a menu of them
   book <- choiceBook Nothing p

@@ -30,6 +30,7 @@ import Graphics.UI.WXCore.Frame (frameDefaultStyle)
 import Data.Time (UTCTime, diffUTCTime, getCurrentTime)
 import Data.Planar
 
+import UI.Appearance (followAppearance)
 import UI.Tile
 import UI.Magnify (onPinch)
 import UI.Cursors
@@ -152,6 +153,7 @@ viewProject projectWindow wxLayout addMenuBar projectActions = UI
                      , visible := False
                      ] projectWindow
           WX.windowOnClose f' (set f' [ visible := False ])
+          followAppearance f' (pure ())
           forM_ restoredConfig $ \WindowProperties{..} -> do
             Point x0 y0 <- get f' position
             set f' [ position := Point (fromMaybe x0 wpX) (fromMaybe y0 wpY) ]
@@ -357,6 +359,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                                  ] projectWindow
         statusText' <- statusField [ text := "" ]
         set f' [ statusBar := [statusText'] ]
+        followAppearance f' (pure ())
         pure (f', statusText')
     host <- panel f []
     -- Closing a viewer's window closes its project (there'd be no easy
@@ -703,6 +706,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                           , style := wxFRAME_TOOL_WINDOW .+. wxRESIZE_BORDER .+. wxCAPTION .+. wxCLOSE_BOX
                           ] f
     WX.windowOnClose debugger (set debugger [ visible := False ])
+    followAppearance debugger (pure ())
     onOwnDestroy host (void (windowDestroy debugger))
     debugPanel <- panel debugger []
     debugResult <- textCtrl debugPanel
@@ -2191,6 +2195,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                           , style := wxFRAME_TOOL_WINDOW .+. wxRESIZE_BORDER .+. wxCAPTION .+. wxCLOSE_BOX
                           ] f
           WX.windowOnClose tf (set tf [ visible := False ])
+          followAppearance tf (pure ())
           onOwnDestroy host (void (windowDestroy tf))
           modifyIORef' toolWindows (Map.insert n tf)
           let buttonPress txt = do

@@ -15,13 +15,14 @@ import FractalStream.Quoted (quoted)
 import Graphics.UI.WX
 import Graphics.UI.WXCore hiding (Event)
 
-import Control.Monad (forM, unless)
+import Control.Monad (forM, forM_, unless, void)
 import Data.Functor ((<&>))
 import Data.IORef
 import Data.Maybe (fromMaybe, isJust)
 import System.Directory (createDirectoryIfMissing)
 
 import FractalStream.Library
+import UI.Appearance (followAppearance, systemColour)
 import UI.LibraryGrid
 import UI.Menu
 import UI.PreviewImage (paddedPreviewImage)
@@ -96,7 +97,8 @@ welcome ProjectActions{..} = do
   showingMine <- newIORef False
 
   let tilesFor entries = forM entries $ \LibraryEntry{..} -> do
-        img <- paddedPreviewImage gridTileSize (colorSystem ColorWindow)
+        background <- systemColour ColorWindow
+        img <- paddedPreviewImage gridTileSize background
                  (Just (fromMaybe placeholderPreview lePreview))
         bmp <- bitmapCreateFromImage img (-1)
         pure (leTitle, bmp)
@@ -111,7 +113,7 @@ welcome ProjectActions{..} = do
             inMine <- readIORef showingMine
             folder <- projectsFolder
             set descriptionText [ text := if inMine then emptyMine folder else
-                                    "Choose a project to see it's description." ]
+                                    "Choose a project to see its description." ]
           Just LibraryEntry{..} -> do
             set titleText [ text := leTitle ]
             -- A problem's script error marks where it is with a line of
@@ -137,7 +139,10 @@ welcome ProjectActions{..} = do
   -- Every built-in project's tile is made up front. Previews come in
   -- different shapes, so each is centered on a square of the grid's
   -- background color.
-  builtIn <- forM librarySections $ \s -> (s,) <$> tilesFor (lsEntries s)
+  -- (made again when the system's appearance changes: see below)
+  let makeBuiltIn = forM librarySections $ \s -> (s,) <$> tilesFor (lsEntries s)
+  builtIn <- makeBuiltIn
+  builtInTiles <- newIORef builtIn
   let builtInCount = length builtIn
       isMine i = i >= builtInCount
 
@@ -156,9 +161,10 @@ welcome ProjectActions{..} = do
                           | (i, (s, _)) <- zip [0 :: Int ..] scanned ]
 
       showSection i = do
+        current <- readIORef builtInTiles
         sections <- if isMine i
-          then (builtIn ++) <$> (readIORef mine >>= maybe (refreshMine >> readMineSections) pure)
-          else pure builtIn
+          then (current ++) <$> (readIORef mine >>= maybe (refreshMine >> readMineSections) pure)
+          else pure current
         set showFolderButton [ enabled := isMine i ]
         writeIORef showingMine (isMine i)
         case drop i sections of
@@ -194,6 +200,21 @@ welcome ProjectActions{..} = do
               current <- get sectionList selection
               when (isMine current) (showSection current)
             previous active ]
+
+  -- When the system's appearance changes: the tiles again, on the new
+  -- background, and the same section and project shown.
+  followAppearance f $ do
+    makeBuiltIn >>= writeIORef builtInTiles
+    scanned <- isJust <$> readIORef mine
+    when scanned (void readMine)
+    refreshGridColours projectGrid
+    current <- get sectionList selection
+    chosen <- readIORef selected
+    shownBefore <- readIORef shown
+    when (current >= 0) $ do
+      showSection current
+      forM_ (chosen >>= \e -> lookup (leTitle e) (zip (map leTitle shownBefore) [0 ..])) $ \k ->
+        selectGridItem projectGrid (Just k)
 
   sidebarItems >>= \initial -> set sectionList [ items := initial ]
 
