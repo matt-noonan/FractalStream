@@ -128,6 +128,21 @@ spec = do
           c <- invoke' env ColorType f x (truncate (roundHalfAway x)) black 0 0 False 0 0
           (x, c) `shouldBe` (x, white)
 
+    it "takes a list (or a table) from either branch of an if/then/else" $ do
+      let env = declare @"x" RealType
+              $ declare @"n" IntegerType
+              $ declare @"color" ColorType
+              $ declare @"[internal] iteration count" IntegerType
+              $ declare @"[internal] iteration limit" IntegerType
+              $ declare @"[internal] stuck" BooleanType
+              $ declare @"[internal] escape radius" RealType
+              $ declare @"[internal] vanishing radius" RealType
+              $ endOfDecls
+      withCompiledCode (Proxy @"color") ColorType env
+          "xs := if x > 0 then [1.0, 2.0] else [3.0, 4.0, 5.0]\ncolor <- if length(xs) = n then white else black" $ \f -> do
+        invoke' env ColorType f 1 2 black 0 0 False 0 0 `shouldReturn` white
+        invoke' env ColorType f (-1) 3 black 0 0 False 0 0 `shouldReturn` white
+
     it "saturates a real made an integer, as the wasm and GPU backends" $ do
       let env = declare @"x" RealType
               $ declare @"n" IntegerType
