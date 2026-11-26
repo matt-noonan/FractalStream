@@ -594,6 +594,8 @@ means.
 | `find_cycle(f, z, warmup, max_period, same, χ)`, `preperiod_and_period(f, z, max_steps, same)` | Finding a cycle, and how long an orbit takes to reach it (see {ref}`cycles`) |
 | `S(f, x)` | The Schwarzian derivative of `f` at `x` |
 | `riemann_sum(γ, f, N)`, `residue(f, z, r, N)`, `winding_number(γ, z0, N)`, `polygon_winding_number(points, z0)` | Contour integrals and winding numbers (see {ref}`integration`) |
+| `reverse(xs)` | The list in the opposite order |
+| `drop(n, xs)` | The list without its first `n` items (all of it if `n` ≤ 0, none of it if `n` is its length or more): `drop(1, xs)` is all but the first |
 | `closest(points, w)` | The item of a list nearest `w` (the first of those, on a tie): the branch of an inverse that continues a path, say |
 | `theta1(z, τ)` .. `theta4(z, τ)`, `wp(z, ω1, ω2)` / `℘(z, ω1, ω2)`, `wp_prime(z, ω1, ω2)`, `g2(ω1, ω2)`, `g3(ω1, ω2)`, `klein_j(τ)` | Elliptic functions (see {ref}`elliptic`) |
 | `cycle(t, c1, c2)` | A color going back and forth between `c1` (at whole numbers) and `c2` (halfway between) |
@@ -685,6 +687,11 @@ can be replaced with the multiple assignment
 ``` fractalstream
 x, y <- x + y, x
 ```
+
+A `_` in a tuple of variables stands for a part that isn't wanted: it gets no variable, and can come
+more than once, as in `(_, b, _) := t` or `for each (_, w) in pairs`. A single part of a tuple, without
+taking it apart, is `proj1(t)`, `proj2(t)`, `proj3(t)` or `proj4(t)`, counting the parts as they're
+written: for `t := (a, b, c)`, `proj3(t)` is `c`.
 
 (functions)=
 ### Functions
