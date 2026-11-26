@@ -261,7 +261,7 @@ codeStatementsGrammar CommonDefs{..} = mdo
              <*> (colon *> nl *> block)) <?> "code definition"
     , node
       (SFunction <$> (lit "function" *> ident)
-                 <*> argList
+                 <*> functionParams
                  <*> (colon *> nl *> block)) <?> "function definition"
     , node
       (SRun <$> (lit "run" *> ident)
@@ -304,6 +304,13 @@ codeStatementsGrammar CommonDefs{..} = mdo
   argList <- rule $
     ((:) <$> (token OpenParen *> ident)
          <*> ((many (token Comma *> ident)) <* token CloseParen))
+  -- (a function with a body can have none, `function current():`, for a
+  -- value it takes some statements to work out; a one-line one can't,
+  -- since that's just a value, `x := e`)
+  functionParams <- ruleChoice
+    [ argList
+    , [] <$ (token OpenParen *> token CloseParen)
+    ]
 
   upTo <- rule (lit "up" *> token ToKeyword *> value <* token TimesKeyword)
 

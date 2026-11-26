@@ -606,6 +606,8 @@ valueAndArithGrammar funs own = mdo
     [ node (EBin OpMod
         <$> (builtinWord "mod" *> token OpenParen *> argument)
         <*> (token Comma *> argument <* token CloseParen))
+    -- a function of no values, `current()`
+    , node (ECall <$> funName <*> ([] <$ (token OpenParen *> token CloseParen)))
     ]
 
   -- (a function applied without parentheses: `sin x`, `sin cos(x)`)

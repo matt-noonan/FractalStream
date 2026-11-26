@@ -454,6 +454,16 @@ x <- k|] `shouldBe` Right 4
       failsWith "until false:\n  x <- if x stops then 1 else 2" "`stops` can only be used in a loop's condition"
       failsWith "b := x stops" "`stops` can only be used in a loop's condition"
 
+  describe "a function of no values" $ do
+    it "is defined with `()`, and called with `()`" $ do
+      runWithRealX 0 "function two():\n  two <- 2\nx <- two()" `shouldBe` Right 2
+      runWithRealX 0 "function two():\n  two <- 2\nx <- 3 two() + 1" `shouldBe` Right 7
+      -- (a function of no values that takes a few statements)
+      runWithRealX 0 "function total():\n  total <- 0\n  for each k in [1, 2, 3]:\n    total <- total + k\nx <- total() total()" `shouldBe` Right 36
+
+    it "says so when it's given values, or another isn't" $ do
+      runWithRealX 0 "function two():\n  two <- 2\nx <- two(1)" `shouldSatisfy` either (const True) (const False)
+      runWithRealX 0 "function dbl(v):\n  dbl <- 2 v\nx <- dbl()" `shouldSatisfy` either (const True) (const False)
   describe "an empty list" $ do
     it "takes its items' type from what's added to it" $ do
       runWithRealX 0 "out := []\nfor each p in [1.5, 2.5]:\n  out <- append(out, p)\nx <- out @ 2" `shouldBe` Right 2.5
