@@ -245,7 +245,7 @@ script: |
       pick <- 1
     run per5_paint(pick)
 
-  @viewer "Julia set"
+  @viewer "Julia set" on the sphere
   setup:
     center: 0
     pixel size: 1/150

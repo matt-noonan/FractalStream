@@ -124,7 +124,7 @@ script: |
   iterate z -> f(z) until z escapes
   run shadeP
 
-  @viewer "Julia set"
+  @viewer "Julia set" on the sphere
   setup:
     center: 0
     pixel size: 1/150
