@@ -406,6 +406,9 @@ body {
   text-align: left; border-color: transparent; background: none; padding: 6px 10px;
 }
 .welcome .welcome-sections button:hover { background: var(--panel); }
+/* a line between groups of sections (after the starting points) */
+.welcome .welcome-sections button.divided { margin-top: 9px; position: relative; }
+.welcome .welcome-sections button.divided::before { content: ""; position: absolute; left: 4px; right: 4px; top: -6px; border-top: 1px solid var(--line); }
 .welcome .welcome-sections button[aria-current=true] { background: var(--accent); border-color: var(--accent); color: white; }
 .welcome-grid {
   list-style: none; margin: 0; padding: 8px; overflow-y: auto; align-content: start;
@@ -456,6 +459,8 @@ body {
   .welcome .welcome-sections button {
     flex: none; white-space: nowrap; border: 1px solid var(--line); border-radius: 16px; padding: 4px 12px; background: var(--panel);
   }
+  .welcome .welcome-sections button.divided { margin-top: 0; margin-left: 9px; }
+  .welcome .welcome-sections button.divided::before { top: 4px; bottom: 4px; left: -7px; right: auto; border-top: none; border-left: 1px solid var(--line); }
   .welcome-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); padding: 6px; gap: 4px; }
   .welcome-tile img, .welcome-no-preview { width: 96px; height: 96px; }
   .welcome-tile-title { font-size: 12px; }

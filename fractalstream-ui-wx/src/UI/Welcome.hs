@@ -15,10 +15,10 @@ import FractalStream.Quoted (quoted)
 import Graphics.UI.WX
 import Graphics.UI.WXCore hiding (Event)
 
-import Control.Monad (forM, forM_, unless, void)
+import Control.Monad (forM, forM_, join, unless, void)
 import Data.Functor ((<&>))
 import Data.IORef
-import Data.Maybe (fromMaybe, isJust)
+import Data.Maybe (fromMaybe, isJust, listToMaybe)
 import System.Directory (createDirectoryIfMissing)
 
 import FractalStream.Library
@@ -70,6 +70,9 @@ welcome ProjectActions{..} = do
   detailsPanel <- panel splitter []
 
   sectionList <- singleListBox p []
+  -- (each row's section, Nothing for a divider, and the row chosen)
+  sidebarSections <- newIORef ([] :: [Maybe Int])
+  sidebarRow <- newIORef (0 :: Int)
 
   titleText <- staticText detailsPanel
                  [ text := ""
@@ -153,12 +156,34 @@ welcome ProjectActions{..} = do
         pure scanned
 
       -- The sidebar: the built-in sections, then the user's own, with
-      -- their subfolders indented under "My projects".
-      sidebarItems = readIORef mine <&> \m ->
-        map (lsName . fst) builtIn ++ case m of
-          Nothing -> ["My projects"]
-          Just scanned -> [ (if i == 0 then "" else "    ") ++ lsName s
-                          | (i, (s, _)) <- zip [0 :: Int ..] scanned ]
+      -- their subfolders indented under "My projects"; each row with its
+      -- section, and a divider (no section) after the starting points and
+      -- before "My projects".
+      sidebarRows = readIORef mine <&> \m ->
+        let named = zip (map (lsName . fst) builtIn) [0 ..]
+            (starting, rest) = span (\(_, k) -> maybe False (lsStartingPoints . fst) (listToMaybe (drop k builtIn))) named
+            mineRows = case m of
+              Nothing -> [("My projects", builtInCount)]
+              Just scanned -> [ ((if i == 0 then "" else "    ") ++ lsName s, builtInCount + i)
+                              | (i, (s, _)) <- zip [0 :: Int ..] scanned ]
+            divided xs = if null xs then [] else [(divider, Nothing)]
+            justs = map (fmap Just)
+        in justs starting ++ (if null starting then [] else divided rest)
+           ++ justs rest ++ divided rest ++ justs mineRows
+      divider = replicate 14 '─'
+      setSidebar = do
+        rows <- sidebarRows
+        writeIORef sidebarSections (map snd rows)
+        set sectionList [ items := map fst rows ]
+      -- (the section chosen in the sidebar, or -1)
+      currentSection = do
+        r <- get sectionList selection
+        fromMaybe (-1) . join . listToMaybe . drop r <$> readIORef sidebarSections
+      showInSidebar k = do
+        rows <- readIORef sidebarSections
+        forM_ (lookup (Just k) (zip rows [0 ..])) $ \r -> do
+          set sectionList [ selection := r ]
+          writeIORef sidebarRow r
 
       showSection i = do
         current <- readIORef builtInTiles
@@ -179,13 +204,19 @@ welcome ProjectActions{..} = do
 
       -- Read the user's sections again, keeping whatever's selected.
       refreshMine = do
-        current <- get sectionList selection
+        current <- currentSection
         _ <- readMine
-        newItems <- sidebarItems
-        set sectionList [ items := newItems
-                        , selection := min current (length newItems - 1) ]
+        setSidebar
+        scannedCount <- maybe 1 length <$> readIORef mine
+        showInSidebar (min current (builtInCount + scannedCount - 1))
 
-  set sectionList [ on select := get sectionList selection >>= showSection ]
+  -- (a divider can't be chosen: the choice goes back where it was)
+  set sectionList [ on select := do
+                      r <- get sectionList selection
+                      rows <- readIORef sidebarSections
+                      case join (listToMaybe (drop r rows)) of
+                        Just k -> writeIORef sidebarRow r >> showSection k
+                        Nothing -> readIORef sidebarRow >>= \r0 -> set sectionList [ selection := r0 ] ]
   set showFolderButton [ on command := do
                            folder <- projectsFolder
                            createDirectoryIfMissing True folder
@@ -197,7 +228,7 @@ welcome ProjectActions{..} = do
             scanned <- isJust <$> readIORef mine
             when (active && scanned) $ do
               refreshMine
-              current <- get sectionList selection
+              current <- currentSection
               when (isMine current) (showSection current)
             previous active ]
 
@@ -208,7 +239,7 @@ welcome ProjectActions{..} = do
     scanned <- isJust <$> readIORef mine
     when scanned (void readMine)
     refreshGridColours projectGrid
-    current <- get sectionList selection
+    current <- currentSection
     chosen <- readIORef selected
     shownBefore <- readIORef shown
     when (current >= 0) $ do
@@ -216,7 +247,7 @@ welcome ProjectActions{..} = do
       forM_ (chosen >>= \e -> lookup (leTitle e) (zip (map leTitle shownBefore) [0 ..])) $ \k ->
         selectGridItem projectGrid (Just k)
 
-  sidebarItems >>= \initial -> set sectionList [ items := initial ]
+  setSidebar
 
   -- How the two panes share the width: until the sash is dragged they keep
   -- their shares, so enlarging the window widens the description as well;
@@ -285,7 +316,7 @@ welcome ProjectActions{..} = do
         ]
 
   let selectSection i = do
-        set sectionList [ selection := i ]
+        showInSidebar i
         showSection i
       sectionIndices which = [ i | (i, (s, _)) <- zip [0 ..] builtIn, which s ]
 

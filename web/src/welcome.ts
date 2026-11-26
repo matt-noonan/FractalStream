@@ -90,7 +90,9 @@ export class Welcome {
     this.versionEl.title = `FractalStream ${version}`;
     this.sections = sections;
     this.sectionsEl.replaceChildren(...sections.map((s, i) => {
-      const b = el("button", { type: "button", textContent: s.name });
+      // (a line between the starting points and the library proper)
+      const divided = i > 0 && sections[i - 1].startingPoints && !s.startingPoints;
+      const b = el("button", { type: "button", textContent: s.name, className: divided ? "divided" : "" });
       b.addEventListener("click", () => this.chooseSection(i));
       return b;
     }));
