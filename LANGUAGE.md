@@ -382,6 +382,15 @@ value on the right doesn't have to be written out as a tuple, as long as
 its parts match. Any part can be an `if c then a else b` (see
 "Conditionals"): `x, y ⭠ 0, if c then 1 else 2`.
 
+A `_` in a tuple of variables stands for a part that isn't wanted: it
+gets no variable, and can come more than once, as in
+`(_, b, _) := t` or `for each (_, w) in pairs`.
+
+A single part of a tuple, without taking it apart, is `proj1(t)`,
+`proj2(t)`, `proj3(t)` or `proj4(t)`, counting the parts as they're
+written: for `t := (a, b, c)`, `proj3(t)` is `c`. (Tuples nest to the
+right, so `(a, b, c)` is `(a, (b, c))`, and `proj2` of it is `b`.)
+
 You can also use the unicode versions `⟵`, `⭠`, or `←`. The script
 editor writes `⟵` for `<-` once the script checks out, along with the
 other symbols the language accepts (`⟼` for `->`, `≔` for `:=`, `≤`,
@@ -776,6 +785,8 @@ that defines its own `wheel8` still gets the standard `rainbow`.
 | `residue(f, z, r, N)` | The residue of `f` at `z`, from the integral around the circle of radius `r` |
 | `winding_number(γ, z0, N)` | The number of times the closed path `γ` winds around `z0`, counterclockwise |
 | `polygon_winding_number(points, z0)` | The same for the closed polygon through a list of points (the last joined back to the first) |
+| `reverse(xs)` | The list in the opposite order |
+| `drop(n, xs)` | The list without its first `n` items (all of it if `n` is 0 or less, none of it if `n` is its length or more): `drop(1, xs)` is all but the first |
 | `closest(points, w)` | The item of a list nearest `w` (the first of those, on a tie): the branch of an inverse that continues a path, say, as in `closest([s, -s], previous_point)` |
 
 A function given to these can be a script's own, a built-in one taking

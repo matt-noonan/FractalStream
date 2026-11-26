@@ -357,6 +357,20 @@ synth env (Syn sr node) = case node of
     y' <- synth env y
     done (Pair (exprType x') (exprType y')) (EPair x' y')
 
+  -- `proj2(t)`: the k-th part of the tuple, as the projections that get
+  -- to it (the last part is the end of the chain of pairs)
+  ETupleProj k x -> do
+    x' <- synth env x
+    let parts = \case { Pair _ b -> 1 + parts b; _ -> 1 :: Int }
+        n = parts (exprType x')
+        at i e | i == k = if k == n then e else Syn sr (EProj False e)
+               | otherwise = at (i + 1) (Syn sr (EProj True e))
+    when (n < 2) $ advise sr ("`proj" ++ show k ++ "` takes a part of a tuple, but this is "
+                              ++ anType (exprType x') ++ ".")
+    when (k > n) $ advise sr ("This tuple has " ++ show n ++ " parts, so it has no part "
+                              ++ show k ++ ".")
+    synth env (at 1 x)
+
   -- (from a tuple assignment, with its tuple of variables' source range)
   EProj isSecond x -> do
     x' <- synth env x
@@ -1005,6 +1019,7 @@ describe = \case
   EDerivCall f order _ -> "the result of " ++ f ++ replicate order '\''
   EWiden{} -> "this value"
   EProj{} -> "this part of a pair"
+  ETupleProj k _ -> "this part of a tuple (`proj" ++ show k ++ "`)"
   EAdvice{} -> "this expression"
   EZero -> "this function's value"
   EInfinity -> "∞"

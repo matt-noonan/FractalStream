@@ -351,6 +351,11 @@ tokenize' = \case
   cs | Just (tok, cs') <- longestMatchingOperator cs
        -> tok : tokenize' cs'
 
+  -- `_` on its own: a part of a tuple that isn't wanted, `(a, _) := t`
+  -- (see "Language.Code.Tuples"); a name can't start with one
+  (('_', sr) : cs) | not (any (identChar . fst) (take 1 cs)) ->
+    SRToken (Identifier "_") sr : tokenize' cs
+
   -- Tokenize identifiers
   cs@(c:_) | (isAlpha (fst c) || fst c == '℘') && not (fst c `elem` superscripts) && (fst c /= '⁻') ->
                let ds = takeWhile (identChar . fst) cs

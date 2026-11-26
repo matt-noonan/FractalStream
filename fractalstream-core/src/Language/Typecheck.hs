@@ -114,6 +114,9 @@ ppError = withoutStdlibPrefix . concat .  \case
     | Just w <- eventPointWord name ->
         ["`", w, "` is where a drag ", if w == "drag start" then "started" else "is now, or ended",
          ", so it's only defined in a tool's `on drag:` and `on drag-finished:`."]
+    | name == "_" ->
+        ["`_` stands for a part of a tuple that isn't wanted, as in `(a, _) := t`, so it \
+         \has no value to use."]
     | otherwise -> ["No variable named ", name, " is defined here."]
   MissingFunction _ name ->
     ["No function named ", name, " is defined here."]

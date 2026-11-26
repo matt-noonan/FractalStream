@@ -1006,6 +1006,15 @@ x <- total|] `shouldBe` Right 41
       -- (a script's own `sqrt` is the one it gets)
       "sqrt(v) := v + 1\nx <- compose(sqrt, 2, 16.0)" `gives` 18
 
+    it "reverses a list, and drops its first items" $ do
+      "x <- reverse([1.0, 2.0, 3.0]) @ 1" `gives` 3
+      "x <- length(reverse([1.0, 2.0, 3.0]))" `gives` 3
+      "x <- drop(1, [1.0, 2.0, 3.0]) @ 1" `gives` 2
+      "x <- length(drop(1, [1.0, 2.0, 3.0]))" `gives` 2
+      "x <- length(drop(5, [1.0, 2.0, 3.0]))" `gives` 0
+      "x <- length(drop(0, [1.0, 2.0, 3.0]))" `gives` 3
+      "xs : List of R := []\nx <- length(drop(1, xs)) + length(reverse(xs))" `gives` 0
+
     describe "the standard library's Newton's method and Schwarzian" $ do
       it "keeps capped steps near the start" $ do
         -- (uncapped, the first step from 1.4 jumps to about -4.4, and it ends at π)

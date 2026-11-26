@@ -246,6 +246,25 @@ function polygon_winding_number(points, z0):
 # ---------------------------------------------------------------------------
 # Choosing among values
 
+# A list in the opposite order.
+function reverse(xs):
+  out := []
+  for each x in xs:
+    out <- prepend(out, x)
+  reverse <- out
+
+# A list without its first n items (all of it if n is 0 or less, and
+# none of it if n is its length or more): drop(1, xs) is all but the
+# first.
+function drop(n, xs):
+  out := []
+  k := 0
+  for each x in xs:
+    k <- k + 1
+    if k > n:
+      out <- append(out, x)
+  drop <- out
+
 # The item of a list nearest w (the first of those, if there's a tie):
 # say, the branch of an inverse that continues a path.
 function closest(points, w):
