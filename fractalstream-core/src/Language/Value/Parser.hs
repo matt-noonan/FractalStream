@@ -339,12 +339,8 @@ valueAndArithGrammar funs own = mdo
     , ite
     ]
 
-  ite <- ruleChoice
-    [ node (EITE <$> (token If *> scalar)
-                             <*> (token Then *> scalar)
-                             <*> (token Else *> ite))
-    , scalar
-    ]
+  -- (an if/then/else is a tuple's item, below: see `ifItem`)
+  ite <- ruleChoice [ scalar ]
 
   scalar <- ruleChoice [ list, pair ]
 
@@ -357,8 +353,8 @@ valueAndArithGrammar funs own = mdo
     ]
 
   argumentIte <- ruleChoice
-    [ node (EITE <$> (token If *> scalar)
-                 <*> (token Then *> scalar)
+    [ node (EITE <$> (token If *> argumentIte)
+                 <*> (token Then *> argumentIte)
                  <*> (token Else *> argumentIte))
     , list
     , pOr
@@ -377,11 +373,14 @@ valueAndArithGrammar funs own = mdo
   -- them are for ℙⁿ, which typing reports as not there yet)
   homogeneous <- rule (node (EHomogeneous <$> (token OpenBracket *> ((:) <$> arith <*> some (token Colon *> arith)) <* token CloseBracket)))
 
-  -- A pair's first part can't be an unparenthesized pair or if/then/else,
-  -- so that tuples nest to the right only (`a, b, c` is `a, (b, c)`), and
-  -- `if c then a else b, d` is `if c then a else (b, d)`.
+  -- A pair's first part can't be an unparenthesized pair, so that tuples
+  -- nest to the right only (`a, b, c` is `a, (b, c)`). Any item can be an
+  -- if/then/else, whose branches can't be unparenthesized tuples:
+  -- `if c then a else b, d` is `(if c then a else b), d`, and a tuple
+  -- branch is written `if c then (a, b) else (d, e)`.
   pair <- ruleChoice
-    [ node (EPair <$> (pairItem <* token Comma) <*> pair)
+    [ node (EPair <$> (tupleItem <* token Comma) <*> pair)
+    , ifItem
     , pOr
     , pointIndex
     , sliceAll
@@ -392,6 +391,16 @@ valueAndArithGrammar funs own = mdo
     ]
 
   pairItem <- ruleChoice [ list, pOr, pointIndex, sliceAll, funRef, builtinRef, lambda, compose ]
+
+  tupleItem <- ruleChoice [ ifItem, pairItem ]
+  ifItem <- ruleChoice
+    [ node (EITE <$> (token If *> tupleItem)
+                 <*> (token Then *> tupleItem)
+                 <*> (token Else *> tupleItem))
+    -- (a tuple for a branch, unparenthesized: said so)
+    , node ((token If *> tupleItem *> token Then *> tupleItem *> token Comma *> pair
+             *> token Else *> tupleItem) $> tupleBranch)
+    ]
 
   -- A function given as an argument (see "Language.Code.FunctionArgs"):
   -- one of the script's, by its name alone, or one written in place,
@@ -896,6 +905,12 @@ node = withSourceRange . fmap (flip mkExpr)
 
 literal :: String -> TypeProxy t -> HaskellType t -> ExprF ParsedValue
 literal d ty v = ELit d (SomeHaskellType ty v)
+
+-- | A branch of if/then/else that's an unparenthesized tuple.
+tupleBranch :: ExprF r
+tupleBranch =
+  EAdvice "A branch of `if` that's a tuple needs parentheses: `if c then (a, b) else (d, e)`. \
+          \(Without them, `if c then a else b, d` is `(if c then a else b), d`.)"
 
 -- | A function applied without parentheses, raised to a power: `sin x^2`
 -- could be (sin x)² or sin(x²).

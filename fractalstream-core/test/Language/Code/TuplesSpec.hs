@@ -75,8 +75,15 @@ y <- y + w
 
     it "nests longer tuples to the right, and reads pairs inside if/then/else" $ do
       runXY (1, 2) "a, b, c := 1.0, 2.0, 3.0\nx, y <- a + b, c" `shouldGive` (3, 3)
-      runXY (1, 0) "x, y <- if x > 0 then 1, 2 else 3, 4" `shouldGive` (1, 2)
-      runXY (-1, 0) "x, y <- if x > 0 then 1, 2 else 3, 4" `shouldGive` (3, 4)
+      runXY (1, 0) "x, y <- if x > 0 then (1, 2) else (3, 4)" `shouldGive` (1, 2)
+      runXY (-1, 0) "x, y <- if x > 0 then (1, 2) else (3, 4)" `shouldGive` (3, 4)
+
+    it "takes an if/then/else as any item of a tuple, not a tuple as its branch" $ do
+      runXY (1, 0) "x, y <- 5, if x > 0 then 1 else 2" `shouldGive` (5, 1)
+      runXY (-1, 0) "x, y <- if x > 0 then 1 else 2, 7" `shouldGive` (2, 7)
+      runXY (1, 0) "x, y <- (if x > 0 then 1 else 2), 7" `shouldGive` (1, 7)
+      runXY (1, 0) "x, y <- max(3, if x > 0 then 4 else 5), 0" `shouldGive` (4, 0)
+      runXY (0, 0) "x, y <- if x > 0 then 1, 2 else 3, 4" `shouldFailWith` "needs parentheses"
 
     it "rejects a variable that appears twice" $
       runXY (0, 0) "x, x <- 1, 2" `shouldFailWith` "more than once"
