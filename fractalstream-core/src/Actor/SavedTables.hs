@@ -65,6 +65,7 @@ import Data.Char (isAlphaNum)
 import qualified Data.Yaml as YAML
 import Codec.Picture
 import qualified Data.Vector.Storable as VS
+import qualified Data.Vector.Storable.Mutable as VSM
 import Foreign.ForeignPtr (castForeignPtr)
 
 -- | One saved table.
@@ -81,15 +82,23 @@ data SavedTable = SavedTable
 
 type SavedTables = Map String SavedTable
 
-data TableEncoding = RawTable | PngTable | JpegTable
+data TableEncoding = RawTable | PngTable | JpegTable | FixedTable
 
 instance FromJSON TableEncoding where
   parseJSON = withText "encoding" $ \case
     "raw"    -> pure RawTable
     "png"    -> pure PngTable
     "jpeg"   -> pure JpegTable
+    "fixed"  -> pure FixedTable
     encoding -> fail ("its encoding is " ++ show encoding ++ ", which this version of " ++
                       "FractalStream can't read")
+
+-- | How a @fixed@ table's numbers are stored (see 'decodeFixed').
+data FixedSpec = FixedSpec
+  { fxBits :: Int
+  , fxComponents :: Int
+  , fxRanges :: [(Double, Double)]
+  }
 
 -- | A table's description: what's in its file, and where that is
 -- (beside the description).
@@ -98,13 +107,18 @@ data TableInfo = TableInfo
   , tiEncoding :: TableEncoding
   , tiType :: String
   , tiSize :: [Int]
-  , tiOrigin :: (Double, Double), tiStep :: (Double, Double), tiSha256 :: Maybe String }
+  , tiOrigin :: (Double, Double), tiStep :: (Double, Double), tiSha256 :: Maybe String
+  , tiFixed :: Maybe FixedSpec }
 
 instance FromJSON TableInfo where
-  parseJSON = withObject "table" $ \o ->
-    TableInfo <$> o .: "file" <*> (o .:? "encoding" .!= RawTable) <*> o .: "type"
+  parseJSON = withObject "table" $ \o -> do
+    enc <- o .:? "encoding" .!= RawTable
+    fixed <- case enc of
+      FixedTable -> Just <$> (FixedSpec <$> o .: "bits" <*> o .: "components" <*> o .: "ranges")
+      _ -> pure Nothing
+    TableInfo <$> o .: "file" <*> pure enc <*> o .: "type"
               <*> o .: "size" <*> o .: "origin"
-              <*> o .: "step" <*> o .:? "sha256"
+              <*> o .: "step" <*> o .:? "sha256" <*> pure fixed
 
 -- | The tables a project's @manifest:@ says it has (each by its
 -- description's path), from its archive's files (by path); and a warning
@@ -130,7 +144,9 @@ readTableAt files path = do
                      (YAML.decodeEither' (BL.toStrict described))
   let file = folderOf path ++ tiFile
   bytes0 <- maybe (Left ("its file " ++ show file ++ " isn't there")) Right (Map.lookup file files)
-  bytes <- convertBytes tiEncoding bytes0
+  bytes <- case (tiEncoding, tiFixed) of
+    (FixedTable, Just spec) -> decodeFixed spec tiSize bytes0
+    _ -> convertBytes tiEncoding bytes0
   pure (SavedTable tiType tiSize tiOrigin tiStep bytes tiSha256)
   where
     -- (archive paths: always with /, whatever the platform)
@@ -139,12 +155,63 @@ readTableAt files path = do
 convertBytes :: TableEncoding -> BL.ByteString -> Either String BL.ByteString
 convertBytes enc bs = case enc of
     RawTable  -> pure bs
+    FixedTable -> Left "a fixed-point table needs its bits, components and ranges"
     PngTable  -> imgToBytes <$> decodePng (BL.toStrict bs)
     JpegTable -> imgToBytes <$> decodeJpeg (BL.toStrict bs)
   where
     imgToBytes img =
       let (fptr, offset, len) = VS.unsafeToForeignPtr (imageData $ convertRGB8 img)
       in BL.fromStrict $ BSI.fromForeignPtr (castForeignPtr fptr) offset len
+
+-- | A table of real or complex numbers (or tuples of them) stored in
+-- fixed point, a load-only format, lossy as JPEG is (made by
+-- dev-tools/tables/fixed_encode.py): each of a cell's @components@ reals
+-- is an integer of @bits@ bits, scaled to the range given for it in its
+-- layer (a layer is a value of the table's last index; a 1-dimensional
+-- table is one layer), as @lo + q (hi - lo) / (2^bits - 1)@. @ranges@
+-- lists the ranges layer by layer, component by component. In the file,
+-- each layer's values of each component, in the table's order, are stored
+-- as differences from the one before (modulo 2^(8 bytes)), in as many
+-- little-endian bytes as the bits need; and then the whole file is
+-- byte-shuffled: every value's first byte, then every value's second
+-- byte, and so on. (Smooth data compresses far better so.) The result is
+-- the table's packed elements, eight-byte reals, as a raw table's are.
+decodeFixed :: FixedSpec -> [Int] -> BL.ByteString -> Either String BL.ByteString
+decodeFixed FixedSpec{..} dims bs0 = do
+  let bs = BL.toStrict bs0
+      width = (fxBits + 7) `div` 8
+      cells = product dims
+      layers = if length dims >= 2 then last dims else 1
+      perLayer = cells `div` max 1 layers
+      count = cells * fxComponents
+      top = 2 ^ fxBits - 1 :: Double
+      modulus = 2 ^ (8 * width) :: Integer
+  when (fxBits < 1 || fxBits > 32) $ Left ("its bits, " ++ show fxBits ++ ", should be from 1 to 32")
+  when (fxComponents < 1) $ Left "its components should be at least 1"
+  when (length fxRanges /= layers * fxComponents) $
+    Left ("it has " ++ show (length fxRanges) ++ " ranges, but needs " ++ show (layers * fxComponents)
+          ++ " (one for each of its " ++ show fxComponents ++ " components in each of its "
+          ++ show layers ++ " layers)")
+  when (BS.length bs /= count * width) $
+    Left ("its file has " ++ show (BS.length bs) ++ " bytes, but should have " ++ show (count * width))
+  let rangeArr = VS.fromList (concat [ [lo, hi] | (lo, hi) <- fxRanges ])
+      byteAt i k = fromIntegral (BS.index bs (k * count + i)) :: Integer
+      valueAt i = foldr (\k acc -> acc * 256 + byteAt i k) 0 [0 .. width - 1]
+      out = VS.create $ do
+        v <- VSM.new count
+        forM_ [0 .. layers - 1] $ \g -> forM_ [0 .. fxComponents - 1] $ \c -> do
+          let lo = rangeArr VS.! (2 * (g * fxComponents + c))
+              hi = rangeArr VS.! (2 * (g * fxComponents + c) + 1)
+              base = (g * fxComponents + c) * perLayer
+          foldM_ (\q cell -> do
+                    let q' = (q + valueAt (base + cell)) `mod` modulus
+                    VSM.write v ((g * perLayer + cell) * fxComponents + c)
+                              (lo + fromIntegral q' * (hi - lo) / top)
+                    pure q')
+                 0 [0 .. perLayer - 1]
+        pure v
+      (fptr, offset, len) = VS.unsafeToForeignPtr (out :: VS.Vector Double)
+  pure (BL.fromStrict (BSI.fromForeignPtr (castForeignPtr fptr) (offset * 8) (len * 8)))
 
 -- | A table's two files, @<base>.yaml@ (its description) and @<base>.bin@
 -- (its elements), @base@ a path with /. The description is written a
