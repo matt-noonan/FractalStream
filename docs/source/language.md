@@ -655,6 +655,10 @@ new variable's name:
 z : R := 0
 ```
 
+A list that starts out empty, `points := []`, holds what's added to it later (by `append`,
+`prepend` or `join`), and the same goes for a function's result that starts out empty. One that
+never has anything added to it needs an annotation, like `points : List of C := []`.
+
 The value of a variable can be updated with the `<-` operator:
 ``` fractalstream
 z <- z^2 + 1
