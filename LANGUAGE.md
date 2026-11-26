@@ -704,7 +704,12 @@ shade`). Each one acts like a new variable holding the value it is given,
 with its type worked out from that value, so changing it inside the code
 doesn't change anything outside. Everything else the code mentions, like
 `color` and `iterations` above, refers to whatever is in scope where it is
-run, and any variables the code declares are local to each run. A `define`
+run: the code reads and sets the variables there. Any variables the code
+declares itself are its own, made afresh for each run: they can have the
+same names as variables where it's run (which they leave alone), the
+code that runs it can't see them afterwards, and code it runs in turn can
+use them as its own caller's. (To hand back a value, make it a function
+with a body instead; see "Functions with a body".) A `define`
 can be used in the rest of the block it appears in, and code can run
 other code defined before it.
 

@@ -21,13 +21,13 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                   block:
                                     block:
                                       set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + C)
-                                      let `d` = |(z - twist_center)| in:
+                                      let `[internal] twist_step.d #0` = |(z - twist_center)| in:
                                         block:
-                                          if ((r0 < d) and (d < r1)) then:
+                                          if ((r0 < [internal] twist_step.d #0) and ([internal] twist_step.d #0 < r1)) then:
                                             block:
-                                              let `theta` = (((2:R * 3.141592653589793) * (d - r0)) / (r1 - r0)) in:
+                                              let `[internal] twist_step.theta #0` = (((2:R * 3.141592653589793) * ([internal] twist_step.d #0 - r0)) / (r1 - r0)) in:
                                                 block:
-                                                  set `z` := (((2.718281828459045:C ^ (0.0 :+ 1.0 * theta:C)) * (z - twist_center)) + twist_center)
+                                                  set `z` := (((2.718281828459045:C ^ (0.0 :+ 1.0 * [internal] twist_step.theta #0:C)) * (z - twist_center)) + twist_center)
                                           else:
                                             no-op
                                 set `[internal] fresh #39` := ([internal] fresh #39 + 1)
@@ -74,13 +74,13 @@ let `[internal] vanishing radius` = vanishing_radius in:
                               block:
                                 block:
                                   set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + C)
-                                  let `d` = |(z - twist_center)| in:
+                                  let `[internal] twist_step.d #0` = |(z - twist_center)| in:
                                     block:
-                                      if ((r0 < d) and (d < r1)) then:
+                                      if ((r0 < [internal] twist_step.d #0) and ([internal] twist_step.d #0 < r1)) then:
                                         block:
-                                          let `theta` = (((2:R * 3.141592653589793) * (d - r0)) / (r1 - r0)) in:
+                                          let `[internal] twist_step.theta #0` = (((2:R * 3.141592653589793) * ([internal] twist_step.d #0 - r0)) / (r1 - r0)) in:
                                             block:
-                                              set `z` := (((2.718281828459045:C ^ (0.0 :+ 1.0 * theta:C)) * (z - twist_center)) + twist_center)
+                                              set `z` := (((2.718281828459045:C ^ (0.0 :+ 1.0 * [internal] twist_step.theta #0:C)) * (z - twist_center)) + twist_center)
                                       else:
                                         no-op
                             set `[internal] fresh #39` := ([internal] fresh #39 + 1)
@@ -136,13 +136,13 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                           block:
                                             block:
                                               set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + C)
-                                              let `d` = |(z - twist_center)| in:
+                                              let `[internal] twist_step.d #0` = |(z - twist_center)| in:
                                                 block:
-                                                  if ((r0 < d) and (d < r1)) then:
+                                                  if ((r0 < [internal] twist_step.d #0) and ([internal] twist_step.d #0 < r1)) then:
                                                     block:
-                                                      let `theta` = (((2:R * 3.141592653589793) * (d - r0)) / (r1 - r0)) in:
+                                                      let `[internal] twist_step.theta #0` = (((2:R * 3.141592653589793) * ([internal] twist_step.d #0 - r0)) / (r1 - r0)) in:
                                                         block:
-                                                          set `z` := (((2.718281828459045:C ^ (0.0 :+ 1.0 * theta:C)) * (z - twist_center)) + twist_center)
+                                                          set `z` := (((2.718281828459045:C ^ (0.0 :+ 1.0 * [internal] twist_step.theta #0:C)) * (z - twist_center)) + twist_center)
                                                   else:
                                                     no-op
                                           draw line from ([internal] previous.z #0, 1.0 :+ 0.0) to (z, 1.0 :+ 0.0)
@@ -181,13 +181,13 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                             block:
                                               block:
                                                 set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + C)
-                                                let `d` = |(z - twist_center)| in:
+                                                let `[internal] twist_step.d #0` = |(z - twist_center)| in:
                                                   block:
-                                                    if ((r0 < d) and (d < r1)) then:
+                                                    if ((r0 < [internal] twist_step.d #0) and ([internal] twist_step.d #0 < r1)) then:
                                                       block:
-                                                        let `theta` = (((2:R * 3.141592653589793) * (d - r0)) / (r1 - r0)) in:
+                                                        let `[internal] twist_step.theta #0` = (((2:R * 3.141592653589793) * ([internal] twist_step.d #0 - r0)) / (r1 - r0)) in:
                                                           block:
-                                                            set `z` := (((2.718281828459045:C ^ (0.0 :+ 1.0 * theta:C)) * (z - twist_center)) + twist_center)
+                                                            set `z` := (((2.718281828459045:C ^ (0.0 :+ 1.0 * [internal] twist_step.theta #0:C)) * (z - twist_center)) + twist_center)
                                                     else:
                                                       no-op
                                             draw line from ([internal] previous.z #0, 1.0 :+ 0.0) to (z, 1.0 :+ 0.0)

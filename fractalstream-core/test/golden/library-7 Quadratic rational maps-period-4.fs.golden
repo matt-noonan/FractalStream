@@ -31,15 +31,15 @@ let `[internal] vanishing radius` = vanishing_radius in:
                         else:
                           if periods then:
                             block:
-                              let `w` = z in:
+                              let `[internal] shadeP.w #0` = z in:
                                 block:
                                   let `[internal] fresh #23` = 0 in:
                                     let `[internal] fresh #24` = 64 in:
                                       block:
-                                        do-while (!(|(w - z)| < [internal] vanishing radius) and ([internal] fresh #23 < [internal] fresh #24)):
+                                        do-while (!(|([internal] shadeP.w #0 - z)| < [internal] vanishing radius) and ([internal] fresh #23 < [internal] fresh #24)):
                                           block:
                                             block:
-                                              set `w` := let [internal] f.z #0 = w in ((([internal] f.z #0 - c) * ((([internal] f.z #0 * (c - 1:R:C)) - (2:R:C * c)) + 1:R:C)) / (([internal] f.z #0 ^ 2:R:C) * (c - 1:R:C)))
+                                              set `[internal] shadeP.w #0` := let [internal] f.z #0 = [internal] shadeP.w #0 in ((([internal] f.z #0 - c) * ((([internal] f.z #0 * (c - 1:R:C)) - (2:R:C * c)) + 1:R:C)) / (([internal] f.z #0 ^ 2:R:C) * (c - 1:R:C)))
                                             set `[internal] fresh #23` := ([internal] fresh #23 + 1)
                                         set `[internal] iteration count` := [internal] fresh #23
                                         set `[internal] stuck` := ([internal] fresh #23 = [internal] fresh #24)
@@ -93,15 +93,15 @@ let `[internal] vanishing radius` = vanishing_radius in:
                     else:
                       if periods then:
                         block:
-                          let `w` = z in:
+                          let `[internal] shadeP.w #0` = z in:
                             block:
                               let `[internal] fresh #23` = 0 in:
                                 let `[internal] fresh #24` = 64 in:
                                   block:
-                                    do-while (!(|(w - z)| < [internal] vanishing radius) and ([internal] fresh #23 < [internal] fresh #24)):
+                                    do-while (!(|([internal] shadeP.w #0 - z)| < [internal] vanishing radius) and ([internal] fresh #23 < [internal] fresh #24)):
                                       block:
                                         block:
-                                          set `w` := let [internal] f.z #0 = w in ((([internal] f.z #0 - c) * ((([internal] f.z #0 * (c - 1:R:C)) - (2:R:C * c)) + 1:R:C)) / (([internal] f.z #0 ^ 2:R:C) * (c - 1:R:C)))
+                                          set `[internal] shadeP.w #0` := let [internal] f.z #0 = [internal] shadeP.w #0 in ((([internal] f.z #0 - c) * ((([internal] f.z #0 * (c - 1:R:C)) - (2:R:C * c)) + 1:R:C)) / (([internal] f.z #0 ^ 2:R:C) * (c - 1:R:C)))
                                         set `[internal] fresh #23` := ([internal] fresh #23 + 1)
                                     set `[internal] iteration count` := [internal] fresh #23
                                     set `[internal] stuck` := ([internal] fresh #23 = [internal] fresh #24)

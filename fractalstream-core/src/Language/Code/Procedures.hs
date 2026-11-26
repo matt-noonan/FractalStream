@@ -8,6 +8,12 @@
 --
 -- A definition scopes over the rest of its block, and code can only run
 -- the blocks defined before it (so never itself).
+--
+-- The code shares the variables where it's run: it reads and sets them
+-- (`color`, a loop's `z`, configuration values). But the variables it
+-- declares itself are its own, renamed for each run as its parameters
+-- are: they can have the same names as the caller's, and the caller can't
+-- see them after the run.
 module Language.Code.Procedures
   ( expandRuns
   , renameStmt
@@ -24,7 +30,7 @@ import Language.Code.Syntax
 import Language.Value.Syntax (Expr)
 import Language.Code.Typecheck.Functions (splitArgs, rename, isFunctionArg)
 import Language.Code.FunctionArgs (substituteFunctionInStmt)
-import Data.List (partition)
+import Data.List (partition, (\\))
 
 -- | A block of code: its parameters, its body, and the blocks of code that
 -- were defined where it was.
@@ -77,9 +83,29 @@ run procs sr name arg = do
       tag = name ++ " #" ++ show k
   body1 <- lift (foldM (\b (p, a) -> substituteFunctionInStmt tag p a b)
                        (renameStmt (Map.fromList (zip (map fst valArgs) names)) body) fnArgs)
-  body' <- stmt defProcs body1
+  body2 <- stmt defProcs body1
+  -- Its own variables, renamed for this run, like its parameters: after
+  -- the blocks it runs are expanded, since they share its variables too
+  -- (a block it runs can set one of them).
+  let own = Set.toList (ownDeclarations body) \\ params
+      ownNames = Map.fromList [ (v, "[internal] " ++ name ++ "." ++ v ++ " #" ++ show k) | v <- own ]
+      body' = renameStmt ownNames body2
   pure (SBlock ([ Stmt sr (SDecl n Nothing a) | (n, a) <- spread ]
                 ++ [ Stmt sr (SDecl n Nothing a) | (n, (_, a)) <- zip names valArgs ] ++ [body']))
+
+-- | The variables a block of code declares itself (not inside the
+-- functions or blocks of code it defines, which are their own scopes).
+ownDeclarations :: Stmt -> Set String
+ownDeclarations (Stmt _ node) = case node of
+  SBlock body -> foldMap ownDeclarations body
+  SDecl n _ _ -> Set.singleton n
+  SDeclTuple p _ -> Set.fromList (patternNames p)
+  SDeclHomogeneous ns _ -> Set.fromList ns
+  SIf _ yes no -> ownDeclarations yes <> ownDeclarations no
+  SLoop _ _ _ body -> ownDeclarations body
+  SForEach item _ body -> Set.insert item (ownDeclarations body)
+  SWithFirst item _ _ body fallback -> Set.insert item (ownDeclarations body <> foldMap ownDeclarations fallback)
+  _ -> Set.empty
 
 -- | Rename variables, wherever they occur.
 renameStmt :: Map String String -> Stmt -> Stmt
