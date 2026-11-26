@@ -388,8 +388,9 @@ Newton's method can jump a long way from where it starts, and settle on a root f
 find the root near the start, `capped_newton_root(f, x, cap, N, stop)` moves at most `cap` in each
 step, and otherwise works as `full_newton_root` does.
 
-A function given to these, or to any of the functions here, is one of the script's own or one written
-in place: a built-in function like `sin` can't be passed by its name, so write `w -> sin(w)`.
+A function given to these, or to any of the functions here, can be one of the script's own, a
+built-in function of one value given by its name (`full_newton_root(sin, x, 50, …)`), or one written
+in place (`w -> sin(w) / w`).
 
 (cycles)=
 ### Cycle detection
@@ -721,7 +722,8 @@ of `partial` (use `diff` instead). `diff` sees through a function with a body, a
 notation, `f'(x)`.
 
 A function can also be given to another function, or to a script fragment, as an argument. Give
-it by name, or write it in place as `w -> ...` (or `(u, v) -> ...` for a function of two values):
+it by name (one of the script's, or a built-in function of one value, like `sin` or `sqrt`), or write
+it in place as `w -> ...` (or `(u, v) -> ...` for a function of two values):
 
 ``` fractalstream
 sq(a) := a a
