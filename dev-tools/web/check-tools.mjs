@@ -14,7 +14,8 @@
 //             own fields; overlays; drawing on the sphere
 //   refresh   overlays and tools refreshed as the desktop app does: an
 //             overlay when a value changes, a tool after each render
-//   sweep     every tool of every library project compiles
+//   sweep     every tool of every library project compiles; and none is
+//             left running once its project's closed (dev-tools/web/quiet.fs)
 //   stop      a handler that never finishes (dev-tools/web/endless.fs):
 //             the bar, Stop, Stop and switch to Navigate, and an overlay
 //   editor    the script editor: coloring, an error marked, symbols, and
@@ -727,6 +728,16 @@ async function sweep() {
     }
   }
   c.check(notCompiled === 0, `${count} tools of ${app.libraryProjects().length} projects, ${notCompiled} not compiled`);
+  // (the sweep selects each tool and moves on at once, so a project may
+  // close while a tool's still being selected: its timers mustn't start
+  // afterwards, posting drawings for a closed viewer whose number the next
+  // project's first viewers reuse)
+  await app.openFile(new URL("quiet.fs", import.meta.url).pathname);
+  await page.waitForTimeout(1500);
+  const n0 = await page.evaluate(() => window.__messages.length);
+  await page.waitForTimeout(1000);
+  const late = await page.evaluate((n0) => window.__messages.slice(n0).filter((m) => m.type === "drawing").length, n0);
+  c.check(late === 0, `no tool left running on a closed project (${late} drawings in 1 s, from nothing on screen)`);
 }
 
 async function stop() {
