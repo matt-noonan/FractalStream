@@ -961,7 +961,9 @@ changing, use `stops`, above, which is `false` at that first check.)
 `for each` loop, and `iterate`'s step and condition. A `previous` in a
 block of code that a loop `run`s belongs to that loop. `v` must be a
 variable that exists when the loop starts, not one declared inside the
-loop; and `previous` can only be used inside a loop.
+loop, except for a `for each` loop's item (or a part of it): there it's
+the item before this one, or the item itself on the first pass. And
+`previous` can only be used inside a loop.
 
 ### Conditionals
 
@@ -1966,6 +1968,24 @@ for each x in myList:
 
 # sum is now 15
 ```
+
+A list of tuples can have each item taken apart as it comes:
+
+```
+for each (z, k) in [(0, 1), (i, 2)]:
+  draw circle at z with radius k pixel_size
+```
+
+`previous item` is the item before this one (and, on the first pass,
+the item itself), so a list of points can be drawn as a path:
+
+```
+for each p in points:
+  draw line from previous p to p
+```
+
+and `previous z`, of a part of an item taken apart, is that part of the
+item before.
 
 **NOTE:** `for each` loops are not subject to the special iteration limits
 that apply to `while`, `until`, and `iterate`. The `for each` loop will

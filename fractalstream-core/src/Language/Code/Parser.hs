@@ -439,6 +439,17 @@ codeStatementsGrammar CommonDefs{..} = mdo
       <$> (tok "for" *> tok "each" *> ident)
       <*> (tok "in" *> value)
       <*> (colon *> nl *> block))
+    -- `for each (a, b) in list:`, each item taken apart: a hidden item,
+    -- and `(a, b) := item` first thing in the body (which is how
+    -- "Language.Code.Previous" knows `previous a` is the item's)
+    , withSourceRange
+      ((\pat list body sr ->
+          let item = forEachItem sr
+          in withListVar sr list (\l -> SForEach item l
+               (Stmt sr (SBlock [ Stmt sr (SDeclTuple pat (Syn sr (EVar item))), body ]))))
+      <$> (tok "for" *> tok "each" *> tupleTargets)
+      <*> (tok "in" *> value)
+      <*> (colon *> nl *> block))
     , withSourceRange
       ((\item p list body fallback sr ->
           withListVar sr list (\l -> SWithFirst item p l body fallback))
@@ -466,6 +477,12 @@ withListVar sr list mk = case list of
     hidden = case sr of
       SourceRange (Pos r c) _ -> "[list at " ++ show r ++ ":" ++ show c ++ "]"
       NoSourceRange -> "[list]"
+
+-- | The hidden item of a `for each` whose items are taken apart.
+forEachItem :: SourceRange -> String
+forEachItem = \case
+  SourceRange (Pos r c) _ -> "[item at " ++ show r ++ ":" ++ show c ++ "]"
+  NoSourceRange -> "[item]"
 
 node :: Prod r StmtF -> Prod r ParsedCode
 node = withSourceRange . fmap (flip Stmt)
