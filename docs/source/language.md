@@ -1015,25 +1015,34 @@ repeat:
 until z stops
 ```
 
-Script fragments can also take arguments. In this example, we'll write a fragment that carries out Newton's method given an initial guess, and also sets a variable called `found` when the iteration
-successfully converged.
+A fragment shares the variables where it's run: it reads them and sets them, like `z` above. In
+this example, the fragment runs Newton's method on the viewer's `z`, and sets the viewer's `found`
+to say whether it converged:
 
 ``` fractalstream
 @common
 
 f(z) := z^3 + z + 1
 
-define newton_root(z):
+define newton_root:
   iterate z -> z - f(z) / f'(z) until z stops
   found <- not stuck
 
 @viewer "Newton's method"
-run newton_root(z)
+found := false
+run newton_root
 if not found:
   color <- black
 else:
   color <- rainbow((1 + arg(z)/pi) / 2)
 ```
+
+A fragment can also take arguments, `define shade(c):` ... `run shade(blue)`. Each one acts like a
+new variable holding the value it's given, so changing it inside the fragment doesn't change anything
+outside. The variables a fragment declares itself (with `:=`) are its own too, made afresh for each
+run: they can have the same names as variables where it's run (which they leave alone), the code that
+runs it can't see them afterwards, and a fragment it runs in turn can use them as its own caller's.
+To hand back a value, write a function with a body instead.
 
 
 (lists)=
