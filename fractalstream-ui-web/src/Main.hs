@@ -333,6 +333,7 @@ import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Map as Map
 import Data.Zip (Packing(..))
 import Data.IORef
+import Data.Unique (Unique, newUnique)
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import Foreign.ForeignPtr (withForeignPtr)
@@ -485,6 +486,9 @@ data ActiveTool = ActiveTool
   , atTimers :: [ThreadId]
   , atFields :: [Field]
   , atColors :: Map.Map String (IO (Maybe String))
+  , atToken :: Unique
+    -- ^ this selection of it: its timers start once its Activated
+    --   handler's done, and only if it's still selected (see 'activateTool')
   }
 
 -- | Each field's text, by key, as the page was last told it.
@@ -907,7 +911,7 @@ startProject how projectTitle fileName rebuilt carried ensemble = do
     -- hold, and shows it again when it does)
     unshow <- watchDynamic (vVisible viewer) $ \shown ->
       post $ Aeson.object [ "type" .= ("visible" :: Text.Text), "viewer" .= k, "on" .= shown ]
-    pure ((k, vs), (tid, killThread drawTid >> unwatch >> unlisten >> unshow >> stopTimers vs))
+    pure ((k, vs), (tid, killThread drawTid >> unwatch >> unlisten >> unshow >> dropTool vs))
   unwatchValues <- newIORef (pure ())
   let stop = do
         forM_ (map snd loops) $ \(tid, unwatch) -> killThread tid >> unwatch
@@ -1866,7 +1870,8 @@ activateTool vs@ViewerState{..} name = do
                       Panel{} -> body
                       _ -> Aeson.object [ "kind" .= ("panel" :: Text.Text), "title" .= title, "body" .= body ]
                 pure (titled, fs, cs)
-            writeIORef vsTool (Just (ActiveTool name dispatch [] fields colors))
+            token <- newUnique
+            writeIORef vsTool (Just (ActiveTool name dispatch [] fields colors token))
             postTool vs (Just name) panel
             activated <- fire vs Activated
             refreshFirst <- getDynamic (toolRefreshOnActivate tool)
@@ -1878,7 +1883,12 @@ activateTool vs@ViewerState{..} name = do
                 threadDelay (1000 * max 10 ms)
                 void (fire vs (Timer timer))
                 postDrawings vs
-              modifyIORef' vsTool (fmap (\t -> t { atTimers = tids }))
+              -- (unless, while its Activated handler ran, it was deselected,
+              -- or its viewer closed: then they'd run on, unseen, for good)
+              installed <- atomicModifyIORef' vsTool $ \case
+                Just t | atToken t == token -> (Just t { atTimers = tids }, True)
+                other -> (other, False)
+              unless installed (mapM_ killThread tids)
             postDrawings vs)
 
 -- | Deselect a viewer's tool (if one's selected), stopping its timers.
@@ -1888,11 +1898,16 @@ deactivateTool vs = readIORef (vsTool vs) >>= \case
   Just _ -> do
     stopTimers vs
     void (fire vs Deactivated)
-    writeIORef (vsTool vs) Nothing
+    dropTool vs
     postDrawings vs
 
 stopTimers :: ViewerState -> IO ()
 stopTimers vs = readIORef (vsTool vs) >>= mapM_ (mapM_ killThread . atTimers)
+
+-- | No tool selected now, and its timers stopped (in one step, so that
+-- none start in between: see 'activateTool').
+dropTool :: ViewerState -> IO ()
+dropTool vs = atomicModifyIORef' (vsTool vs) (Nothing,) >>= mapM_ (mapM_ killThread . atTimers)
 
 postTool :: ViewerState -> Maybe String -> Aeson.Value -> IO ()
 postTool vs name panel = do
@@ -1912,8 +1927,7 @@ postTool vs name panel = do
 -- the tool's Deactivated handler, which may well fail too).
 toolFailed :: ViewerState -> String -> IO ()
 toolFailed vs message = do
-  stopTimers vs
-  writeIORef (vsTool vs) Nothing
+  dropTool vs
   post $ Aeson.object [ "type" .= ("toolError" :: Text.Text), "viewer" .= vsId vs, "message" .= message ]
   postTool vs Nothing Aeson.Null
 
@@ -1934,8 +1948,7 @@ fire vs@ViewerState{..} ev = readIORef vsTool >>= \case
                     Just ActiveTool{ atName = current } | current == atName ->
                       withProgress vs (Just atName) (startHandlerRun run >=> id) `catch` \(Stopped toNavigate) -> do
                         when toNavigate $ do
-                          stopTimers vs
-                          writeIORef vsTool Nothing
+                          dropTool vs
                           postTool vs Nothing Aeson.Null
                         throwIO (Stopped toNavigate)
                     _ -> pure ()) >>= \case
