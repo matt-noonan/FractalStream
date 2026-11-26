@@ -521,7 +521,34 @@ x <- d|] `shouldBe` Right 3
       failsWith "if x = previous x:\n  pass" "`previous` can only be used inside a loop"
       failsWith "y := previous x" "`previous` can only be used inside a loop"
       failsWith "repeat:\n  y := x\n  x <- previous y\nuntil true" "`y` is declared inside the loop"
-      failsWith "for each p in [1, 2]:\n  x <- previous p" "`p` is declared inside the loop"
+      failsWith "for each p in [1, 2]:\n  y := p\n  x <- previous y" "`y` is declared inside the loop"
+
+    it "of a `for each` loop's item is the item before (or, first, the item itself)" $ do
+      -- ((1 - 1) + (4 - 1) + (9 - 4))
+      runWithRealX 0 [r|
+total := 0
+for each p in [1, 4, 9]:
+  total <- total + (p - previous p)
+x <- total|] `shouldBe` Right 8
+      -- (a part of an item taken apart: 10 + 10 + 20)
+      runWithRealX 0 [r|
+total := 0
+for each (a, b) in [(1, 10), (2, 20), (5, 50)]:
+  total <- total + previous b
+x <- total|] `shouldBe` Right 40
+
+  describe "a `for each` loop" $
+    it "can take each item apart, as a tuple" $ do
+      runWithRealX 0 [r|
+total := 0
+for each (a, b) in [(1, 2), (3, 4)]:
+  total <- total + a b
+x <- total|] `shouldBe` Right 14
+      runWithRealX 0 [r|
+total := 0
+for each ((a, b), c) in [((1, 2), 3), ((4, 5), 6)]:
+  total <- total + a + b c
+x <- total|] `shouldBe` Right 41
 
   describe "when writing pair types" $
     it "accepts × as well as x" $ do

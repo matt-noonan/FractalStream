@@ -53,6 +53,7 @@ import Language.Parser.SourceRange (SourceRange)
 import Data.Functor.Identity (Identity(..))
 import Language.Code.Syntax
 import Language.Value.Syntax
+import Language.Type (SomeHaskellType(..), TypeProxy(..))
 
 -- | Rewrite every @previous@ inside a loop.
 expandPrevious :: Stmt -> TC Stmt
@@ -82,11 +83,15 @@ stmt (Stmt sr node) = case node of
           PVar _ n -> SSet n e
           PTuple{} -> SSetTuple p e
   SForEach item list body -> do
-    body' <- stmt body
-    -- (the item is declared by the loop, so `previous item` is caught
-    -- as a variable declared inside it)
+    body0 <- stmt body
+    -- (`previous` of the item, or of a part of it, is the list's item
+    -- before: see 'previousItems')
+    (counter, body') <- previousItems sr item list body0
     (saves, body'') <- ownPrevious (Set.singleton item) [] body'
-    pure (inBlock sr saves (Stmt sr (SForEach item list (startingWith sr saves body''))))
+    let loopStmt = inBlock sr saves (Stmt sr (SForEach item list (startingWith sr saves body'')))
+    pure $ case counter of
+      Nothing -> loopStmt
+      Just k -> Stmt sr (SBlock [ Stmt sr (SDecl k Nothing (intLit sr 0)), loopStmt ])
   SWithFirst item p list body fallback ->
     Stmt sr <$> (SWithFirst item p list <$> stmt body <*> traverse stmt fallback)
   SProc name params body -> Stmt sr . SProc name params <$> stmt body
@@ -96,6 +101,53 @@ stmt (Stmt sr node) = case node of
   -- "Language.Code.FunctionBlocks")
   SFunction name params body -> Stmt sr . SFunction name params <$> stmt body
   _ -> pure (Stmt sr node)
+
+-- | @previous item@ in a @for each@ loop, or @previous a@ for a part of
+-- an item taken apart (@for each (a, b) in list@, which the parser makes
+-- a loop over a hidden item whose body starts with @(a, b) := item@): the
+-- item before this one, or, on the first pass, this one (as @previous v@
+-- is @v@ itself at a @while@ loop's first check). The loop counts its
+-- passes, and each pass starts by declaring the list's item before,
+-- taken apart the same way:
+--
+-- > k := 0
+-- > for each p in list:
+-- >   k <- k + 1
+-- >   prev := list @ (if k = 1 then 1 else k - 1)
+-- >   draw line from prev to p
+--
+-- Gives the counter's name, if the loop needs one, and the body.
+previousItems :: SourceRange -> String -> String -> Stmt -> Fresh (Maybe String, Stmt)
+previousItems sr item list body = do
+  let mpat = case body of
+        Stmt _ (SBlock (Stmt _ (SDeclTuple p (Syn _ (EVar i))) : _)) | i == item -> Just p
+        _ -> Nothing
+      itemVars = Set.insert item (maybe Set.empty (Set.fromList . patternNames) mpat)
+      used = Set.fromList [ v | (_, v) <- stmtPreviousUses body, v `Set.member` itemVars ]
+  if Set.null used then pure (Nothing, body) else do
+    k <- fresh "pass"
+    prevItem <- fresh item
+    renames <- forM (maybe [] patternNames mpat) $ \v -> (v,) <$> fresh v
+    let byVar = Map.fromList ((item, prevItem) : renames)
+        rename = \case
+          PVar r n -> PVar r (Map.findWithDefault n n byVar)
+          PTuple r a b -> PTuple r (rename a) (rename b)
+        rewrite (Syn r node) = case node of
+          EUn OpPrevious (Syn _ (EVar v)) | Just p <- Map.lookup v byVar -> Syn r (EVar p)
+          _ -> Syn r (rewrite <$> node)
+        var n = Syn sr (EVar n)
+        before = Syn sr (EITE (Syn sr (EBin OpExactEq (var k) (intLit sr 1)))
+                              (intLit sr 1)
+                              (Syn sr (EBin OpSub (var k) (intLit sr 1))))
+        prelude =
+          [ Stmt sr (SSet k (Syn sr (EBin OpAdd (var k) (intLit sr 1))))
+          , Stmt sr (SDecl prevItem Nothing (Syn sr (EIndex False (var list) before))) ]
+          ++ [ Stmt sr (SDeclTuple (rename p) (var prevItem)) | Just p <- [mpat] ]
+    body' <- mapStmtExprs (pure . rewrite) body
+    pure (Just k, Stmt sr (SBlock (prelude ++ [body'])))
+
+intLit :: SourceRange -> Integer -> Expr
+intLit sr n = Syn sr (ELit (show n) (SomeHaskellType IntegerType (fromIntegral n)))
 
 -- | A loop (whose inner loops have been rewritten), with the @previous@s
 -- in its condition and body rewritten.
