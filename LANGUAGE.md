@@ -379,7 +379,8 @@ the right is worked out before any variable is set, so `x, y ⭠ y, x`
 swaps `x` and `y`. Longer tuples work the same way, `a, b, c ⭠ b, c, a`,
 and so do nested ones, `(a, b), c ⭠ p, 0` (where `p` is a pair); the
 value on the right doesn't have to be written out as a tuple, as long as
-its parts match.
+its parts match. Any part can be an `if c then a else b` (see
+"Conditionals"): `x, y ⭠ 0, if c then 1 else 2`.
 
 You can also use the unicode versions `⟵`, `⭠`, or `←`. The script
 editor writes `⟵` for `<-` once the script checks out, along with the
@@ -997,6 +998,15 @@ else if 3 = 4:
 else:
   x ⭠ 3
 ```
+
+`if c then a else b` is the value `a` when `c` holds, and `b` when it
+doesn't: `color ⭠ if stuck then black else white`. It can go anywhere a
+value can, as an item of a tuple or a function's argument too
+(`T @ (j, if j < n then k else 1)`, `max(1, if c then 2 else 3)`). Its
+branches are single values: `if c then a else b, d` is the tuple
+`(if c then a else b), d`, so a branch that's a tuple goes in
+parentheses, `x, y ⭠ if c then (1, 2) else (3, 4)`. Chained, it's
+`if c then a else if d then b else e`.
 
 ### Output a value from a script
 
