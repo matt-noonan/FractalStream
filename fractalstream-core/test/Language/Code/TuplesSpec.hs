@@ -85,6 +85,13 @@ y <- y + w
       runXY (1, 0) "x, y <- max(3, if x > 0 then 4 else 5), 0" `shouldGive` (4, 0)
       runXY (0, 0) "x, y <- if x > 0 then 1, 2 else 3, 4" `shouldFailWith` "needs parentheses"
 
+    it "takes an if/then/else after an operator, its else going as far right as it can" $ do
+      runXY (1, 0) "x, y <- 1 + if x > 0 then 2 else 3, 0" `shouldGive` (3, 0)
+      runXY (-1, 0) "x, y <- 1 + if x > 0 then 2 else 3 + 4, 0" `shouldGive` (8, 0)
+      runXY (-1, 0) "x, y <- 10 - if x > 0 then 1 else 2 * 3, 0" `shouldGive` (4, 0)
+      runXY (1, 0) "x, y <- -if x > 0 then 2 else 3, 2 * if x > 0 then 3 else 4" `shouldGive` (-2, 6)
+      runXY (1, 0) "x, y <- max(1, 1 + if x > 0 then 5 else 0), 0" `shouldGive` (6, 0)
+
     it "rejects a variable that appears twice" $
       runXY (0, 0) "x, x <- 1, 2" `shouldFailWith` "more than once"
 

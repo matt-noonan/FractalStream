@@ -1024,7 +1024,10 @@ else:
 `if c then a else b` is the value `a` when `c` holds, and `b` when it
 doesn't: `color ⭠ if stuck then black else white`. It can go anywhere a
 value can, as an item of a tuple or a function's argument too
-(`T @ (j, if j < n then k else 1)`, `max(1, if c then 2 else 3)`). Its
+(`T @ (j, if j < n then k else 1)`, `max(1, if c then 2 else 3)`), and
+after an operator (`1 + if c then 2 else 3`), where its `else` goes as far
+right as it can: `1 + if c then 2 else 3 + 4` is
+`1 + (if c then 2 else 3 + 4)`. Its
 branches are single values: `if c then a else b, d` is the tuple
 `(if c then a else b), d`, so a branch that's a tuple goes in
 parentheses, `x, y ⭠ if c then (1, 2) else (3, 4)`. Chained, it's
