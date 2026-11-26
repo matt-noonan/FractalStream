@@ -895,6 +895,30 @@ repeat up to 1000 times:
   # etc
 ```
 
+(previous)=
+#### The value at the start of a pass
+
+Inside a loop, `previous v` is the value the variable `v` had at the start of the loop's latest
+pass. In the loop's body, that's the pass running now, so a tool can draw each step of an orbit
+without keeping track of the last point itself:
+
+``` fractalstream
+repeat up to 50 times:
+  z <- z^2 + C
+  draw line from previous z to z
+until z escapes
+```
+
+In the loop's condition, it's the pass that just finished: `repeat: ... until previous z = z` stops
+once a pass leaves `z` as it was. In a loop that checks its condition before running its body
+(`while`, `until`, and `iterate`), there's been no pass at the first check, and `previous v` is just
+`v` there.
+
+`previous` belongs to the innermost loop around it, including a `for each` loop (see
+{ref}`lists`), and `iterate`'s step and condition. `v` must be a variable that exists when the loop
+starts, not one declared inside the loop, except for a `for each` loop's item (or a part of it):
+there it's the item before this one, or the item itself on the first pass.
+
 (draw-commands)=
 ### Drawing
 
@@ -990,6 +1014,7 @@ else:
 ```
 
 
+(lists)=
 ### Lists
 
 A list is written as a `,`-separated sequence of items in square brackets, like `[1, 2, 3]`. All
@@ -1023,6 +1048,18 @@ To run some commands for each item of a list, use `for each`:
 total := 0
 for each k in xs:
   total <- total + k
+```
+
+A list of tuples can have each item taken apart as it comes, and `previous` of the item (or of a
+part of it) is the item before, or on the first pass the item itself, so a list of points can be
+drawn as a path:
+
+``` fractalstream
+for each (z, k) in [(0, 1), (i, 2)]:
+  draw circle at z with radius k pixel_size
+
+for each p in points:
+  draw line from previous p to p
 ```
 
 Unlike `while` and `until` loops, a `for each` loop isn't limited by `max_iters`: it always goes
