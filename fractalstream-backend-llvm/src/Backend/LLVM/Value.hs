@@ -1135,6 +1135,10 @@ mergeBranches ty (a, aEnd) (b, bEnd) = case ty of
   ColorType -> case (a, b) of
     (ColorOp r1 g1 b1, ColorOp r2 g2 b2) -> ColorOp <$> merge r1 r2 <*> merge g1 g2 <*> merge b1 b2
   TextType -> case (a, b) of (TextOp x, TextOp y) -> TextOp <$> merge x y
+  -- (a list, or a table, is a pointer: lists are never changed in place,
+  -- so either branch's can be the result)
+  ListType _ -> case (a, b) of (ListOp x, ListOp y) -> ListOp <$> merge x y
+  TableType{} -> case (a, b) of (TableOp x, TableOp y) -> TableOp <$> merge x y
   PairType t1 t2 -> case (a, b) of
     (PairOp x1 x2, PairOp y1 y2) ->
       PairOp <$> mergeBranches t1 (x1, aEnd) (y1, bEnd) <*> mergeBranches t2 (x2, aEnd) (y2, bEnd)
