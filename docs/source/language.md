@@ -712,6 +712,22 @@ needs an `else`), and not only inside a loop, which might not run at all. A func
 value and does nothing else: its variables are its own, and it can't draw, change a
 configuration value, or set `color`. Its loops don't change the caller's `iterations` or `stuck`.
 
+A function with a body can also take no values, written with `()` where it's defined and where it's
+called: a value that takes a few statements to work out, from configuration values, say.
+
+``` fractalstream
+function reduced():
+  g := 1
+  for each d in range(1, p):
+    if mod(p, d) = 0 and mod(q, d) = 0:
+      g <- d
+  reduced <- (p / g, q / g)
+
+(a, b) := reduced()
+```
+
+(A one-line function always takes values: one of none would just be a value, `x := e`.)
+
 A function with a body is called like any other, anywhere in a script: `x <- x - f(x) / g(x)`,
 `if close(f(z), 0):`, `while f(z) > tol:`. It is only called when its value is needed, so in
 `if c then f(a) else b`, `f(a)` is only worked out when `c` holds. A few places can't call one,
