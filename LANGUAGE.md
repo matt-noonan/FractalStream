@@ -379,7 +379,8 @@ the right is worked out before any variable is set, so `x, y ⭠ y, x`
 swaps `x` and `y`. Longer tuples work the same way, `a, b, c ⭠ b, c, a`,
 and so do nested ones, `(a, b), c ⭠ p, 0` (where `p` is a pair); the
 value on the right doesn't have to be written out as a tuple, as long as
-its parts match.
+its parts match. Any part can be an `if c then a else b` (see
+"Conditionals"): `x, y ⭠ 0, if c then 1 else 2`.
 
 You can also use the unicode versions `⟵`, `⭠`, or `←`. The script
 editor writes `⟵` for `<-` once the script checks out, along with the
@@ -435,9 +436,11 @@ The variable's type is the smallest one that fits both its initial value
 *and* everything that is later assigned to it, so here `z` is complex
 (assuming `C` is), even though its initial value `0` is an integer.
 Similarly, a list starting out as `xs := [1, 2]` becomes a list of reals if
-you later `append(xs, 0.5)` to it. An empty list `[]` gives no clue about
-what kind of items it will hold, so a variable starting out empty needs a
-type annotation, like `xs : List of R := []`.
+you later `append(xs, 0.5)` to it. A list starting out empty, `xs := []`,
+holds what's added to it later (by `append`, `prepend`, or `join`), and so
+does a function's result that starts out empty; one that never has
+anything added to it needs a type annotation, like
+`xs : List of R := []`.
 
 Several new variables can be made at once, each with its own type worked
 out, with a tuple: `u, v := 0, 1` (or `(u, v) := (0, 1)`).
@@ -603,8 +606,9 @@ A function with a body can be differentiated, as `f'(x)` (or with
 ### Functions given as arguments
 
 A function, or a code block, can be given a function as an argument: by
-its name, or written where it's given, as `w -> ...` (or `(u, v) -> ...`
-for a function of two values):
+its name (one of the script's, or a built-in function of one value, like
+`sin` or `sqrt`), or written where it's given, as `w -> ...` (or
+`(u, v) -> ...` for a function of two values):
 
 ```
 sq(a) := a a
@@ -769,9 +773,8 @@ that defines its own `wheel8` still gets the standard `rainbow`.
 | `polygon_winding_number(points, z0)` | The same for the closed polygon through a list of points (the last joined back to the first) |
 | `closest(points, w)` | The item of a list nearest `w` (the first of those, on a tie): the branch of an inverse that continues a path, say, as in `closest([s, -s], previous_point)` |
 
-A function given to these is a script's own function, or one written in
-place (`w -> sin(w)`): a built-in function like `sin` can't be passed by
-its name.
+A function given to these can be a script's own, a built-in one taking
+one value (like `sin`), or one written in place (`w -> sin(w) / w`).
 
 #### Elliptic functions
 
@@ -978,7 +981,9 @@ changing, use `stops`, above, which is `false` at that first check.)
 `for each` loop, and `iterate`'s step and condition. A `previous` in a
 block of code that a loop `run`s belongs to that loop. `v` must be a
 variable that exists when the loop starts, not one declared inside the
-loop; and `previous` can only be used inside a loop.
+loop, except for a `for each` loop's item (or a part of it): there it's
+the item before this one, or the item itself on the first pass. And
+`previous` can only be used inside a loop.
 
 ### Conditionals
 
@@ -1015,6 +1020,15 @@ else if 3 = 4:
 else:
   x ⭠ 3
 ```
+
+`if c then a else b` is the value `a` when `c` holds, and `b` when it
+doesn't: `color ⭠ if stuck then black else white`. It can go anywhere a
+value can, as an item of a tuple or a function's argument too
+(`T @ (j, if j < n then k else 1)`, `max(1, if c then 2 else 3)`). Its
+branches are single values: `if c then a else b, d` is the tuple
+`(if c then a else b), d`, so a branch that's a tuple goes in
+parentheses, `x, y ⭠ if c then (1, 2) else (3, 4)`. Chained, it's
+`if c then a else if d then b else e`.
 
 ### Output a value from a script
 
@@ -1974,6 +1988,24 @@ for each x in myList:
 
 # sum is now 15
 ```
+
+A list of tuples can have each item taken apart as it comes:
+
+```
+for each (z, k) in [(0, 1), (i, 2)]:
+  draw circle at z with radius k pixel_size
+```
+
+`previous item` is the item before this one (and, on the first pass,
+the item itself), so a list of points can be drawn as a path:
+
+```
+for each p in points:
+  draw line from previous p to p
+```
+
+and `previous z`, of a part of an item taken apart, is that part of the
+item before.
 
 **NOTE:** `for each` loops are not subject to the special iteration limits
 that apply to `while`, `until`, and `iterate`. The `for each` loop will

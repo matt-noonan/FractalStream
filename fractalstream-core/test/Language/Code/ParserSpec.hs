@@ -464,6 +464,20 @@ x <- k|] `shouldBe` Right 4
     it "says so when it's given values, or another isn't" $ do
       runWithRealX 0 "function two():\n  two <- 2\nx <- two(1)" `shouldSatisfy` either (const True) (const False)
       runWithRealX 0 "function dbl(v):\n  dbl <- 2 v\nx <- dbl()" `shouldSatisfy` either (const True) (const False)
+  describe "an empty list" $ do
+    it "takes its items' type from what's added to it" $ do
+      runWithRealX 0 "out := []\nfor each p in [1.5, 2.5]:\n  out <- append(out, p)\nx <- out @ 2" `shouldBe` Right 2.5
+      runWithRealX 0 "out := []\nout <- join(out, [4.0, 5.0])\nx <- length(out)" `shouldBe` Right 2
+      -- (a function's result, starting out empty)
+      runWithRealX 0 [r|
+function backwards(points):
+  backwards <- []
+  for each p in points:
+    backwards <- prepend(backwards, p)
+x <- backwards([1.0, 2.0, 3.0]) @ 1|] `shouldBe` Right 3
+
+    it "still can't be typed if nothing is ever added to it" $
+      runWithRealX 0 "out := []\nx <- 1" `shouldSatisfy` either ("empty list" `isInfixOf`) (const False)
 
   describe "when using `previous` in a loop" $ do
 
@@ -532,7 +546,34 @@ x <- d|] `shouldBe` Right 3
       failsWith "if x = previous x:\n  pass" "`previous` can only be used inside a loop"
       failsWith "y := previous x" "`previous` can only be used inside a loop"
       failsWith "repeat:\n  y := x\n  x <- previous y\nuntil true" "`y` is declared inside the loop"
-      failsWith "for each p in [1, 2]:\n  x <- previous p" "`p` is declared inside the loop"
+      failsWith "for each p in [1, 2]:\n  y := p\n  x <- previous y" "`y` is declared inside the loop"
+
+    it "of a `for each` loop's item is the item before (or, first, the item itself)" $ do
+      -- ((1 - 1) + (4 - 1) + (9 - 4))
+      runWithRealX 0 [r|
+total := 0
+for each p in [1, 4, 9]:
+  total <- total + (p - previous p)
+x <- total|] `shouldBe` Right 8
+      -- (a part of an item taken apart: 10 + 10 + 20)
+      runWithRealX 0 [r|
+total := 0
+for each (a, b) in [(1, 10), (2, 20), (5, 50)]:
+  total <- total + previous b
+x <- total|] `shouldBe` Right 40
+
+  describe "a `for each` loop" $
+    it "can take each item apart, as a tuple" $ do
+      runWithRealX 0 [r|
+total := 0
+for each (a, b) in [(1, 2), (3, 4)]:
+  total <- total + a b
+x <- total|] `shouldBe` Right 14
+      runWithRealX 0 [r|
+total := 0
+for each ((a, b), c) in [((1, 2), 3), ((4, 5), 6)]:
+  total <- total + a + b c
+x <- total|] `shouldBe` Right 41
 
   describe "when writing pair types" $
     it "accepts × as well as x" $ do
@@ -940,6 +981,13 @@ x <- d|] `shouldBe` Right 3
       "x <- polygon_winding_number([1, i, -1, -i, 1, i, -1, -i], 0.1 i)" `gives` 2
       "x <- im closest([1, -1, i], 0.1 + 0.9 i)" `gives` 1
       "x <- closest([3.0, -1.0, 2.5], 2)" `gives` 2.5
+
+    it "takes a built-in function by its name, as an argument" $ do
+      "(ok, r) := full_newton_root(sin, 1.4, 100, (a, b) -> |a - b| < 10^(-12))\nx <- if ok and |r - π| < 10^(-9) then 1 else 0" `gives` 1
+      "x <- compose(sqrt, 2, 16.0)" `gives` 2
+      "function apply(f, v):\n  apply <- f(v)\nx <- apply(floor, 2.7) + apply(exp, 0)" `gives` 3
+      -- (a script's own `sqrt` is the one it gets)
+      "sqrt(v) := v + 1\nx <- compose(sqrt, 2, 16.0)" `gives` 18
 
     describe "the standard library's Newton's method and Schwarzian" $ do
       it "keeps capped steps near the start" $ do

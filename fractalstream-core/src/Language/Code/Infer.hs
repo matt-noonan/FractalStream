@@ -181,9 +181,40 @@ solve cs = go (0 :: Int) Map.empty
       | otherwise = go (n + 1) sol'
       where sol' = foldl' step sol cs
 
-    step sol (Bound k scope funs e) = case synthIn sol scope funs e of
+    step sol (Bound k scope funs e) = case synthIn sol scope funs e <|> growing sol scope funs e of
       Nothing -> sol
       Just t  -> Map.alter (Just . maybe t (\old -> fromMaybe old (structuralJoin old t))) k sol
+
+-- | A list being added to, whose own type isn't known yet: a list of what's
+-- being added. So after
+--
+-- > out := []
+-- > for each p in points:
+-- >   out <- append(out, p)
+--
+-- @out@ is a list of what @points@ holds: the empty list says nothing
+-- about its items, and @append(out, p)@ can't be typed while @out@'s type
+-- isn't known, but it says that @out@ holds items like @p@. (An empty list
+-- that never has anything added to it still can't be typed.)
+growing :: Map Int FSType -> Scope -> Funs -> Expr -> Maybe FSType
+growing sol scope funs (Syn _ node) = case node of
+  EAppend lst x | unknown lst -> ListT <$> synthIn sol scope funs x
+  EPrepend lst x | unknown lst -> ListT <$> synthIn sol scope funs x
+  EJoin xs | any unknown xs ->
+    listToMaybe [ t | x <- xs, not (unknown x), Just t@(ListT _) <- [synthIn sol scope funs x] ]
+  _ -> Nothing
+  where
+    unknown = \case
+      Syn _ (EVar v) -> isNothing (Map.lookup v scope >>= resolveIn sol)
+      _ -> False
+
+resolveIn :: Map Int FSType -> TyRef -> Maybe FSType
+resolveIn sol = \case
+  Known t  -> Just t
+  Meta k   -> Map.lookup k sol
+  ItemOf r -> resolveIn sol r >>= \case
+    ListT t -> Just t
+    _ -> Nothing
 
 synthIn :: Map Int FSType -> Scope -> Funs -> Expr -> Maybe FSType
 synthIn sol scope funs e = either (const Nothing) Just (synthOrError sol scope funs e)
