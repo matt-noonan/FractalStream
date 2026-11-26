@@ -545,6 +545,24 @@ might not run. The last value given is the one the function has, and once
 it has one, the body can use it (`f <- f + 1`). A tuple of values comes
 back as a tuple, taken apart as usual (`(crit, found) := ...`).
 
+A function with a body can also take no values at all, written with
+`()` both where it's defined and where it's called. That's a value that
+takes a few statements to work out, from configuration values, say:
+
+```
+function reduced():
+  g := 1
+  for each d in range(1, p):
+    if mod(p, d) = 0 and mod(q, d) = 0:
+      g <- d
+  reduced <- (p / g, q / g)
+
+(a, b) := reduced()
+```
+
+(A one-line function always takes values: one of none would just be a
+value, `x := e`.)
+
 A function works out a value, and does nothing else:
 
 - its parameters, like those of a code block, are new variables holding
