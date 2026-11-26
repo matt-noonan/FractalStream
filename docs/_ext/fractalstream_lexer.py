@@ -128,7 +128,7 @@ _BUILTIN_FUNCTIONS = {
     "min", "max", "clamp", "compose", "newton_root", "full_newton_root",
     "capped_newton_root", "S", "find_cycle", "preperiod_and_period",
     "riemann_sum", "residue", "winding_number", "polygon_winding_number",
-    "closest",
+    "closest", "reverse", "drop",
     "theta1", "theta2", "theta3", "theta4", "lattice_basis",
     "lattice_reduce_by", "lattice_reduce", "wp", "℘", "wp_prime", "g2", "g3",
     "klein_j",
@@ -137,6 +137,7 @@ _BUILTIN_FUNCTIONS = {
     "autocolor", "nearest_autocolor", "get_autocolor",
     "table_size", "table_cell", "table_point",
     "partial", "diff_bar", "chart", "affine", "chordal",
+    "proj1", "proj2", "proj3", "proj4",
 }
 
 # Language.Value.Builtins.colors
