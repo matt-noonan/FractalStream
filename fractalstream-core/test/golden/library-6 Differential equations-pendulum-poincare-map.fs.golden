@@ -52,12 +52,12 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                               block:
                                                 block:
                                                   block:
-                                                    let `h` = ((2:R * 3.141592653589793) / 10:R) in:
+                                                    let `[internal] one_period.h #1` = ((2:R * 3.141592653589793) / 10:R) in:
                                                       block:
-                                                        let `t` = 0.0 in:
+                                                        let `[internal] one_period.t #1` = 0.0 in:
                                                           block:
                                                             block:
-                                                              let `[list at 20:2]` = range(1, 10) in:
+                                                              let `[internal] one_period.[list at 20:2] #1` = range(1, 10) in:
                                                                 block:
                                                                   {TODO: ForEach}
                                             set `[internal] fresh #27` := ([internal] fresh #27 + 1)
@@ -95,12 +95,12 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                             block:
                                               block:
                                                 block:
-                                                  let `h` = ((2:R * 3.141592653589793) / 10:R) in:
+                                                  let `[internal] one_period.h #1` = ((2:R * 3.141592653589793) / 10:R) in:
                                                     block:
-                                                      let `t` = 0.0 in:
+                                                      let `[internal] one_period.t #1` = 0.0 in:
                                                         block:
                                                           block:
-                                                            let `[list at 20:2]` = range(1, 10) in:
+                                                            let `[internal] one_period.[list at 20:2] #1` = range(1, 10) in:
                                                               block:
                                                                 {TODO: ForEach}
                                           set `[internal] fresh #25` := ([internal] fresh #25 + 1)

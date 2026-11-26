@@ -400,6 +400,23 @@ define paint(c):
 run paint(red)|] `shouldBe` runWithXYC (Scalar RealType 0) (Scalar RealType 0)
         "color <- blend(0.5, dark red, light red)"
 
+    it "shares the variables where it runs, but has its own declarations" $ do
+      -- (it sets the caller's)
+      runWithRealX 1 "define bump:\n  x <- x + 1\nrun bump\nrun bump" `shouldBe` Right 3
+      -- (its own `y` isn't the caller's, and the caller's is left alone)
+      runWithRealX 0 "y := 5.0\ndefine d:\n  y := 1.0\nrun d\nx <- y" `shouldBe` Right 5
+      -- (nor can the caller see it afterwards)
+      runWithRealX 0 "define d:\n  y := 1.0\nrun d\nx <- y" `shouldSatisfy` either ("No variable named y" `isInfixOf`) (const False)
+      -- (but the code it runs shares it: it sets it)
+      runWithRealX 0 [r|
+define inner:
+  p <- 3.0
+define outer:
+  p := 0.0
+  run inner
+  x <- p
+run outer|] `shouldBe` Right 3
+
     it "reports code that isn't defined" $ do
       failsWith "run q" "No code named q"
       -- code can't run itself

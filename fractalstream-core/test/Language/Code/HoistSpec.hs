@@ -142,7 +142,8 @@ color <- if |f(z) + a| < 1 then black else white
     let s = split [r|
 define setup:
   a := c^2
-  b := a + 1
+  b <- a + 1
+b := 0.0
 run setup
 if |z| < 1:
   a := z

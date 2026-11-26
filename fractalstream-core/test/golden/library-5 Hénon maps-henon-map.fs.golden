@@ -15,10 +15,10 @@ let `color` = Color 128 128 128 in:
                         block:
                           let `[internal] draw_henon.use_rainbow #0` = False in:
                             block:
-                              let `save` = ([internal] draw_henon.start #0:R * zoom) in:
+                              let `[internal] draw_henon.save #0` = ([internal] draw_henon.start #0:R * zoom) in:
                                 block:
                                   set `[hoisted] [internal] draw_henon.use_rainbow #0` := [internal] draw_henon.use_rainbow #0
-                                  set `[hoisted] save` := save
+                                  set `[hoisted] [internal] draw_henon.save #0` := [internal] draw_henon.save #0
 
 --- body
 let `[internal] vanishing radius` = vanishing_radius in:
@@ -32,32 +32,32 @@ let `[internal] vanishing radius` = vanishing_radius in:
               block:
                 let `[internal] draw_henon.use_rainbow #0` = [hoisted] [internal] draw_henon.use_rainbow #0 in:
                   block:
-                    let `save` = [hoisted] save in:
+                    let `[internal] draw_henon.save #0` = [hoisted] [internal] draw_henon.save #0 in:
                       block:
-                        let `aa` = ((a + 1:R:C) / 2:R:C) in:
+                        let `[internal] draw_henon.aa #0` = ((a + 1:R:C) / 2:R:C) in:
                           block:
-                            let `p` = (sqrt(((aa ^ 2:R:C) - b)) + aa) in:
+                            let `[internal] draw_henon.p #0` = (sqrt((([internal] draw_henon.aa #0 ^ 2:R:C) - b)) + [internal] draw_henon.aa #0) in:
                               block:
-                                let `lambda` = (sqrt(((p ^ 2:R:C) - a)) + p) in:
+                                let `[internal] draw_henon.lambda #0` = (sqrt((([internal] draw_henon.p #0 ^ 2:R:C) - a)) + [internal] draw_henon.p #0) in:
                                   block:
-                                    let `x` = (p + (lambda * save:C)) in:
+                                    let `[internal] draw_henon.x #0` = ([internal] draw_henon.p #0 + ([internal] draw_henon.lambda #0 * [internal] draw_henon.save #0:C)) in:
                                       block:
-                                        let `y` = (p + save:C) in:
+                                        let `[internal] draw_henon.y #0` = ([internal] draw_henon.p #0 + [internal] draw_henon.save #0:C) in:
                                           block:
                                             let `[internal] fresh #29` = 0 in:
                                               let `[internal] fresh #30` = [internal] iteration limit in:
                                                 block:
-                                                  do-while (!([internal] escape radius < |x|) and ([internal] fresh #29 < [internal] fresh #30)):
+                                                  do-while (!([internal] escape radius < |[internal] draw_henon.x #0|) and ([internal] fresh #29 < [internal] fresh #30)):
                                                     block:
                                                       block:
-                                                        let `t` = x in:
+                                                        let `[internal] draw_henon.t #0` = [internal] draw_henon.x #0 in:
                                                           block:
-                                                            set `x` := (((x ^ 2:R:C) + b) - (a * y))
-                                                            set `y` := t
+                                                            set `[internal] draw_henon.x #0` := ((([internal] draw_henon.x #0 ^ 2:R:C) + b) - (a * [internal] draw_henon.y #0))
+                                                            set `[internal] draw_henon.y #0` := [internal] draw_henon.t #0
                                                       set `[internal] fresh #29` := ([internal] fresh #29 + 1)
                                                   set `[internal] iteration count` := [internal] fresh #29
                                                   set `[internal] stuck` := ([internal] fresh #29 = [internal] fresh #30)
-                                            if !([internal] escape radius < |x|) then:
+                                            if !([internal] escape radius < |[internal] draw_henon.x #0|) then:
                                               block:
                                                 set `color` := Color 0 0 0
                                             else:
@@ -86,13 +86,13 @@ let `color` = Color 128 128 128 in:
                         block:
                           let `[internal] draw_henon.use_rainbow #0` = False in:
                             block:
-                              let `aa` = ((a + 1:R:C) / 2:R:C) in:
+                              let `[internal] draw_henon.aa #0` = ((a + 1:R:C) / 2:R:C) in:
                                 block:
-                                  let `save` = ([internal] draw_henon.start #0:R * zoom) in:
+                                  let `[internal] draw_henon.save #0` = ([internal] draw_henon.start #0:R * zoom) in:
                                     block:
                                       set `[hoisted] [internal] draw_henon.use_rainbow #0` := [internal] draw_henon.use_rainbow #0
-                                      set `[hoisted] aa` := aa
-                                      set `[hoisted] save` := save
+                                      set `[hoisted] [internal] draw_henon.aa #0` := [internal] draw_henon.aa #0
+                                      set `[hoisted] [internal] draw_henon.save #0` := [internal] draw_henon.save #0
 
 --- body
 let `[internal] vanishing radius` = vanishing_radius in:
@@ -106,32 +106,32 @@ let `[internal] vanishing radius` = vanishing_radius in:
               block:
                 let `[internal] draw_henon.use_rainbow #0` = [hoisted] [internal] draw_henon.use_rainbow #0 in:
                   block:
-                    let `aa` = [hoisted] aa in:
+                    let `[internal] draw_henon.aa #0` = [hoisted] [internal] draw_henon.aa #0 in:
                       block:
-                        let `save` = [hoisted] save in:
+                        let `[internal] draw_henon.save #0` = [hoisted] [internal] draw_henon.save #0 in:
                           block:
-                            let `p` = (sqrt(((aa ^ 2:R:C) - b)) + aa) in:
+                            let `[internal] draw_henon.p #0` = (sqrt((([internal] draw_henon.aa #0 ^ 2:R:C) - b)) + [internal] draw_henon.aa #0) in:
                               block:
-                                let `lambda` = (sqrt(((p ^ 2:R:C) - a)) + p) in:
+                                let `[internal] draw_henon.lambda #0` = (sqrt((([internal] draw_henon.p #0 ^ 2:R:C) - a)) + [internal] draw_henon.p #0) in:
                                   block:
-                                    let `x` = (p + (lambda * save:C)) in:
+                                    let `[internal] draw_henon.x #0` = ([internal] draw_henon.p #0 + ([internal] draw_henon.lambda #0 * [internal] draw_henon.save #0:C)) in:
                                       block:
-                                        let `y` = (p + save:C) in:
+                                        let `[internal] draw_henon.y #0` = ([internal] draw_henon.p #0 + [internal] draw_henon.save #0:C) in:
                                           block:
                                             let `[internal] fresh #30` = 0 in:
                                               let `[internal] fresh #31` = [internal] iteration limit in:
                                                 block:
-                                                  do-while (!([internal] escape radius < |x|) and ([internal] fresh #30 < [internal] fresh #31)):
+                                                  do-while (!([internal] escape radius < |[internal] draw_henon.x #0|) and ([internal] fresh #30 < [internal] fresh #31)):
                                                     block:
                                                       block:
-                                                        let `t` = x in:
+                                                        let `[internal] draw_henon.t #0` = [internal] draw_henon.x #0 in:
                                                           block:
-                                                            set `x` := (((x ^ 2:R:C) + b) - (a * y))
-                                                            set `y` := t
+                                                            set `[internal] draw_henon.x #0` := ((([internal] draw_henon.x #0 ^ 2:R:C) + b) - (a * [internal] draw_henon.y #0))
+                                                            set `[internal] draw_henon.y #0` := [internal] draw_henon.t #0
                                                       set `[internal] fresh #30` := ([internal] fresh #30 + 1)
                                                   set `[internal] iteration count` := [internal] fresh #30
                                                   set `[internal] stuck` := ([internal] fresh #30 = [internal] fresh #31)
-                                            if !([internal] escape radius < |x|) then:
+                                            if !([internal] escape radius < |[internal] draw_henon.x #0|) then:
                                               block:
                                                 set `color` := Color 0 0 0
                                             else:
@@ -158,15 +158,15 @@ let `color` = Color 128 128 128 in:
                     block:
                       let `[internal] draw_henon.use_rainbow #0` = True in:
                         block:
-                          let `aa` = ((a + 1:R:C) / 2:R:C) in:
+                          let `[internal] draw_henon.aa #0` = ((a + 1:R:C) / 2:R:C) in:
                             block:
-                              let `p` = (sqrt(((aa ^ 2:R:C) - b)) + aa) in:
+                              let `[internal] draw_henon.p #0` = (sqrt((([internal] draw_henon.aa #0 ^ 2:R:C) - b)) + [internal] draw_henon.aa #0) in:
                                 block:
-                                  let `lambda` = (sqrt(((p ^ 2:R:C) - a)) + p) in:
+                                  let `[internal] draw_henon.lambda #0` = (sqrt((([internal] draw_henon.p #0 ^ 2:R:C) - a)) + [internal] draw_henon.p #0) in:
                                     block:
                                       set `[hoisted] [internal] draw_henon.use_rainbow #0` := [internal] draw_henon.use_rainbow #0
-                                      set `[hoisted] p` := p
-                                      set `[hoisted] lambda` := lambda
+                                      set `[hoisted] [internal] draw_henon.p #0` := [internal] draw_henon.p #0
+                                      set `[hoisted] [internal] draw_henon.lambda #0` := [internal] draw_henon.lambda #0
 
 --- body
 let `[internal] vanishing radius` = vanishing_radius in:
@@ -179,32 +179,32 @@ let `[internal] vanishing radius` = vanishing_radius in:
               block:
                 let `[internal] draw_henon.use_rainbow #0` = [hoisted] [internal] draw_henon.use_rainbow #0 in:
                   block:
-                    let `p` = [hoisted] p in:
+                    let `[internal] draw_henon.p #0` = [hoisted] [internal] draw_henon.p #0 in:
                       block:
-                        let `lambda` = [hoisted] lambda in:
+                        let `[internal] draw_henon.lambda #0` = [hoisted] [internal] draw_henon.lambda #0 in:
                           block:
                             let `[internal] draw_henon.start #0` = z in:
                               block:
-                                let `save` = ([internal] draw_henon.start #0 * zoom:C) in:
+                                let `[internal] draw_henon.save #0` = ([internal] draw_henon.start #0 * zoom:C) in:
                                   block:
-                                    let `x` = (p + (lambda * save)) in:
+                                    let `[internal] draw_henon.x #0` = ([internal] draw_henon.p #0 + ([internal] draw_henon.lambda #0 * [internal] draw_henon.save #0)) in:
                                       block:
-                                        let `y` = (p + save) in:
+                                        let `[internal] draw_henon.y #0` = ([internal] draw_henon.p #0 + [internal] draw_henon.save #0) in:
                                           block:
                                             let `[internal] fresh #31` = 0 in:
                                               let `[internal] fresh #32` = [internal] iteration limit in:
                                                 block:
-                                                  do-while (!([internal] escape radius < |x|) and ([internal] fresh #31 < [internal] fresh #32)):
+                                                  do-while (!([internal] escape radius < |[internal] draw_henon.x #0|) and ([internal] fresh #31 < [internal] fresh #32)):
                                                     block:
                                                       block:
-                                                        let `t` = x in:
+                                                        let `[internal] draw_henon.t #0` = [internal] draw_henon.x #0 in:
                                                           block:
-                                                            set `x` := (((x ^ 2:R:C) + b) - (a * y))
-                                                            set `y` := t
+                                                            set `[internal] draw_henon.x #0` := ((([internal] draw_henon.x #0 ^ 2:R:C) + b) - (a * [internal] draw_henon.y #0))
+                                                            set `[internal] draw_henon.y #0` := [internal] draw_henon.t #0
                                                       set `[internal] fresh #31` := ([internal] fresh #31 + 1)
                                                   set `[internal] iteration count` := [internal] fresh #31
                                                   set `[internal] stuck` := ([internal] fresh #31 = [internal] fresh #32)
-                                            if !([internal] escape radius < |x|) then:
+                                            if !([internal] escape radius < |[internal] draw_henon.x #0|) then:
                                               block:
                                                 set `color` := Color 0 0 0
                                             else:

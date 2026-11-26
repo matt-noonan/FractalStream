@@ -11,94 +11,92 @@ let `color` = Color 128 128 128 in:
                 let `[internal] stuck` = False in:
                   let `[internal] iteration count` = 0 in:
                     block:
-                      let `tt` = let [internal] [std] max.x #0 = t in let [internal] [std] max.y #0 = 1.0e-4 in if ([internal] [std] max.y #0 < [internal] [std] max.x #0) then [internal] [std] max.x #0 else [internal] [std] max.y #0 in:
+                      let `[internal] mating.tt #0` = let [internal] [std] max.x #0 = t in let [internal] [std] max.y #0 = 1.0e-4 in if ([internal] [std] max.y #0 < [internal] [std] max.x #0) then [internal] [std] max.x #0 else [internal] [std] max.y #0 in:
                         block:
-                          let `L` = 1 in:
+                          let `[internal] mating.L #0` = 1 in:
                             block:
-                              let `top` = (2:R * tt) in:
+                              let `[internal] mating.top #0` = (2:R * [internal] mating.tt #0) in:
                                 block:
-                                  let `[internal] fresh #45` = 0 in:
-                                    let `[internal] fresh #46` = 64 in:
+                                  let `[internal] fresh #43` = 0 in:
+                                    let `[internal] fresh #44` = 64 in:
                                       block:
-                                        if ((top < 30:R) and ([internal] fresh #45 < [internal] fresh #46)) then:
-                                          do-while ((top < 30:R) and ([internal] fresh #45 < [internal] fresh #46)):
+                                        if (([internal] mating.top #0 < 30:R) and ([internal] fresh #43 < [internal] fresh #44)) then:
+                                          do-while (([internal] mating.top #0 < 30:R) and ([internal] fresh #43 < [internal] fresh #44)):
                                             block:
                                               block:
-                                                set `L` := (L + 1)
-                                                set `top` := (2:R * top)
-                                              set `[internal] fresh #45` := ([internal] fresh #45 + 1)
+                                                set `[internal] mating.L #0` := ([internal] mating.L #0 + 1)
+                                                set `[internal] mating.top #0` := (2:R * [internal] mating.top #0)
+                                              set `[internal] fresh #43` := ([internal] fresh #43 + 1)
                                         else:
                                           no-op
-                                        set `[internal] iteration count` := [internal] fresh #45
-                                        set `[internal] stuck` := ([internal] fresh #45 = [internal] fresh #46)
-                                  let `xs` = [c1] in:
+                                        set `[internal] iteration count` := [internal] fresh #43
+                                        set `[internal] stuck` := ([internal] fresh #43 = [internal] fresh #44)
+                                  let `[internal] mating.xs #0` = [c1] in:
                                     block:
-                                      let `ys` = [c2] in:
+                                      let `[internal] mating.ys #0` = [c2] in:
                                         block:
-                                          let `x` = c1 in:
+                                          let `[internal] mating.x #0` = c1 in:
                                             block:
-                                              let `y` = c2 in:
+                                              let `[internal] mating.y #0` = c2 in:
                                                 block:
-                                                  let `[list at 48:2]` = range(0, L) in:
+                                                  let `[internal] mating.[list at 48:2] #0` = range(0, [internal] mating.L #0) in:
                                                     block:
                                                       {TODO: ForEach}
-                                                      let `a` = transform(xs, p ⟼ (p * exp(-top):C)) in:
+                                                      let `[internal] mating.a #0` = transform([internal] mating.xs #0, p ⟼ (p * exp(-[internal] mating.top #0):C)) in:
                                                         block:
-                                                          let `b` = transform(ys, p ⟼ (p * exp(-top):C)) in:
+                                                          let `[internal] mating.b #0` = transform([internal] mating.ys #0, p ⟼ (p * exp(-[internal] mating.top #0):C)) in:
                                                             block:
-                                                              let `As` = [] in:
+                                                              let `[internal] mating.As #0` = [] in:
                                                                 block:
-                                                                  let `Bs` = [] in:
+                                                                  let `[internal] mating.Bs #0` = [] in:
                                                                     block:
-                                                                      let `s` = top in:
+                                                                      let `[internal] mating.s #0` = [internal] mating.top #0 in:
                                                                         block:
-                                                                          let `k` = (L - 1) in:
+                                                                          let `[internal] mating.k #0` = ([internal] mating.L #0 - 1) in:
                                                                             block:
-                                                                              let `[internal] fresh #56` = 0 in:
-                                                                                let `[internal] fresh #57` = 64 in:
+                                                                              let `[internal] fresh #54` = 0 in:
+                                                                                let `[internal] fresh #55` = 64 in:
                                                                                   block:
-                                                                                    if (!(k < 1) and ([internal] fresh #56 < [internal] fresh #57)) then:
-                                                                                      do-while (!(k < 1) and ([internal] fresh #56 < [internal] fresh #57)):
+                                                                                    if (!([internal] mating.k #0 < 1) and ([internal] fresh #54 < [internal] fresh #55)) then:
+                                                                                      do-while (!([internal] mating.k #0 < 1) and ([internal] fresh #54 < [internal] fresh #55)):
                                                                                         block:
                                                                                           block:
-                                                                                            set `s` := (s / 2:R)
-                                                                                            let `A` = (a@1) in:
+                                                                                            set `[internal] mating.s #0` := ([internal] mating.s #0 / 2:R)
+                                                                                            let `[internal] mating.A #0` = ([internal] mating.a #0@1) in:
                                                                                               block:
-                                                                                                let `B` = (b@1) in:
+                                                                                                let `[internal] mating.B #0` = ([internal] mating.b #0@1) in:
                                                                                                   block:
-                                                                                                    let `na` = [] in:
+                                                                                                    let `[internal] mating.na #0` = [] in:
                                                                                                       block:
-                                                                                                        let `nb` = [] in:
+                                                                                                        let `[internal] mating.nb #0` = [] in:
                                                                                                           block:
                                                                                                             block:
-                                                                                                              let `[list at 66:4]` = range(1, (k + 2)) in:
+                                                                                                              let `[internal] mating.[list at 66:4] #0` = range(1, ([internal] mating.k #0 + 2)) in:
                                                                                                                 block:
                                                                                                                   {TODO: ForEach}
-                                                                                                            set `As` := join([A], As)
-                                                                                                            set `Bs` := join([B], Bs)
-                                                                                                            set `a` := na
-                                                                                                            set `b` := nb
-                                                                                                            set `k` := (k - 1)
-                                                                                          set `[internal] fresh #56` := ([internal] fresh #56 + 1)
+                                                                                                            set `[internal] mating.As #0` := join([[internal] mating.A #0], [internal] mating.As #0)
+                                                                                                            set `[internal] mating.Bs #0` := join([[internal] mating.B #0], [internal] mating.Bs #0)
+                                                                                                            set `[internal] mating.a #0` := [internal] mating.na #0
+                                                                                                            set `[internal] mating.b #0` := [internal] mating.nb #0
+                                                                                                            set `[internal] mating.k #0` := ([internal] mating.k #0 - 1)
+                                                                                          set `[internal] fresh #54` := ([internal] fresh #54 + 1)
                                                                                     else:
                                                                                       no-op
-                                                                                    set `[internal] iteration count` := [internal] fresh #56
-                                                                                    set `[internal] stuck` := ([internal] fresh #56 = [internal] fresh #57)
-                                                                              set `As` := join([(a@1)], As)
-                                                                              set `Bs` := join([(b@1)], Bs)
-                                                                              let `d u/d u0` = 1:R:C in:
+                                                                                    set `[internal] iteration count` := [internal] fresh #54
+                                                                                    set `[internal] stuck` := ([internal] fresh #54 = [internal] fresh #55)
+                                                                              set `[internal] mating.As #0` := join([([internal] mating.a #0@1)], [internal] mating.As #0)
+                                                                              set `[internal] mating.Bs #0` := join([([internal] mating.b #0@1)], [internal] mating.Bs #0)
+                                                                              let `d [internal] mating.u #0/d [internal] mating.u0 #0` = 1:R:C in:
                                                                                 block:
-                                                                                  let `[list at 90:2]` = range(1, L) in:
+                                                                                  let `[internal] mating.[list at 90:2] #0` = range(1, [internal] mating.L #0) in:
                                                                                     block:
-                                                                                      set `[hoisted] tt` := tt
-                                                                                      set `[hoisted] L` := L
-                                                                                      set `[hoisted] top` := top
-                                                                                      set `[hoisted] x` := x
-                                                                                      set `[hoisted] y` := y
-                                                                                      set `[hoisted] As` := As
-                                                                                      set `[hoisted] Bs` := Bs
-                                                                                      set `[hoisted] d u/d u0` := d u/d u0
-                                                                                      set `[hoisted] [list at 90:2]` := [list at 90:2]
+                                                                                      set `[hoisted] [internal] mating.tt #0` := [internal] mating.tt #0
+                                                                                      set `[hoisted] [internal] mating.L #0` := [internal] mating.L #0
+                                                                                      set `[hoisted] [internal] mating.top #0` := [internal] mating.top #0
+                                                                                      set `[hoisted] [internal] mating.As #0` := [internal] mating.As #0
+                                                                                      set `[hoisted] [internal] mating.Bs #0` := [internal] mating.Bs #0
+                                                                                      set `[hoisted] d [internal] mating.u #0/d [internal] mating.u0 #0` := d [internal] mating.u #0/d [internal] mating.u0 #0
+                                                                                      set `[hoisted] [internal] mating.[list at 90:2] #0` := [internal] mating.[list at 90:2] #0
                                                                                       set `[hoisted] iteration count` := [internal] iteration count
                                                                                       set `[hoisted] stuck` := [internal] stuck
 
@@ -127,79 +125,75 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                     let `z` = ([internal] sphere.A, [internal] sphere.B) in:
                                       block:
                                         block:
-                                          let `tt` = [hoisted] tt in:
+                                          let `[internal] mating.tt #0` = [hoisted] [internal] mating.tt #0 in:
                                             block:
-                                              let `L` = [hoisted] L in:
+                                              let `[internal] mating.L #0` = [hoisted] [internal] mating.L #0 in:
                                                 block:
-                                                  let `top` = [hoisted] top in:
+                                                  let `[internal] mating.top #0` = [hoisted] [internal] mating.top #0 in:
                                                     block:
-                                                      let `x` = [hoisted] x in:
+                                                      let `[internal] mating.As #0` = [hoisted] [internal] mating.As #0 in:
                                                         block:
-                                                          let `y` = [hoisted] y in:
+                                                          let `[internal] mating.Bs #0` = [hoisted] [internal] mating.Bs #0 in:
                                                             block:
-                                                              let `As` = [hoisted] As in:
+                                                              let `d [internal] mating.u #0/d [internal] mating.u0 #0` = [hoisted] d [internal] mating.u #0/d [internal] mating.u0 #0 in:
                                                                 block:
-                                                                  let `Bs` = [hoisted] Bs in:
+                                                                  let `[internal] mating.[list at 90:2] #0` = [hoisted] [internal] mating.[list at 90:2] #0 in:
                                                                     block:
-                                                                      let `d u/d u0` = [hoisted] d u/d u0 in:
+                                                                      let `[internal] mating.u0 #0` = let [internal] sphere.point #0 = ((1st z), (2nd z)) in ((1st [internal] sphere.point #0) / (2nd [internal] sphere.point #0)) in:
                                                                         block:
-                                                                          let `[list at 90:2]` = [hoisted] [list at 90:2] in:
+                                                                          let `[internal] mating.u #0` = [internal] mating.u0 #0 in:
                                                                             block:
-                                                                              let `u0` = let [internal] sphere.point #0 = ((1st z), (2nd z)) in ((1st [internal] sphere.point #0) / (2nd [internal] sphere.point #0)) in:
+                                                                              {TODO: ForEach}
+                                                                              let `[internal] mating.first #0` = (|[internal] mating.u #0| < 1:R) in:
                                                                                 block:
-                                                                                  let `u` = u0 in:
+                                                                                  let `d [internal] mating.p #0/d [internal] mating.u0 #0` = if [internal] mating.first #0 then (exp([internal] mating.top #0):C * d [internal] mating.u #0/d [internal] mating.u0 #0) else let [internal] divisor #10198274387067616145 = [internal] mating.u #0 in (-((exp([internal] mating.top #0):C / [internal] divisor #10198274387067616145) * d [internal] mating.u #0/d [internal] mating.u0 #0) / [internal] divisor #10198274387067616145) in:
                                                                                     block:
-                                                                                      {TODO: ForEach}
-                                                                                      let `first` = (|u| < 1:R) in:
+                                                                                      let `[internal] mating.p #0` = if [internal] mating.first #0 then ([internal] mating.u #0 * exp([internal] mating.top #0):C) else (exp([internal] mating.top #0):C / [internal] mating.u #0) in:
                                                                                         block:
-                                                                                          let `d p/d u0` = if first then (exp(top):C * d u/d u0) else let [internal] divisor #5365192681336056625 = u in (-((exp(top):C / [internal] divisor #5365192681336056625) * d u/d u0) / [internal] divisor #5365192681336056625) in:
+                                                                                          let `[internal] mating.cc #0` = if [internal] mating.first #0 then c1 else c2 in:
                                                                                             block:
-                                                                                              let `p` = if first then (u * exp(top):C) else (exp(top):C / u) in:
-                                                                                                block:
-                                                                                                  let `cc` = if first then c1 else c2 in:
-                                                                                                    block:
-                                                                                                      let `[internal] fresh #64` = 0 in:
-                                                                                                        let `[internal] fresh #65` = [internal] iteration limit in:
-                                                                                                          block:
-                                                                                                            if (!(1000:R < |p|) and ([internal] fresh #64 < [internal] fresh #65)) then:
-                                                                                                              do-while (!(1000:R < |p|) and ([internal] fresh #64 < [internal] fresh #65)):
-                                                                                                                block:
-                                                                                                                  block:
-                                                                                                                    set `d p/d u0` := ((2:R:C * p) * d p/d u0)
-                                                                                                                    set `p` := ((p ^ 2:R:C) + cc)
-                                                                                                                  set `[internal] fresh #64` := ([internal] fresh #64 + 1)
-                                                                                                            else:
-                                                                                                              no-op
-                                                                                                            set `[internal] iteration count` := [internal] fresh #64
-                                                                                                            set `[internal] stuck` := ([internal] fresh #64 = [internal] fresh #65)
-                                                                                                      let `inside` = [internal] stuck in:
+                                                                                              let `[internal] fresh #60` = 0 in:
+                                                                                                let `[internal] fresh #61` = [internal] iteration limit in:
+                                                                                                  block:
+                                                                                                    if (!(1000:R < |[internal] mating.p #0|) and ([internal] fresh #60 < [internal] fresh #61)) then:
+                                                                                                      do-while (!(1000:R < |[internal] mating.p #0|) and ([internal] fresh #60 < [internal] fresh #61)):
                                                                                                         block:
-                                                                                                          let `g [hoisting 0]` = ((log(|p|) / exp(((L + [internal] iteration count):R * log(2:R)))) / tt) in:
+                                                                                                          block:
+                                                                                                            set `d [internal] mating.p #0/d [internal] mating.u0 #0` := ((2:R:C * [internal] mating.p #0) * d [internal] mating.p #0/d [internal] mating.u0 #0)
+                                                                                                            set `[internal] mating.p #0` := (([internal] mating.p #0 ^ 2:R:C) + [internal] mating.cc #0)
+                                                                                                          set `[internal] fresh #60` := ([internal] fresh #60 + 1)
+                                                                                                    else:
+                                                                                                      no-op
+                                                                                                    set `[internal] iteration count` := [internal] fresh #60
+                                                                                                    set `[internal] stuck` := ([internal] fresh #60 = [internal] fresh #61)
+                                                                                              let `[internal] mating.inside #0` = [internal] stuck in:
+                                                                                                block:
+                                                                                                  let `[internal] mating.g #0 [hoisting 0]` = ((log(|[internal] mating.p #0|) / exp((([internal] mating.L #0 + [internal] iteration count):R * log(2:R)))) / [internal] mating.tt #0) in:
+                                                                                                    block:
+                                                                                                      let `[internal] mating.band #0` = floor((-log([internal] mating.g #0 [hoisting 0]) / log(2:R))) in:
+                                                                                                        block:
+                                                                                                          if [internal] mating.inside #0 then:
                                                                                                             block:
-                                                                                                              let `band` = floor((-log(g [hoisting 0]) / log(2:R))) in:
+                                                                                                              set `color` := if [internal] mating.first #0 then color1 else color2
+                                                                                                          else:
+                                                                                                            block:
+                                                                                                              let `[internal] mating.side #0` = if [internal] mating.first #0 then color1 else color2 in:
                                                                                                                 block:
-                                                                                                                  if inside then:
+                                                                                                                  set `color` := blend([internal] mating.g #0 [hoisting 0], let [internal] [std] dark.c #0 = [internal] mating.side #0 in blend(0.333, [internal] [std] dark.c #0, Color 0 0 0), blend(0.3, Color 255 255 255, [internal] mating.side #0))
+                                                                                                                  if (show_bands and (([internal] mating.band #0 mod 2) = 1)) then:
                                                                                                                     block:
-                                                                                                                      set `color` := if first then color1 else color2
+                                                                                                                      set `color` := blend(0.85, Color 0 0 0, color)
                                                                                                                   else:
+                                                                                                                    no-op
+                                                                                                                  let `[internal] mating.dg #0` = (|d [internal] mating.p #0/d [internal] mating.u0 #0| / (([internal] mating.tt #0 * |[internal] mating.p #0|) * exp((([internal] mating.L #0 + [internal] iteration count):R * log(2:R))))) in:
                                                                                                                     block:
-                                                                                                                      let `side` = if first then color1 else color2 in:
+                                                                                                                      let `[internal] mating.px #0` = ((pixel_size * (1:R + (|[internal] mating.u0 #0| ^ 2:R))) / 2:R) in:
                                                                                                                         block:
-                                                                                                                          set `color` := blend(g [hoisting 0], let [internal] [std] dark.c #0 = side in blend(0.333, [internal] [std] dark.c #0, Color 0 0 0), blend(0.3, Color 255 255 255, side))
-                                                                                                                          if (show_bands and ((band mod 2) = 1)) then:
+                                                                                                                          if (show_equator and ((1:R - [internal] mating.g #0 [hoisting 0]) < ((1.5 * [internal] mating.px #0) * [internal] mating.dg #0))) then:
                                                                                                                             block:
-                                                                                                                              set `color` := blend(0.85, Color 0 0 0, color)
+                                                                                                                              set `color` := Color 255 0 0
                                                                                                                           else:
                                                                                                                             no-op
-                                                                                                                          let `dg` = (|d p/d u0| / ((tt * |p|) * exp(((L + [internal] iteration count):R * log(2:R))))) in:
-                                                                                                                            block:
-                                                                                                                              let `px` = ((pixel_size * (1:R + (|u0| ^ 2:R))) / 2:R) in:
-                                                                                                                                block:
-                                                                                                                                  if (show_equator and ((1:R - g [hoisting 0]) < ((1.5 * px) * dg))) then:
-                                                                                                                                    block:
-                                                                                                                                      set `color` := Color 255 0 0
-                                                                                                                                  else:
-                                                                                                                                    no-op
                                         let `[internal] sphere.light` = ((((-0.48507125007266594 * [internal] x) + ((0.48507125007266594 * [internal] y) + (0.7276068751089989 * [internal] sphere.s))) + 1.0) / 2.0) in:
                                           block:
                                             set `color` := blend((1.0 - ([internal] sphere shading * (1.0 - [internal] sphere.light))), Color 0 0 0, color)
