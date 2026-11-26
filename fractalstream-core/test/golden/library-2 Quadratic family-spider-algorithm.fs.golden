@@ -5,10 +5,29 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
-            let `pixel_size` = [internal] dx in:
+          let `pixel_size` = [internal] dx in:
+            if (1.0 < (([internal] x * [internal] x) + ([internal] y * [internal] y))) then:
+              set `color` := Color 48 48 48
+            else:
               block:
-                set `color` := Color 255 255 255
+                let `[internal] sphere.s` = sqrt((1.0 - (([internal] x * [internal] x) + ([internal] y * [internal] y)))) in:
+                  block:
+                    let `[internal] sphere.u` = ([internal] x:C + ([internal] y:C * 0.0 :+ 1.0)) in:
+                      block:
+                        let `[internal] sphere.v` = (1.0 + [internal] sphere.s) in:
+                          block:
+                            let `[internal] sphere.A` = (([internal] sphere view a * [internal] sphere.u) + ([internal] sphere view b * [internal] sphere.v:C)) in:
+                              block:
+                                let `[internal] sphere.B` = (([internal] sphere view c * [internal] sphere.u) + ([internal] sphere view d * [internal] sphere.v:C)) in:
+                                  block:
+                                    set `pixel_size` := ([internal] dx * (((([internal] x * [internal] x) + ([internal] y * [internal] y)) + ([internal] sphere.v * [internal] sphere.v)) / ((|[internal] sphere.A| * |[internal] sphere.A|) + (|[internal] sphere.B| * |[internal] sphere.B|))))
+                                    let `z` = let [internal] sphere.scaled #1 = let [internal] sphere.point #0 = ([internal] sphere.A, [internal] sphere.B) in ((1st [internal] sphere.point #0), (2nd [internal] sphere.point #0)) in if (((re((2nd [internal] sphere.scaled #1)) * re((2nd [internal] sphere.scaled #1))) + (im((2nd [internal] sphere.scaled #1)) * im((2nd [internal] sphere.scaled #1)))) < ((re((1st [internal] sphere.scaled #1)) * re((1st [internal] sphere.scaled #1))) + (im((1st [internal] sphere.scaled #1)) * im((1st [internal] sphere.scaled #1))))) then (1.0 :+ 0.0, ((2nd [internal] sphere.scaled #1) / (1st [internal] sphere.scaled #1))) else (((1st [internal] sphere.scaled #1) / (2nd [internal] sphere.scaled #1)), 1.0 :+ 0.0) in:
+                                      block:
+                                        block:
+                                          set `color` := Color 255 255 255
+                                        let `[internal] sphere.light` = ((((-0.48507125007266594 * [internal] x) + ((0.48507125007266594 * [internal] y) + (0.7276068751089989 * [internal] sphere.s))) + 1.0) / 2.0) in:
+                                          block:
+                                            set `color` := blend((1.0 - ([internal] sphere shading * (1.0 - [internal] sphere.light))), Color 0 0 0, color)
 
 
 --- tool overlay
@@ -24,175 +43,183 @@ let `[internal] vanishing radius` = vanishing_radius in:
               if !(q < 2) then:
                 block:
                   use Color 128 128 128 for line
-                  draw circle at (0:R:C, 1.0 :+ 0.0) with radius 1:R
-                  let `star` = (2.718281828459045:C ^ (((3.141592653589793:C * 0.0 :+ 1.0) * p:R:C) / q:R:C)) in:
+                  let `last` = (1:R:C + (0:R:C * 0.0 :+ 1.0)) in:
                     block:
-                      draw line from (star, 1.0 :+ 0.0) to (-star, 1.0 :+ 0.0)
-                      use Color 0 0 0 for line
-                      write "A" at (((0.0 :+ 1.0 * star) / 2:R:C), 1.0 :+ 0.0)
-                      write "B" at ((-(0.0 :+ 1.0 * star) / 2:R:C), 1.0 :+ 0.0)
-                      let `t0` = (p mod q) in:
+                      block:
+                        let `[list at 225:4]` = range(1, 64) in:
+                          block:
+                            {TODO: ForEach}
+                      let `star` = (2.718281828459045:C ^ (((3.141592653589793:C * 0.0 :+ 1.0) * p:R:C) / q:R:C)) in:
                         block:
-                          let `[internal] [std] preperiod_and_period #0` = (False, (0, 0)) in:
+                          draw line from (star, 1.0 :+ 0.0) to (0:R:C, 1.0 :+ 0.0)
+                          draw line from (0:R:C, 1.0 :+ 0.0) to (-star, 1.0 :+ 0.0)
+                          draw line from (star, 1.0 :+ 0.0) to ((1.0 :+ 0.0 / 0.0 :+ 0.0), 1.0 :+ 0.0)
+                          draw line from (-star, 1.0 :+ 0.0) to ((1.0 :+ 0.0 / 0.0 :+ 0.0), 1.0 :+ 0.0)
+                          use Color 0 0 0 for line
+                          write "A" at (((0.0 :+ 1.0 * star) / 2:R:C), 1.0 :+ 0.0)
+                          write "B" at ((-(0.0 :+ 1.0 * star) / 2:R:C), 1.0 :+ 0.0)
+                          let `t0` = (p mod q) in:
                             block:
-                              let `[internal] [std] preperiod_and_period.iterations #0` = [internal] iteration count in:
+                              let `[internal] [std] preperiod_and_period #0` = (False, (0, 0)) in:
                                 block:
-                                  let `[internal] [std] preperiod_and_period.stuck #0` = [internal] stuck in:
+                                  let `[internal] [std] preperiod_and_period.iterations #0` = [internal] iteration count in:
                                     block:
-                                      block:
-                                        let `[internal] [std] preperiod_and_period.z #0` = t0 in:
+                                      let `[internal] [std] preperiod_and_period.stuck #0` = [internal] stuck in:
+                                        block:
                                           block:
-                                            let `[internal] [std] preperiod_and_period.max_steps #0` = q in:
+                                            let `[internal] [std] preperiod_and_period.z #0` = t0 in:
                                               block:
-                                                block:
-                                                  set `[internal] [std] preperiod_and_period #0` := (False, (0, 0))
-                                                  let `[internal] [std] find_cycle #1` = (False, (0, 0)) in:
+                                                let `[internal] [std] preperiod_and_period.max_steps #0` = q in:
+                                                  block:
                                                     block:
-                                                      let `[internal] [std] find_cycle.iterations #1` = [internal] iteration count in:
+                                                      set `[internal] [std] preperiod_and_period #0` := (False, (0, 0))
+                                                      let `[internal] [std] find_cycle #1` = (False, (0, 0)) in:
                                                         block:
-                                                          let `[internal] [std] find_cycle.stuck #1` = [internal] stuck in:
+                                                          let `[internal] [std] find_cycle.iterations #1` = [internal] iteration count in:
                                                             block:
-                                                              block:
-                                                                let `[internal] [std] find_cycle.z #1` = [internal] [std] preperiod_and_period.z #0 in:
+                                                              let `[internal] [std] find_cycle.stuck #1` = [internal] stuck in:
+                                                                block:
                                                                   block:
-                                                                    let `[internal] [std] find_cycle.warmup #1` = 0 in:
+                                                                    let `[internal] [std] find_cycle.z #1` = [internal] [std] preperiod_and_period.z #0 in:
                                                                       block:
-                                                                        let `[internal] [std] find_cycle.max_period #1` = [internal] [std] preperiod_and_period.max_steps #0 in:
+                                                                        let `[internal] [std] find_cycle.warmup #1` = 0 in:
                                                                           block:
-                                                                            block:
-                                                                              set `[internal] [std] find_cycle #1` := (False, (0, 0))
-                                                                              let `[internal] fresh #40` = 0 in:
-                                                                                let `[internal] fresh #41` = [internal] [std] find_cycle.warmup #1 in:
-                                                                                  block:
-                                                                                    if (let [internal] [std] find_cycle #1.x @231:24 = [internal] [std] find_cycle.z #1 in True and ([internal] fresh #40 < [internal] fresh #41)) then:
-                                                                                      do-while (let [internal] [std] find_cycle #1.x @231:24 = [internal] [std] find_cycle.z #1 in True and ([internal] fresh #40 < [internal] fresh #41)):
-                                                                                        block:
-                                                                                          set `[internal] [std] find_cycle.z #1` := let [internal] [std] find_cycle #1.t @231:24 = [internal] [std] find_cycle.z #1 in ((2 * [internal] [std] find_cycle #1.t @231:24) mod q)
-                                                                                          set `[internal] fresh #40` := ([internal] fresh #40 + 1)
-                                                                                    else:
-                                                                                      no-op
-                                                                                    set `[internal] iteration count` := [internal] fresh #40
-                                                                                    set `[internal] stuck` := ([internal] fresh #40 = [internal] fresh #41)
-                                                                              if let [internal] [std] find_cycle #1.x @231:24 = [internal] [std] find_cycle.z #1 in True then:
+                                                                            let `[internal] [std] find_cycle.max_period #1` = [internal] [std] preperiod_and_period.max_steps #0 in:
+                                                                              block:
                                                                                 block:
-                                                                                  let `[internal] [std] find_cycle.tortoise #1` = let [internal] [std] find_cycle #1.t @231:24 = [internal] [std] find_cycle.z #1 in ((2 * [internal] [std] find_cycle #1.t @231:24) mod q) in:
-                                                                                    block:
-                                                                                      let `[internal] [std] find_cycle.hare #1` = let [internal] [std] find_cycle #1.t @231:24 = [internal] [std] find_cycle.tortoise #1 in ((2 * [internal] [std] find_cycle #1.t @231:24) mod q) in:
-                                                                                        block:
-                                                                                          let `[internal] fresh #42` = 0 in:
-                                                                                            let `[internal] fresh #43` = [internal] [std] find_cycle.max_period #1 in:
-                                                                                              block:
-                                                                                                if ((let [internal] [std] find_cycle #1.x @231:24 = [internal] [std] find_cycle.tortoise #1 in True and (let [internal] [std] find_cycle #1.x @231:24 = [internal] [std] find_cycle.hare #1 in True and !let [internal] [std] find_cycle #1.u @231:24 = [internal] [std] find_cycle.tortoise #1 in let [internal] [std] find_cycle #1.v @231:24 = [internal] [std] find_cycle.hare #1 in ([internal] [std] find_cycle #1.u @231:24 = [internal] [std] find_cycle #1.v @231:24))) and ([internal] fresh #42 < [internal] fresh #43)) then:
-                                                                                                  do-while ((let [internal] [std] find_cycle #1.x @231:24 = [internal] [std] find_cycle.tortoise #1 in True and (let [internal] [std] find_cycle #1.x @231:24 = [internal] [std] find_cycle.hare #1 in True and !let [internal] [std] find_cycle #1.u @231:24 = [internal] [std] find_cycle.tortoise #1 in let [internal] [std] find_cycle #1.v @231:24 = [internal] [std] find_cycle.hare #1 in ([internal] [std] find_cycle #1.u @231:24 = [internal] [std] find_cycle #1.v @231:24))) and ([internal] fresh #42 < [internal] fresh #43)):
-                                                                                                    block:
-                                                                                                      block:
-                                                                                                        set `[internal] [std] find_cycle.tortoise #1` := let [internal] [std] find_cycle #1.t @231:24 = [internal] [std] find_cycle.tortoise #1 in ((2 * [internal] [std] find_cycle #1.t @231:24) mod q)
-                                                                                                        set `[internal] [std] find_cycle.hare #1` := let [internal] [std] find_cycle #1.t @231:24 = let [internal] [std] find_cycle #1.t @231:24 = [internal] [std] find_cycle.hare #1 in ((2 * [internal] [std] find_cycle #1.t @231:24) mod q) in ((2 * [internal] [std] find_cycle #1.t @231:24) mod q)
-                                                                                                      set `[internal] fresh #42` := ([internal] fresh #42 + 1)
-                                                                                                else:
-                                                                                                  no-op
-                                                                                                set `[internal] iteration count` := [internal] fresh #42
-                                                                                                set `[internal] stuck` := ([internal] fresh #42 = [internal] fresh #43)
-                                                                                          if (let [internal] [std] find_cycle #1.x @231:24 = [internal] [std] find_cycle.tortoise #1 in True and (let [internal] [std] find_cycle #1.x @231:24 = [internal] [std] find_cycle.hare #1 in True and let [internal] [std] find_cycle #1.u @231:24 = [internal] [std] find_cycle.tortoise #1 in let [internal] [std] find_cycle #1.v @231:24 = [internal] [std] find_cycle.hare #1 in ([internal] [std] find_cycle #1.u @231:24 = [internal] [std] find_cycle #1.v @231:24))) then:
+                                                                                  set `[internal] [std] find_cycle #1` := (False, (0, 0))
+                                                                                  let `[internal] fresh #41` = 0 in:
+                                                                                    let `[internal] fresh #42` = [internal] [std] find_cycle.warmup #1 in:
+                                                                                      block:
+                                                                                        if (let [internal] [std] find_cycle #1.x @238:24 = [internal] [std] find_cycle.z #1 in True and ([internal] fresh #41 < [internal] fresh #42)) then:
+                                                                                          do-while (let [internal] [std] find_cycle #1.x @238:24 = [internal] [std] find_cycle.z #1 in True and ([internal] fresh #41 < [internal] fresh #42)):
                                                                                             block:
-                                                                                              set `[internal] [std] find_cycle.tortoise #1` := [internal] [std] find_cycle.z #1
-                                                                                              let `[internal] fresh #42` = 0 in:
-                                                                                                let `[internal] fresh #43` = [internal] [std] find_cycle.max_period #1 in:
+                                                                                              set `[internal] [std] find_cycle.z #1` := let [internal] [std] find_cycle #1.t @238:24 = [internal] [std] find_cycle.z #1 in ((2 * [internal] [std] find_cycle #1.t @238:24) mod q)
+                                                                                              set `[internal] fresh #41` := ([internal] fresh #41 + 1)
+                                                                                        else:
+                                                                                          no-op
+                                                                                        set `[internal] iteration count` := [internal] fresh #41
+                                                                                        set `[internal] stuck` := ([internal] fresh #41 = [internal] fresh #42)
+                                                                                  if let [internal] [std] find_cycle #1.x @238:24 = [internal] [std] find_cycle.z #1 in True then:
+                                                                                    block:
+                                                                                      let `[internal] [std] find_cycle.tortoise #1` = let [internal] [std] find_cycle #1.t @238:24 = [internal] [std] find_cycle.z #1 in ((2 * [internal] [std] find_cycle #1.t @238:24) mod q) in:
+                                                                                        block:
+                                                                                          let `[internal] [std] find_cycle.hare #1` = let [internal] [std] find_cycle #1.t @238:24 = [internal] [std] find_cycle.tortoise #1 in ((2 * [internal] [std] find_cycle #1.t @238:24) mod q) in:
+                                                                                            block:
+                                                                                              let `[internal] fresh #43` = 0 in:
+                                                                                                let `[internal] fresh #44` = [internal] [std] find_cycle.max_period #1 in:
                                                                                                   block:
-                                                                                                    if (!let [internal] [std] find_cycle #1.u @231:24 = [internal] [std] find_cycle.tortoise #1 in let [internal] [std] find_cycle #1.v @231:24 = [internal] [std] find_cycle.hare #1 in ([internal] [std] find_cycle #1.u @231:24 = [internal] [std] find_cycle #1.v @231:24) and ([internal] fresh #42 < [internal] fresh #43)) then:
-                                                                                                      do-while (!let [internal] [std] find_cycle #1.u @231:24 = [internal] [std] find_cycle.tortoise #1 in let [internal] [std] find_cycle #1.v @231:24 = [internal] [std] find_cycle.hare #1 in ([internal] [std] find_cycle #1.u @231:24 = [internal] [std] find_cycle #1.v @231:24) and ([internal] fresh #42 < [internal] fresh #43)):
+                                                                                                    if ((let [internal] [std] find_cycle #1.x @238:24 = [internal] [std] find_cycle.tortoise #1 in True and (let [internal] [std] find_cycle #1.x @238:24 = [internal] [std] find_cycle.hare #1 in True and !let [internal] [std] find_cycle #1.u @238:24 = [internal] [std] find_cycle.tortoise #1 in let [internal] [std] find_cycle #1.v @238:24 = [internal] [std] find_cycle.hare #1 in ([internal] [std] find_cycle #1.u @238:24 = [internal] [std] find_cycle #1.v @238:24))) and ([internal] fresh #43 < [internal] fresh #44)) then:
+                                                                                                      do-while ((let [internal] [std] find_cycle #1.x @238:24 = [internal] [std] find_cycle.tortoise #1 in True and (let [internal] [std] find_cycle #1.x @238:24 = [internal] [std] find_cycle.hare #1 in True and !let [internal] [std] find_cycle #1.u @238:24 = [internal] [std] find_cycle.tortoise #1 in let [internal] [std] find_cycle #1.v @238:24 = [internal] [std] find_cycle.hare #1 in ([internal] [std] find_cycle #1.u @238:24 = [internal] [std] find_cycle #1.v @238:24))) and ([internal] fresh #43 < [internal] fresh #44)):
                                                                                                         block:
                                                                                                           block:
-                                                                                                            set `[internal] [std] find_cycle.tortoise #1` := let [internal] [std] find_cycle #1.t @231:24 = [internal] [std] find_cycle.tortoise #1 in ((2 * [internal] [std] find_cycle #1.t @231:24) mod q)
-                                                                                                            set `[internal] [std] find_cycle.hare #1` := let [internal] [std] find_cycle #1.t @231:24 = [internal] [std] find_cycle.hare #1 in ((2 * [internal] [std] find_cycle #1.t @231:24) mod q)
-                                                                                                          set `[internal] fresh #42` := ([internal] fresh #42 + 1)
+                                                                                                            set `[internal] [std] find_cycle.tortoise #1` := let [internal] [std] find_cycle #1.t @238:24 = [internal] [std] find_cycle.tortoise #1 in ((2 * [internal] [std] find_cycle #1.t @238:24) mod q)
+                                                                                                            set `[internal] [std] find_cycle.hare #1` := let [internal] [std] find_cycle #1.t @238:24 = let [internal] [std] find_cycle #1.t @238:24 = [internal] [std] find_cycle.hare #1 in ((2 * [internal] [std] find_cycle #1.t @238:24) mod q) in ((2 * [internal] [std] find_cycle #1.t @238:24) mod q)
+                                                                                                          set `[internal] fresh #43` := ([internal] fresh #43 + 1)
                                                                                                     else:
                                                                                                       no-op
-                                                                                                    set `[internal] iteration count` := [internal] fresh #42
-                                                                                                    set `[internal] stuck` := ([internal] fresh #42 = [internal] fresh #43)
-                                                                                              let `[internal] [std] find_cycle.λ #1` = 1 in:
+                                                                                                    set `[internal] iteration count` := [internal] fresh #43
+                                                                                                    set `[internal] stuck` := ([internal] fresh #43 = [internal] fresh #44)
+                                                                                              if (let [internal] [std] find_cycle #1.x @238:24 = [internal] [std] find_cycle.tortoise #1 in True and (let [internal] [std] find_cycle #1.x @238:24 = [internal] [std] find_cycle.hare #1 in True and let [internal] [std] find_cycle #1.u @238:24 = [internal] [std] find_cycle.tortoise #1 in let [internal] [std] find_cycle #1.v @238:24 = [internal] [std] find_cycle.hare #1 in ([internal] [std] find_cycle #1.u @238:24 = [internal] [std] find_cycle #1.v @238:24))) then:
                                                                                                 block:
-                                                                                                  set `[internal] [std] find_cycle.hare #1` := let [internal] [std] find_cycle #1.t @231:24 = [internal] [std] find_cycle.tortoise #1 in ((2 * [internal] [std] find_cycle #1.t @231:24) mod q)
+                                                                                                  set `[internal] [std] find_cycle.tortoise #1` := [internal] [std] find_cycle.z #1
                                                                                                   let `[internal] fresh #43` = 0 in:
                                                                                                     let `[internal] fresh #44` = [internal] [std] find_cycle.max_period #1 in:
                                                                                                       block:
-                                                                                                        if (!let [internal] [std] find_cycle #1.u @231:24 = [internal] [std] find_cycle.tortoise #1 in let [internal] [std] find_cycle #1.v @231:24 = [internal] [std] find_cycle.hare #1 in ([internal] [std] find_cycle #1.u @231:24 = [internal] [std] find_cycle #1.v @231:24) and ([internal] fresh #43 < [internal] fresh #44)) then:
-                                                                                                          do-while (!let [internal] [std] find_cycle #1.u @231:24 = [internal] [std] find_cycle.tortoise #1 in let [internal] [std] find_cycle #1.v @231:24 = [internal] [std] find_cycle.hare #1 in ([internal] [std] find_cycle #1.u @231:24 = [internal] [std] find_cycle #1.v @231:24) and ([internal] fresh #43 < [internal] fresh #44)):
+                                                                                                        if (!let [internal] [std] find_cycle #1.u @238:24 = [internal] [std] find_cycle.tortoise #1 in let [internal] [std] find_cycle #1.v @238:24 = [internal] [std] find_cycle.hare #1 in ([internal] [std] find_cycle #1.u @238:24 = [internal] [std] find_cycle #1.v @238:24) and ([internal] fresh #43 < [internal] fresh #44)) then:
+                                                                                                          do-while (!let [internal] [std] find_cycle #1.u @238:24 = [internal] [std] find_cycle.tortoise #1 in let [internal] [std] find_cycle #1.v @238:24 = [internal] [std] find_cycle.hare #1 in ([internal] [std] find_cycle #1.u @238:24 = [internal] [std] find_cycle #1.v @238:24) and ([internal] fresh #43 < [internal] fresh #44)):
                                                                                                             block:
                                                                                                               block:
-                                                                                                                let `[internal] tuple #0` = let [internal] [std] find_cycle #1.t @231:24 = [internal] [std] find_cycle.hare #1 in ((2 * [internal] [std] find_cycle #1.t @231:24) mod q) in:
-                                                                                                                  block:
-                                                                                                                    let `[internal] tuple #1` = ([internal] [std] find_cycle.λ #1 + 1) in:
-                                                                                                                      block:
-                                                                                                                        set `[internal] [std] find_cycle.hare #1` := [internal] tuple #0
-                                                                                                                        set `[internal] [std] find_cycle.λ #1` := [internal] tuple #1
+                                                                                                                set `[internal] [std] find_cycle.tortoise #1` := let [internal] [std] find_cycle #1.t @238:24 = [internal] [std] find_cycle.tortoise #1 in ((2 * [internal] [std] find_cycle #1.t @238:24) mod q)
+                                                                                                                set `[internal] [std] find_cycle.hare #1` := let [internal] [std] find_cycle #1.t @238:24 = [internal] [std] find_cycle.hare #1 in ((2 * [internal] [std] find_cycle #1.t @238:24) mod q)
                                                                                                               set `[internal] fresh #43` := ([internal] fresh #43 + 1)
                                                                                                         else:
                                                                                                           no-op
                                                                                                         set `[internal] iteration count` := [internal] fresh #43
                                                                                                         set `[internal] stuck` := ([internal] fresh #43 = [internal] fresh #44)
-                                                                                                  if let [internal] [std] find_cycle #1.u @231:24 = [internal] [std] find_cycle.tortoise #1 in let [internal] [std] find_cycle #1.v @231:24 = [internal] [std] find_cycle.hare #1 in ([internal] [std] find_cycle #1.u @231:24 = [internal] [std] find_cycle #1.v @231:24) then:
+                                                                                                  let `[internal] [std] find_cycle.λ #1` = 1 in:
                                                                                                     block:
-                                                                                                      set `[internal] [std] find_cycle #1` := (True, ([internal] [std] find_cycle.hare #1, [internal] [std] find_cycle.λ #1))
-                                                                                                  else:
-                                                                                                    no-op
-                                                                                          else:
-                                                                                            no-op
-                                                                              else:
-                                                                                no-op
-                                                              set `[internal] iteration count` := [internal] [std] find_cycle.iterations #1
-                                                              set `[internal] stuck` := [internal] [std] find_cycle.stuck #1
-                                                              let `[internal] tuple #2` = [internal] [std] find_cycle #1 in:
-                                                                block:
-                                                                  let `[internal] [std] preperiod_and_period.found #0` = (1st [internal] tuple #2) in:
-                                                                    block:
-                                                                      let `[internal] [std] preperiod_and_period.w #0` = (1st (2nd [internal] tuple #2)) in:
-                                                                        block:
-                                                                          let `[internal] [std] preperiod_and_period.period #0` = (2nd (2nd [internal] tuple #2)) in:
-                                                                            block:
-                                                                              if [internal] [std] preperiod_and_period.found #0 then:
-                                                                                block:
-                                                                                  let `[internal] [std] preperiod_and_period.x #0` = [internal] [std] preperiod_and_period.z #0 in:
-                                                                                    block:
-                                                                                      let `[internal] [std] preperiod_and_period.μ #0` = 0 in:
-                                                                                        block:
-                                                                                          let `[internal] fresh #43` = 0 in:
-                                                                                            let `[internal] fresh #44` = [internal] [std] preperiod_and_period.max_steps #0 in:
-                                                                                              block:
-                                                                                                if (!let [internal] [std] preperiod_and_period #0.u @231:24 = [internal] [std] preperiod_and_period.x #0 in let [internal] [std] preperiod_and_period #0.v @231:24 = [internal] [std] preperiod_and_period.w #0 in ([internal] [std] preperiod_and_period #0.u @231:24 = [internal] [std] preperiod_and_period #0.v @231:24) and ([internal] fresh #43 < [internal] fresh #44)) then:
-                                                                                                  do-while (!let [internal] [std] preperiod_and_period #0.u @231:24 = [internal] [std] preperiod_and_period.x #0 in let [internal] [std] preperiod_and_period #0.v @231:24 = [internal] [std] preperiod_and_period.w #0 in ([internal] [std] preperiod_and_period #0.u @231:24 = [internal] [std] preperiod_and_period #0.v @231:24) and ([internal] fresh #43 < [internal] fresh #44)):
-                                                                                                    block:
-                                                                                                      block:
-                                                                                                        let `[internal] tuple #3` = let [internal] [std] preperiod_and_period #0.t @231:24 = [internal] [std] preperiod_and_period.x #0 in ((2 * [internal] [std] preperiod_and_period #0.t @231:24) mod q) in:
+                                                                                                      set `[internal] [std] find_cycle.hare #1` := let [internal] [std] find_cycle #1.t @238:24 = [internal] [std] find_cycle.tortoise #1 in ((2 * [internal] [std] find_cycle #1.t @238:24) mod q)
+                                                                                                      let `[internal] fresh #44` = 0 in:
+                                                                                                        let `[internal] fresh #45` = [internal] [std] find_cycle.max_period #1 in:
                                                                                                           block:
-                                                                                                            let `[internal] tuple #4` = ([internal] [std] preperiod_and_period.μ #0 + 1) in:
+                                                                                                            if (!let [internal] [std] find_cycle #1.u @238:24 = [internal] [std] find_cycle.tortoise #1 in let [internal] [std] find_cycle #1.v @238:24 = [internal] [std] find_cycle.hare #1 in ([internal] [std] find_cycle #1.u @238:24 = [internal] [std] find_cycle #1.v @238:24) and ([internal] fresh #44 < [internal] fresh #45)) then:
+                                                                                                              do-while (!let [internal] [std] find_cycle #1.u @238:24 = [internal] [std] find_cycle.tortoise #1 in let [internal] [std] find_cycle #1.v @238:24 = [internal] [std] find_cycle.hare #1 in ([internal] [std] find_cycle #1.u @238:24 = [internal] [std] find_cycle #1.v @238:24) and ([internal] fresh #44 < [internal] fresh #45)):
+                                                                                                                block:
+                                                                                                                  block:
+                                                                                                                    let `[internal] tuple #0` = let [internal] [std] find_cycle #1.t @238:24 = [internal] [std] find_cycle.hare #1 in ((2 * [internal] [std] find_cycle #1.t @238:24) mod q) in:
+                                                                                                                      block:
+                                                                                                                        let `[internal] tuple #1` = ([internal] [std] find_cycle.λ #1 + 1) in:
+                                                                                                                          block:
+                                                                                                                            set `[internal] [std] find_cycle.hare #1` := [internal] tuple #0
+                                                                                                                            set `[internal] [std] find_cycle.λ #1` := [internal] tuple #1
+                                                                                                                  set `[internal] fresh #44` := ([internal] fresh #44 + 1)
+                                                                                                            else:
+                                                                                                              no-op
+                                                                                                            set `[internal] iteration count` := [internal] fresh #44
+                                                                                                            set `[internal] stuck` := ([internal] fresh #44 = [internal] fresh #45)
+                                                                                                      if let [internal] [std] find_cycle #1.u @238:24 = [internal] [std] find_cycle.tortoise #1 in let [internal] [std] find_cycle #1.v @238:24 = [internal] [std] find_cycle.hare #1 in ([internal] [std] find_cycle #1.u @238:24 = [internal] [std] find_cycle #1.v @238:24) then:
+                                                                                                        block:
+                                                                                                          set `[internal] [std] find_cycle #1` := (True, ([internal] [std] find_cycle.hare #1, [internal] [std] find_cycle.λ #1))
+                                                                                                      else:
+                                                                                                        no-op
+                                                                                              else:
+                                                                                                no-op
+                                                                                  else:
+                                                                                    no-op
+                                                                  set `[internal] iteration count` := [internal] [std] find_cycle.iterations #1
+                                                                  set `[internal] stuck` := [internal] [std] find_cycle.stuck #1
+                                                                  let `[internal] tuple #2` = [internal] [std] find_cycle #1 in:
+                                                                    block:
+                                                                      let `[internal] [std] preperiod_and_period.found #0` = (1st [internal] tuple #2) in:
+                                                                        block:
+                                                                          let `[internal] [std] preperiod_and_period.w #0` = (1st (2nd [internal] tuple #2)) in:
+                                                                            block:
+                                                                              let `[internal] [std] preperiod_and_period.period #0` = (2nd (2nd [internal] tuple #2)) in:
+                                                                                block:
+                                                                                  if [internal] [std] preperiod_and_period.found #0 then:
+                                                                                    block:
+                                                                                      let `[internal] [std] preperiod_and_period.x #0` = [internal] [std] preperiod_and_period.z #0 in:
+                                                                                        block:
+                                                                                          let `[internal] [std] preperiod_and_period.μ #0` = 0 in:
+                                                                                            block:
+                                                                                              let `[internal] fresh #44` = 0 in:
+                                                                                                let `[internal] fresh #45` = [internal] [std] preperiod_and_period.max_steps #0 in:
+                                                                                                  block:
+                                                                                                    if (!let [internal] [std] preperiod_and_period #0.u @238:24 = [internal] [std] preperiod_and_period.x #0 in let [internal] [std] preperiod_and_period #0.v @238:24 = [internal] [std] preperiod_and_period.w #0 in ([internal] [std] preperiod_and_period #0.u @238:24 = [internal] [std] preperiod_and_period #0.v @238:24) and ([internal] fresh #44 < [internal] fresh #45)) then:
+                                                                                                      do-while (!let [internal] [std] preperiod_and_period #0.u @238:24 = [internal] [std] preperiod_and_period.x #0 in let [internal] [std] preperiod_and_period #0.v @238:24 = [internal] [std] preperiod_and_period.w #0 in ([internal] [std] preperiod_and_period #0.u @238:24 = [internal] [std] preperiod_and_period #0.v @238:24) and ([internal] fresh #44 < [internal] fresh #45)):
+                                                                                                        block:
+                                                                                                          block:
+                                                                                                            let `[internal] tuple #3` = let [internal] [std] preperiod_and_period #0.t @238:24 = [internal] [std] preperiod_and_period.x #0 in ((2 * [internal] [std] preperiod_and_period #0.t @238:24) mod q) in:
                                                                                                               block:
-                                                                                                                set `[internal] [std] preperiod_and_period.x #0` := [internal] tuple #3
-                                                                                                                set `[internal] [std] preperiod_and_period.μ #0` := [internal] tuple #4
-                                                                                                      set `[internal] fresh #43` := ([internal] fresh #43 + 1)
-                                                                                                else:
-                                                                                                  no-op
-                                                                                                set `[internal] iteration count` := [internal] fresh #43
-                                                                                                set `[internal] stuck` := ([internal] fresh #43 = [internal] fresh #44)
-                                                                                          set `[internal] [std] preperiod_and_period #0` := (True, ([internal] [std] preperiod_and_period.μ #0, [internal] [std] preperiod_and_period.period #0))
-                                                                              else:
-                                                                                no-op
-                                      set `[internal] iteration count` := [internal] [std] preperiod_and_period.iterations #0
-                                      set `[internal] stuck` := [internal] [std] preperiod_and_period.stuck #0
-                                      let `[internal] tuple #5` = [internal] [std] preperiod_and_period #0 in:
-                                        block:
-                                          let `found` = (1st [internal] tuple #5) in:
+                                                                                                                let `[internal] tuple #4` = ([internal] [std] preperiod_and_period.μ #0 + 1) in:
+                                                                                                                  block:
+                                                                                                                    set `[internal] [std] preperiod_and_period.x #0` := [internal] tuple #3
+                                                                                                                    set `[internal] [std] preperiod_and_period.μ #0` := [internal] tuple #4
+                                                                                                          set `[internal] fresh #44` := ([internal] fresh #44 + 1)
+                                                                                                    else:
+                                                                                                      no-op
+                                                                                                    set `[internal] iteration count` := [internal] fresh #44
+                                                                                                    set `[internal] stuck` := ([internal] fresh #44 = [internal] fresh #45)
+                                                                                              set `[internal] [std] preperiod_and_period #0` := (True, ([internal] [std] preperiod_and_period.μ #0, [internal] [std] preperiod_and_period.period #0))
+                                                                                  else:
+                                                                                    no-op
+                                          set `[internal] iteration count` := [internal] [std] preperiod_and_period.iterations #0
+                                          set `[internal] stuck` := [internal] [std] preperiod_and_period.stuck #0
+                                          let `[internal] tuple #5` = [internal] [std] preperiod_and_period #0 in:
                                             block:
-                                              let `pre` = (1st (2nd [internal] tuple #5)) in:
+                                              let `found` = (1st [internal] tuple #5) in:
                                                 block:
-                                                  let `per` = (2nd (2nd [internal] tuple #5)) in:
+                                                  let `pre` = (1st (2nd [internal] tuple #5)) in:
                                                     block:
-                                                      let `t` = t0 in:
+                                                      let `per` = (2nd (2nd [internal] tuple #5)) in:
                                                         block:
-                                                          block:
-                                                            let `[list at 233:4]` = range(1, (pre + per)) in:
+                                                          let `t` = t0 in:
+                                                            block:
                                                               block:
-                                                                {TODO: ForEach}
+                                                                let `[list at 240:4]` = range(1, (pre + per)) in:
+                                                                  block:
+                                                                    {TODO: ForEach}
               else:
                 no-op
 
@@ -204,10 +231,121 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
-            let `pixel_size` = [internal] dx in:
+          let `pixel_size` = [internal] dx in:
+            if (1.0 < (([internal] x * [internal] x) + ([internal] y * [internal] y))) then:
+              set `color` := Color 48 48 48
+            else:
               block:
-                set `color` := Color 255 255 255
+                let `[internal] sphere.s` = sqrt((1.0 - (([internal] x * [internal] x) + ([internal] y * [internal] y)))) in:
+                  block:
+                    let `[internal] sphere.u` = ([internal] x:C + ([internal] y:C * 0.0 :+ 1.0)) in:
+                      block:
+                        let `[internal] sphere.v` = (1.0 + [internal] sphere.s) in:
+                          block:
+                            let `[internal] sphere.A` = (([internal] sphere view a * [internal] sphere.u) + ([internal] sphere view b * [internal] sphere.v:C)) in:
+                              block:
+                                let `[internal] sphere.B` = (([internal] sphere view c * [internal] sphere.u) + ([internal] sphere view d * [internal] sphere.v:C)) in:
+                                  block:
+                                    set `pixel_size` := ([internal] dx * (((([internal] x * [internal] x) + ([internal] y * [internal] y)) + ([internal] sphere.v * [internal] sphere.v)) / ((|[internal] sphere.A| * |[internal] sphere.A|) + (|[internal] sphere.B| * |[internal] sphere.B|))))
+                                    let `z` = let [internal] sphere.scaled #1 = let [internal] sphere.point #0 = ([internal] sphere.A, [internal] sphere.B) in ((1st [internal] sphere.point #0), (2nd [internal] sphere.point #0)) in if (((re((2nd [internal] sphere.scaled #1)) * re((2nd [internal] sphere.scaled #1))) + (im((2nd [internal] sphere.scaled #1)) * im((2nd [internal] sphere.scaled #1)))) < ((re((1st [internal] sphere.scaled #1)) * re((1st [internal] sphere.scaled #1))) + (im((1st [internal] sphere.scaled #1)) * im((1st [internal] sphere.scaled #1))))) then (1.0 :+ 0.0, ((2nd [internal] sphere.scaled #1) / (1st [internal] sphere.scaled #1))) else (((1st [internal] sphere.scaled #1) / (2nd [internal] sphere.scaled #1)), 1.0 :+ 0.0) in:
+                                      block:
+                                        block:
+                                          let `[internal] fresh #45` = 0 in:
+                                            let `[internal] fresh #46` = [internal] iteration limit in:
+                                              block:
+                                                if (!let [internal] sphere.point #3 = ((1st z), (2nd z)) in (([internal] escape radius * |(2nd [internal] sphere.point #3)|) < |(1st [internal] sphere.point #3)|) and ([internal] fresh #45 < [internal] fresh #46)) then:
+                                                  do-while (!let [internal] sphere.point #3 = ((1st z), (2nd z)) in (([internal] escape radius * |(2nd [internal] sphere.point #3)|) < |(1st [internal] sphere.point #3)|) and ([internal] fresh #45 < [internal] fresh #46)):
+                                                    block:
+                                                      set `z` := let [internal] sphere.scaled #2 = ((((1st z) ^ 2:R:C) + (c_found * ((2nd z) ^ 2:R:C))), ((2nd z) ^ 2:R:C)) in if (((re((2nd [internal] sphere.scaled #2)) * re((2nd [internal] sphere.scaled #2))) + (im((2nd [internal] sphere.scaled #2)) * im((2nd [internal] sphere.scaled #2)))) < ((re((1st [internal] sphere.scaled #2)) * re((1st [internal] sphere.scaled #2))) + (im((1st [internal] sphere.scaled #2)) * im((1st [internal] sphere.scaled #2))))) then (1.0 :+ 0.0, ((2nd [internal] sphere.scaled #2) / (1st [internal] sphere.scaled #2))) else (((1st [internal] sphere.scaled #2) / (2nd [internal] sphere.scaled #2)), 1.0 :+ 0.0)
+                                                      set `[internal] fresh #45` := ([internal] fresh #45 + 1)
+                                                else:
+                                                  no-op
+                                                set `[internal] iteration count` := [internal] fresh #45
+                                                set `[internal] stuck` := ([internal] fresh #45 = [internal] fresh #46)
+                                          if [internal] stuck then:
+                                            block:
+                                              set `color` := Color 255 255 255
+                                          else:
+                                            block:
+                                              set `color` := let [internal] [std] cycle.t #2 = ([internal] iteration count:R / 20:R) in let [internal] [std] cycle.c1 #2 = Color 128 128 128 in let [internal] [std] cycle.c2 #2 = let [internal] [std] light.c #1 = let [internal] [std] light.c #0 = Color 128 128 128 in blend(0.333, [internal] [std] light.c #0, Color 255 255 255) in blend(0.333, [internal] [std] light.c #1, Color 255 255 255) in let [internal] [std] cycle_at.s #3 = ([internal] [std] cycle.t #2 mod 1.0) in let [internal] [std] cycle_at.c1 #3 = [internal] [std] cycle.c1 #2 in let [internal] [std] cycle_at.c2 #3 = [internal] [std] cycle.c2 #2 in blend(if ([internal] [std] cycle_at.s #3 < 0.5) then (2:R * [internal] [std] cycle_at.s #3) else (2:R - (2:R * [internal] [std] cycle_at.s #3)), [internal] [std] cycle_at.c1 #3, [internal] [std] cycle_at.c2 #3)
+                                        let `[internal] sphere.light` = ((((-0.48507125007266594 * [internal] x) + ((0.48507125007266594 * [internal] y) + (0.7276068751089989 * [internal] sphere.s))) + 1.0) / 2.0) in:
+                                          block:
+                                            set `color` := blend((1.0 - ([internal] sphere shading * (1.0 - [internal] sphere.light))), Color 0 0 0, color)
+
+
+--- tool Trace orbit
+  -- on click
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `[internal] click` = [internal] point a in:
+            let `pixel_size` = [internal] px in:
+              block:
+                let `z` = [internal] click in:
+                  block:
+                    erase
+                    use Color 255 255 255 for line
+                    block:
+                      let `[internal] previous.z #0` = z in:
+                        block:
+                          let `[internal] fresh #32` = 0 in:
+                            let `[internal] fresh #33` = [internal] iteration limit in:
+                              block:
+                                do-while (!([internal] escape radius < |z|) and ([internal] fresh #32 < [internal] fresh #33)):
+                                  block:
+                                    block:
+                                      set `[internal] previous.z #0` := z
+                                      block:
+                                        draw point at (z, 1.0 :+ 0.0)
+                                        set `z` := ((z ^ 2:R:C) + c_found)
+                                        draw line from (z, 1.0 :+ 0.0) to ([internal] previous.z #0, 1.0 :+ 0.0)
+                                    set `[internal] fresh #32` := ([internal] fresh #32 + 1)
+                                set `[internal] iteration count` := [internal] fresh #32
+                                set `[internal] stuck` := ([internal] fresh #32 = [internal] fresh #33)
+
+  -- on drag
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `[internal] click` = [internal] point a in:
+            let `[unused] drag start` = [internal] old point a in:
+              let `pixel_size` = [internal] px in:
+                block:
+                  let `z` = [internal] click in:
+                    block:
+                      erase
+                      use Color 255 255 255 for line
+                      block:
+                        let `[internal] previous.z #0` = z in:
+                          block:
+                            let `[internal] fresh #35` = 0 in:
+                              let `[internal] fresh #36` = [internal] iteration limit in:
+                                block:
+                                  do-while (!([internal] escape radius < |z|) and ([internal] fresh #35 < [internal] fresh #36)):
+                                    block:
+                                      block:
+                                        set `[internal] previous.z #0` := z
+                                        block:
+                                          draw point at (z, 1.0 :+ 0.0)
+                                          set `z` := ((z ^ 2:R:C) + c_found)
+                                          draw line from (z, 1.0 :+ 0.0) to ([internal] previous.z #0, 1.0 :+ 0.0)
+                                      set `[internal] fresh #35` := ([internal] fresh #35 + 1)
+                                  set `[internal] iteration count` := [internal] fresh #35
+                                  set `[internal] stuck` := ([internal] fresh #35 = [internal] fresh #36)
+
+  -- on refresh
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `pixel_size` = [internal] px in:
+            block:
+              erase
 
 
 --- tool Spider
@@ -235,17 +373,17 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                 block:
                                   let `g1` = (legs @ (*, 1)) in:
                                     block:
-                                      use let [internal] [std] light.c #0 = Color 128 128 128 in blend(0.333, [internal] [std] light.c #0, Color 255 255 255) for line
                                       block:
-                                        let `[list at 258:4]` = [1; -1] in:
+                                        let `[list at 284:4]` = range(1, n) in:
                                           block:
                                             {TODO: ForEach}
                                       use Color 128 128 128 for line
-                                      draw filled circle at (-2:R:C, 1.0 :+ 0.0) with radius 3:R pixels
                                       block:
-                                        let `[list at 266:4]` = range(1, n) in:
+                                        let `[list at 298:4]` = [1; -1] in:
                                           block:
                                             {TODO: ForEach}
+                                      use Color 128 128 128 for line
+                                      draw filled circle at (0:R:C, 1.0 :+ 0.0) with radius 3:R pixels
                           else:
                             no-op
 
