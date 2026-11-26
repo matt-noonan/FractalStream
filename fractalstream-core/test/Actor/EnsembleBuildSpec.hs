@@ -15,6 +15,8 @@ import Language.Table (newTable, tableCellCount, writeCell, readCell, tableDims,
 import Actor.SavedTables
 import Data.Zip (isZip, readZip)
 import qualified Data.ByteString.Lazy as BL
+import qualified Data.ByteString.Lazy.Char8 as BL8
+import GHC.Float (castWord64ToDouble)
 import Data.IORef (newIORef, readIORef, modifyIORef')
 import Data.Complex (Complex(..))
 import Actor.SavedValues
@@ -68,6 +70,32 @@ shouldFailWith src needle = build src >>= \case
 
 spec :: Spec
 spec = do
+
+  describe "a saved table in fixed point" $ do
+    let readDoubles :: BL.ByteString -> [Double]
+        readDoubles = go
+          where go b | BL.null b = []
+                     | otherwise = let (x, rest) = BL.splitAt 8 b
+                                   in castWord64ToDouble (foldr (\w acc -> acc * 256 + fromIntegral w) 0 (BL.unpack x)) : go rest
+        files yaml bin = Map.fromList [("t.yaml", BL8.pack yaml), ("t.bin", BL.pack bin)]
+        close xs ys = length xs == length ys && and (zipWith (\x y -> abs (x - y) < 1e-9) xs ys)
+    it "reads back its values, scaled to their ranges" $ do
+      -- (0, 128, 255 of 255 over [0, 10], stored as differences)
+      let yaml = "type: \"Table 1 of R\"\nsize: [3]\norigin: [0.0, 0.0]\nstep: [1.0, 1.0]\nencoding: fixed\nfile: t.bin\nbits: 8\ncomponents: 1\nranges: [[0, 10]]\n"
+      case readTableAt (files yaml [0, 128, 127]) "t.yaml" of
+        Left err -> expectationFailure err
+        Right st -> readDoubles (stData st) `shouldSatisfy` close [0, 1280 / 255, 10]
+    it "has a range for each layer, and its bytes shuffled" $ do
+      -- (a 2 x 2 table, two layers of two cells: 0, 1 over [0, 1] and
+      -- 20, 10 over [10, 20]; in 16 bits the values 0, 65535, 65535 and
+      -- (0 - 65535) mod 65536 = 1, their low bytes then their high bytes)
+      let yaml = "type: \"Table 2 of R\"\nsize: [2, 2]\norigin: [0.0, 0.0]\nstep: [1.0, 1.0]\nencoding: fixed\nfile: t.bin\nbits: 16\ncomponents: 1\nranges: [[0, 1], [10, 20]]\n"
+      case readTableAt (files yaml [0, 0xff, 0xff, 0x01, 0, 0xff, 0xff, 0x00]) "t.yaml" of
+        Left err -> expectationFailure err
+        Right st -> readDoubles (stData st) `shouldSatisfy` close [0, 1, 20, 10]
+    it "says what's wrong with its description" $ do
+      let yaml = "type: \"Table 1 of R\"\nsize: [3]\norigin: [0.0, 0.0]\nstep: [1.0, 1.0]\nencoding: fixed\nfile: t.bin\nbits: 8\ncomponents: 1\nranges: [[0, 10], [0, 1]]\n"
+      either (\e -> "needs 1" `isInfixOf` e) (const False) (readTableAt (files yaml [0, 1, 2]) "t.yaml") `shouldBe` True
 
   describe "buildEnsembleFromScript" $ do
 

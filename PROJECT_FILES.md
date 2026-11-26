@@ -98,7 +98,7 @@ sha256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
 | `size` | its size along each dimension |
 | `origin` | the point at the center of cell (1, 1), the table's **top left** cell |
 | `step` | a cell's width and height, both positive: columns go right, and rows go *down* the plane (cell `(j, k)` is centered at `origin + ((j - 1) step_x, -(k - 1) step_y)`) |
-| `encoding` | how the file holds the elements: `raw` (below); a version of FractalStream refuses one it doesn't know |
+| `encoding` | how the file holds the elements: `raw` (below), or, only for reading, `png`, `jpeg` (a `Table 2 of Color` as a picture) or `fixed` (below); a version of FractalStream refuses one it doesn't know. FractalStream itself only writes `raw` |
 | `file` | the file holding the elements, beside the description |
 | `sha256` | the SHA-256 of that file's bytes (inflated, in an archive), in hex; FractalStream checks it, and refuses a table whose data doesn't match |
 
@@ -144,7 +144,35 @@ So a `Table 3 of (ℂ × ℂ)` of size `[160, 160, 318]` is 160 × 160 × 318
 cells of 32 bytes: 260,505,600 bytes. (In memory, FractalStream pads a
 tuple's parts to 8 bytes; on disk they're packed.)
 
+## Fixed-point table data
+
+`encoding: fixed` is a load-only, lossy format for tables of real and
+complex numbers (and tuples of them), much smaller once compressed than
+`raw`; `dev-tools/tables/fixed_encode.py` writes it from a raw table. The
+description has three more fields:
+
+| Field | Value |
+|---|---|
+| `bits` | how many bits each value has, 1 to 32 |
+| `components` | how many reals each cell has (a complex number is two) |
+| `ranges` | `[lo, hi]` for each component in each *layer* (a value of the table's last index; a 1-dimensional table is one layer), layer by layer, component by component |
+
+A stored integer `q` stands for `lo + q (hi - lo) / (2^bits - 1)`. In the
+file, each layer's values of each component, in the table's order, are
+written as their differences from the one before (the first from 0),
+modulo 2^(8 b), in `b = ⌈bits / 8⌉` little-endian bytes; then the whole
+file is byte-shuffled: every value's first byte, then every value's
+second, and so on. Read back, it's the table's packed elements, as a raw
+table's are. There's no `sha256:` (what's read back isn't what was
+saved).
+
+For a sense of the sizes: the Per_6 atlas's `Table 3 of (ℂ × ℂ)` of size
+`[160, 160, 26]`, 21.3 MB raw and 11.1 MB compressed, is 1.8 MB compressed
+in 16 bits, and its pictures are the same.
+
 ## Changes
+
+- 2026-11-26: the load-only `fixed` encoding.
 
 - 2026-11-14: tables moved out of the YAML (where a `tables:` key held
   each one's elements, zlib-compressed, in base64) into `.fsz` archives.
