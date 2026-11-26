@@ -154,7 +154,9 @@ clamped := if x > 0 then x else 0
 ```
 
 It can go anywhere a value can, including as an item of a tuple or a function's argument
-(`T @ (j, if j < n then k else 1)`, `max(1, if c then 2 else 3)`), and it chains:
+(`T @ (j, if j < n then k else 1)`, `max(1, if c then 2 else 3)`), or after an operator, where its
+`else` goes as far right as it can (`1 + if c then 2 else 3 + 4` is `1 + (if c then 2 else 3 + 4)`),
+and it chains:
 `if c then a else if d then b else e`. Its branches are single values, so
 `if c then a else b, d` is the tuple `(if c then a else b), d`; a branch that's a tuple goes in
 parentheses, as in `x, y <- if c then (1, 2) else (3, 4)`.
