@@ -108,8 +108,8 @@ script: |
   per5_tau : C := 0.88739417337317839 i
 
   # Weierstrass p and p' at t, then Dynamo's rational chain from (p, p') to
-  # the family's (a, b).  Assigns the caller's pa and pb.
-  define per5_param(t):
+  # the family's (a, b).
+  function per5_param(t):
     wp := ℘(t, 2 per5_omega1, 2 per5_omega1 per5_tau)
     wdp := wp_prime(t, 2 per5_omega1, 2 per5_omega1 per5_tau)
     wx := -wp - 0.25
@@ -119,8 +119,8 @@ script: |
     wx <- wx/tmp
     wy <- wx - 1/tmp
     tmp <- (wx + 1) wy
-    pb <- wx/tmp
-    pa <- wx pb - 1
+    b := wx/tmp
+    per5_param <- (wx b - 1, b)
 
   # The period 5 family has no attracting fixed point at infinity: its critical
   # cycle runs 0 -> oo -> 1 -> f(1) -> f^2(1) -> 0, so a captured orbit is
@@ -175,24 +175,23 @@ script: |
   #    to fall into the critical cycle, which is chaotic in places, so much of
   #    the plane comes out gray.
   #
-  # One sample: sets cls5 (1 = the free critical point is captured by the
-  # critical cycle, 0 = it is not) and cap5 (its iteration count, meaningful
-  # when cls5 = 1).
-  define per5_sample(ts):
-    pa := 0.0
-    pb := 0.0
-    run per5_param(ts)
+  # One sample: (its class, its capture time). The class is 1 if the free
+  # critical point is captured by the critical cycle, 2 + the period if it
+  # lands on another attracting cycle, and 0 if neither; the capture time is
+  # its iteration count, meaningful when the class is 1.
+  function per5_sample(ts):
+    (pa, pb) := per5_param(ts)
     u : Ĉ := -2 pb/pa
     iterate u -> 1 + (pa u + pb)/u^2 until captured5(u)
-    cap5 <- iterations
+    capture := iterations
     if captured5(u):
-      cls5 <- 1
+      per5_sample <- (1, capture)
     else:
       w := u
       repeat up to 64 times:
         w <- 1 + (pa w + pb)/w^2
       until w = u
-      cls5 <- if stuck then 0 else 2 + iterations
+      per5_sample <- (if stuck then 0 else 2 + iterations, capture)
 
   define per5_paint(c):
     if c = 1:
@@ -207,21 +206,17 @@ script: |
     center: 0
     pixel size: 1/120
     iteration limit: iters
-  cls5 : Z := 0
-  cap5 : Z := 0
   if bib5 or solid5:
     # Ambrosi's rule, with n = 5 for Per_5: the escape time is taken mod the
     # period of the critical cycle, not mod 3, so the classes follow the
     # cycles of approach rather than an arbitrary residue.
-    run per5_sample(t5)
-    cc := cls5
-    ccap := cap5
-    cr := mod(cap5, 5)
+    (cc, ccap) := per5_sample(t5)
+    cr := mod(ccap, 5)
     mixed := false
     for each o in [-1 - i, -1, -1 + i, -i, i, 1 - i, 1, 1 + i]:
-      run per5_sample(t5 + pixel_size o)
-      if cls5 = 1:
-        if mod(cap5, 5) != cr:
+      (cls, cap) := per5_sample(t5 + pixel_size o)
+      if cls = 1:
+        if mod(cap, 5) != cr:
           mixed <- true
     if cc = 1:
       if mixed:
@@ -241,11 +236,11 @@ script: |
     captured := 0
     pick := 0
     for each o in [1 + i, -1 + i, -1 - i, 1 - i]:
-      run per5_sample(t5 + o pixel_size / 4)
-      if cls5 = 1:
+      (cls, cap) := per5_sample(t5 + o pixel_size / 4)
+      if cls = 1:
         captured <- captured + 1
-      else if cls5 > 1 and pick = 0:
-        pick <- cls5
+      else if cls > 1 and pick = 0:
+        pick <- cls
     if captured >= 2:
       pick <- 1
     run per5_paint(pick)
@@ -255,9 +250,7 @@ script: |
     center: 0
     pixel size: 1/150
     iteration limit: iters
-  pa := 0.0
-  pb := 0.0
-  run per5_param(t5)
+  (pa, pb) := per5_param(t5)
   u : Ĉ := z
   iterate u -> 1 + (pa u + pb)/u^2 until captured5(u)
   run shade5
@@ -273,9 +266,7 @@ script: |
     w0 := click
     erase
     use yellow for stroke
-    pa := 0.0
-    pb := 0.0
-    run per5_param(t5)
+    (pa, pb) := per5_param(t5)
     w : Ĉ := w0
     repeat up to 200 times:
       draw point at w
