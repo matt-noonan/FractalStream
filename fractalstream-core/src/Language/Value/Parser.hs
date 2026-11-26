@@ -386,11 +386,12 @@ valueAndArithGrammar funs own = mdo
     , pointIndex
     , sliceAll
     , funRef
+    , builtinRef
     , lambda
     , compose
     ]
 
-  pairItem <- ruleChoice [ list, pOr, pointIndex, sliceAll, funRef, lambda, compose ]
+  pairItem <- ruleChoice [ list, pOr, pointIndex, sliceAll, funRef, builtinRef, lambda, compose ]
 
   -- A function given as an argument (see "Language.Code.FunctionArgs"):
   -- one of the script's, by its name alone, or one written in place,
@@ -407,9 +408,7 @@ valueAndArithGrammar funs own = mdo
   composeOperand <- ruleChoice
     [ funRef
     , node (EVar <$> paramName)
-    -- a built-in function, `sin`, as the function `w -> sin(w)`
-    , node ((\n -> ELambda [builtinParam] (Syn NoSourceRange (EApp n (Syn NoSourceRange (EVar builtinParam)))))
-            <$> builtinFunName)
+    , builtinRef
     , token OpenParen *> lambda <* token CloseParen
     , token OpenParen *> compose <* token CloseParen
     ]
@@ -420,6 +419,11 @@ valueAndArithGrammar funs own = mdo
     Identifier n | not (reserved n), not (Set.member n funs)
                  , not (isStdlibFunction n && free n), not (isBuiltinFun n) -> Just n
     _ -> Nothing)
+  -- A built-in function given by its name alone, `sin`, as the function
+  -- `w -> sin(w)`: as an argument, `newton_root(sin, x)`, or in a
+  -- composition, `sin ∘ f`.
+  builtinRef <- rule (node ((\n -> ELambda [builtinParam] (Syn NoSourceRange (EApp n (Syn NoSourceRange (EVar builtinParam)))))
+                             <$> builtinFunName))
   builtinFunName <- rule $ tokenMatch (\case
     Identifier n | isBuiltinFun n -> Just n
     _ -> Nothing)

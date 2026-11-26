@@ -585,8 +585,9 @@ A function with a body can be differentiated, as `f'(x)` (or with
 ### Functions given as arguments
 
 A function, or a code block, can be given a function as an argument: by
-its name, or written where it's given, as `w -> ...` (or `(u, v) -> ...`
-for a function of two values):
+its name (one of the script's, or a built-in function of one value, like
+`sin` or `sqrt`), or written where it's given, as `w -> ...` (or
+`(u, v) -> ...` for a function of two values):
 
 ```
 sq(a) := a a
@@ -751,9 +752,8 @@ that defines its own `wheel8` still gets the standard `rainbow`.
 | `polygon_winding_number(points, z0)` | The same for the closed polygon through a list of points (the last joined back to the first) |
 | `closest(points, w)` | The item of a list nearest `w` (the first of those, on a tie): the branch of an inverse that continues a path, say, as in `closest([s, -s], previous_point)` |
 
-A function given to these is a script's own function, or one written in
-place (`w -> sin(w)`): a built-in function like `sin` can't be passed by
-its name.
+A function given to these can be a script's own, a built-in one taking
+one value (like `sin`), or one written in place (`w -> sin(w) / w`).
 
 #### Elliptic functions
 

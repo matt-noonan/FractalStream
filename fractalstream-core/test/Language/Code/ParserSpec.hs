@@ -930,6 +930,13 @@ x <- d|] `shouldBe` Right 3
       "x <- im closest([1, -1, i], 0.1 + 0.9 i)" `gives` 1
       "x <- closest([3.0, -1.0, 2.5], 2)" `gives` 2.5
 
+    it "takes a built-in function by its name, as an argument" $ do
+      "(ok, r) := full_newton_root(sin, 1.4, 100, (a, b) -> |a - b| < 10^(-12))\nx <- if ok and |r - π| < 10^(-9) then 1 else 0" `gives` 1
+      "x <- compose(sqrt, 2, 16.0)" `gives` 2
+      "function apply(f, v):\n  apply <- f(v)\nx <- apply(floor, 2.7) + apply(exp, 0)" `gives` 3
+      -- (a script's own `sqrt` is the one it gets)
+      "sqrt(v) := v + 1\nx <- compose(sqrt, 2, 16.0)" `gives` 18
+
     describe "the standard library's Newton's method and Schwarzian" $ do
       it "keeps capped steps near the start" $ do
         -- (uncapped, the first step from 1.4 jumps to about -4.4, and it ends at π)
