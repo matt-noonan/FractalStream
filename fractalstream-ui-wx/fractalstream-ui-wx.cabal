@@ -93,6 +93,7 @@ executable FractalStream
                        UI.ProjectActions
                        UI.Session
                        UI.Welcome
+                       UI.Appearance
                        UI.Widgets
                        UI.WxProperties
                        UI.ToolProgress

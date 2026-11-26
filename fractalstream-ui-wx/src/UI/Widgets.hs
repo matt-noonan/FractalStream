@@ -38,6 +38,7 @@ import qualified Data.ByteString.UTF8 as Utf8
 import UI.EditorStyle (styleFor)
 
 import UI.CodeEditor
+import UI.Appearance (followAppearance)
 import UI.AppSettings (appSettings)
 import FractalStream.Settings (Settings(..), ClassStyle, editorFont)
 import UI.EditorStyle (setupStyles, showLineNumbers, errorColor)
@@ -464,6 +465,12 @@ scriptWidgetWith known p scriptCode = do
     t <- staticTextCreate p idAny "" rectNull (0x0010 .|. wxST_NO_AUTORESIZE)
     set t [ visible := False, textColor := rgb er eg eb ]
     pure t
+  -- (the editor's colors, and the error's, again when the system's
+  -- appearance changes)
+  liftIO $ followAppearance p $ do
+    restyleEditor ce
+    (er', eg', eb') <- errorColor <$> systemIsLight
+    set errorText [ textColor := rgb er' eg' eb' ]
 
   -- Writing the script with mathematical symbols ("Language.Editor.
   -- Normalize"), with the math-symbols setting: once it's been edited

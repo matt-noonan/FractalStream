@@ -9,6 +9,8 @@ module UI.CodeEditor
   , markErrorLine
   , errorNoteLayout
   , frameIsLight
+  , systemIsLight
+  , restyleEditor
   , editorOffsetMap
   ) where
 
@@ -18,6 +20,7 @@ import Language.Parser.SourceRange (SourceRange(..))
 import Data.DynamicValue
 import Actor.Layout (CodeString(..))
 import UI.EditorKeys
+import UI.Appearance (systemColour)
 import UI.SymbolEntry
 import UI.EditorStyle (setupStyles, showLineNumbers, errorNoteStyle, errorColor, styleFor)
 import Language.Editor.Highlight (Highlight(Comment, StringLiteral))
@@ -37,13 +40,49 @@ import qualified Data.ByteString.UTF8 as Utf8
 import qualified Data.ByteString as BS
 import qualified Data.Map as Map
 
-frameIsLight :: Window a -> IO Bool
-frameIsLight ce = do
-  col <- get ce bgcolor
+-- | The editor's colors for a light or a dark window: each class of span
+-- its own style ("UI.EditorStyle"), and the caret's, the current line's,
+-- and the fold margin's.
+editorColours :: StyledTextCtrl a -> Bool -> Settings -> IO ()
+editorColours stc isLight settings = do
+    setupStyles stc isLight settings
+    if isLight
+      then do
+        styledTextCtrlSetCaretForeground stc (rgb 0 0 (0 :: Word8))
+        styledTextCtrlSetCaretLineBackground stc (rgb 240 240 (255 :: Word8))
+        styledTextCtrlSetFoldMarginColour stc True (rgb 0xd0 0xd0 (0xd0 :: Word8))
+        styledTextCtrlSetFoldMarginHiColour stc True (rgb 0xff 0xff (0xff :: Word8))
+        defineFoldMarkers stc (rgb 0xf8 0xf8 (0xf8 :: Word8)) (rgb 0x60 0x60 (0x60 :: Word8))
+      else do
+        styledTextCtrlSetCaretForeground stc (rgb 255 255 (255 :: Word8))
+        styledTextCtrlSetCaretLineBackground stc (rgb 0x20 0x30 (0x38 :: Word8))
+        styledTextCtrlSetFoldMarginColour stc True (rgb 0x14 0x19 (0x1e :: Word8))
+        styledTextCtrlSetFoldMarginHiColour stc True (rgb 0x14 0x19 (0x1e :: Word8))
+        defineFoldMarkers stc (rgb 0x14 0x19 (0x1e :: Word8)) (rgb 0xa0 0xa0 (0xa0 :: Word8))
+
+-- | The editor's colors again, for the system's appearance as it is now
+-- (after it changes).
+restyleEditor :: StyledTextCtrl a -> IO ()
+restyleEditor stc = do
+  isLight <- systemIsLight
+  settings <- getDynamic appSettings
+  editorColours stc isLight settings
+  repaint stc
+
+-- | Whether the system's appearance is light now, by its windows'
+-- background color.
+systemIsLight :: IO Bool
+systemIsLight = isLightColour <$> systemColour ColorWindow
+
+isLightColour :: Color -> Bool
+isLightColour col =
   let rc :: Float = colorRed col / 255
       gc = colorGreen col / 255
       bc = colorBlue col / 255
-  pure (0.299 * rc + 0.587 * gc + 0.114 * bc > 0.5)
+  in 0.299 * rc + 0.587 * gc + 0.114 * bc > 0.5
+
+frameIsLight :: Window a -> IO Bool
+frameIsLight ce = isLightColour <$> get ce bgcolor
 
 editorOffsetMap :: String -> Map Int Int
 editorOffsetMap = Map.fromList . go 0 . zip [0..]
@@ -81,23 +120,9 @@ codeEditorWithText cep txt onErrorMarkClick = do
     stc <- styledTextCtrl cep [ clientSize := sz 100 100 ]
     -- see Style Definition at https://www.scintilla.org/ScintillaDoc.html#Styling
     isLight <- frameIsLight cep
-    -- each class of span its own style ("UI.EditorStyle")
     settings <- getDynamic appSettings
-    setupStyles stc isLight settings
+    editorColours stc isLight settings
     showLineNumbers stc (setLineNumbers settings)
-    if isLight
-      then do
-        styledTextCtrlSetCaretForeground stc (rgb 0 0 (0 :: Word8))
-        styledTextCtrlSetCaretLineBackground stc (rgb 240 240 (255 :: Word8))
-        styledTextCtrlSetFoldMarginColour stc True (rgb 0xd0 0xd0 (0xd0 :: Word8))
-        styledTextCtrlSetFoldMarginHiColour stc True (rgb 0xff 0xff (0xff :: Word8))
-        defineFoldMarkers stc (rgb 0xf8 0xf8 (0xf8 :: Word8)) (rgb 0x60 0x60 (0x60 :: Word8))
-      else do
-        styledTextCtrlSetCaretForeground stc (rgb 255 255 (255 :: Word8))
-        styledTextCtrlSetCaretLineBackground stc (rgb 0x20 0x30 (0x38 :: Word8))
-        styledTextCtrlSetFoldMarginColour stc True (rgb 0x14 0x19 (0x1e :: Word8))
-        styledTextCtrlSetFoldMarginHiColour stc True (rgb 0x14 0x19 (0x1e :: Word8))
-        defineFoldMarkers stc (rgb 0x14 0x19 (0x1e :: Word8)) (rgb 0xa0 0xa0 (0xa0 :: Word8))
 
     -- Set the minimum size, or else Scintilla will default to 2000 pixels(!)
     styledTextCtrlSetScrollWidth stc 10

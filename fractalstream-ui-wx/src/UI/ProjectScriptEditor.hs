@@ -27,6 +27,7 @@ import Actor.Viewer.Complex (ComplexViewer(..))
 import Actor.Layout (CodeString(..))
 
 import Actor.Viewer (Backend)
+import UI.Appearance (followAppearance)
 import UI.Loading (whileLoading)
 import Actor.Metadata (ProjectMetadata(..))
 import UI.Widgets (scriptWidget, ScriptWidget(..), scriptEditMenu, onOwnDestroy)
@@ -112,6 +113,7 @@ editProjectScript backend projectWindow ScriptEditorHooks{..} wxLayout currentEn
 
   f <- frameEx frameDefaultStyle
          [ text := "Edit project script", visible := False ] projectWindow
+  followAppearance f (pure ())
   p <- panel f []
 
   -- A project whose script has never built (one opened with an error
