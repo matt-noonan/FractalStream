@@ -87,7 +87,9 @@ run procs sr name arg = do
   -- Its own variables, renamed for this run, like its parameters: after
   -- the blocks it runs are expanded, since they share its variables too
   -- (a block it runs can set one of them).
-  let own = Set.toList (ownDeclarations body) \\ params
+  -- (`_`, a part of a tuple that isn't wanted, isn't a variable: see
+  -- "Language.Code.Tuples")
+  let own = Set.toList (Set.delete "_" (ownDeclarations body)) \\ params
       ownNames = Map.fromList [ (v, "[internal] " ++ name ++ "." ++ v ++ " #" ++ show k) | v <- own ]
       body' = renameStmt ownNames body2
   pure (SBlock ([ Stmt sr (SDecl n Nothing a) | (n, a) <- spread ]
