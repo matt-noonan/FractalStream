@@ -358,6 +358,7 @@ valueAndArithGrammar funs own = mdo
                  <*> (token Else *> argumentIte))
     , list
     , pOr
+    , pOrOpen
     ]
 
   list <- rule (node (EList <$> (token OpenBracket *> list' <* token CloseBracket)))
@@ -381,6 +382,7 @@ valueAndArithGrammar funs own = mdo
   pair <- ruleChoice
     [ node (EPair <$> (tupleItem <* token Comma) <*> pair)
     , ifItem
+    , pOrOpen
     , pOr
     , pointIndex
     , sliceAll
@@ -391,7 +393,7 @@ valueAndArithGrammar funs own = mdo
 
   pairItem <- ruleChoice [ list, pOr, pointIndex, sliceAll, funRef, lambda, compose ]
 
-  tupleItem <- ruleChoice [ ifItem, pairItem ]
+  tupleItem <- ruleChoice [ ifItem, pairItem, pOrOpen ]
   ifItem <- ruleChoice
     [ node (EITE <$> (token If *> tupleItem)
                  <*> (token Then *> tupleItem)
@@ -405,7 +407,8 @@ valueAndArithGrammar funs own = mdo
   -- one of the script's, by its name alone, or one written in place,
   -- `w -> e` or `(u, v) -> e`.
   funRef <- rule (node (EFunRef <$> funName))
-  lambda <- rule (node (ELambda <$> lambdaParams <*> (token RightArrow *> pOr)))
+  lambda <- rule (node (ELambda <$> lambdaParams <*> (token RightArrow *> lambdaBody)))
+  lambdaBody <- ruleChoice [ pOr, pOrOpen, ifItem ]
 
   -- `f ∘ g`, a function made of two: each a function by its name, a
   -- parameter (given a function at each call), or, in parentheses, a
@@ -483,6 +486,53 @@ valueAndArithGrammar funs own = mdo
     [ node (EUn OpNot <$> (token Not_ *> arith))
     , comparison
     ]
+
+  -- An if/then/else after an operator, `1 + if c then a else b`: its
+  -- `else` goes as far right as it can (`1 + if c then 2 else 3 + 4` is
+  -- `1 + (if c then 2 else (3 + 4))`). So that it can't be read the other
+  -- way too, an expression ending in one ("open") is only ever a whole
+  -- item, of a tuple, an argument list, a list, or a function written in
+  -- place, never an operator's left-hand side: each level has an open
+  -- form, whose right-hand side is open or an if/then/else.
+  pOrOpen <- ruleChoice
+    [ node (EBin OpOr <$> (pNot <* token Or_) <*> orTailOpen)
+    , node (EBin OpAnd <$> (pNot <* token And_) <*> andTailOpen)
+    , notOpen
+    ]
+  orTailOpen <- ruleChoice
+    [ node (EBin OpOr <$> (pNot <* token Or_) <*> orTailOpen), notOpenOrIf ]
+  andTailOpen <- ruleChoice
+    [ node (EBin OpAnd <$> (pNot <* token And_) <*> andTailOpen), notOpenOrIf ]
+  notOpen <- ruleChoice
+    [ node (EUn OpNot <$> (token Not_ *> arithOpenOrIf))
+    , comparisonOpen
+    ]
+  notOpenOrIf <- ruleChoice [ notOpen, ifItem ]
+  comparisonOpen <- ruleChoice
+    [ node (EBin OpExactEq <$> (arith <* token ExactlyEqual) <*> arithOpenOrIf)
+    , node (EBin OpApproxEq <$> (arith <* token Equal) <*> arithOpenOrIf)
+    , node (EBin OpApproxNEq <$> (arith <* token NotEqual) <*> arithOpenOrIf)
+    , node (EBin OpLt  <$> (arith <* token LessThan) <*> arithOpenOrIf)
+    , node (EBin OpGt  <$> (arith <* token GreaterThan) <*> arithOpenOrIf)
+    , node (EBin OpGe <$> (arith <* token GreaterThanOrEqual) <*> arithOpenOrIf)
+    , node (EBin OpLe <$> (arith <* token LessThanOrEqual) <*> arithOpenOrIf)
+    , addOpen
+    ]
+  addOpen <- ruleChoice
+    [ node (EBin OpAdd <$> (addOrSub <* token Plus)  <*> mulOpenOrIf)
+    , node (EBin OpSub <$> (addOrSub <* token Minus) <*> mulOpenOrIf)
+    , mulOpen
+    ]
+  arithOpenOrIf <- ruleChoice [ addOpen, ifItem ]
+  mulOpen <- ruleChoice
+    [ node (EBin OpMul <$> (mulOrDiv <* token Times) <*> negOpenOrIf)
+    , node (EBin OpDiv <$> (mulOrDiv <* token Divide) <*> negOpenOrIf)
+    , node (EBin OpIDiv <$> (mulOrDiv <* token IntegerDivide) <*> negOpenOrIf)
+    , negOpen
+    ]
+  mulOpenOrIf <- ruleChoice [ mulOpen, ifItem ]
+  negOpen <- rule (node (EUn OpNeg <$> (token Minus *> negOpenOrIf)))
+  negOpenOrIf <- ruleChoice [ negOpen, ifItem ]
 
   comparison <- ruleChoice
     [ node (EBin OpExactEq <$> (arith <* token ExactlyEqual) <*> arith)
