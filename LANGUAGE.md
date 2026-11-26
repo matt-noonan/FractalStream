@@ -436,9 +436,11 @@ The variable's type is the smallest one that fits both its initial value
 *and* everything that is later assigned to it, so here `z` is complex
 (assuming `C` is), even though its initial value `0` is an integer.
 Similarly, a list starting out as `xs := [1, 2]` becomes a list of reals if
-you later `append(xs, 0.5)` to it. An empty list `[]` gives no clue about
-what kind of items it will hold, so a variable starting out empty needs a
-type annotation, like `xs : List of R := []`.
+you later `append(xs, 0.5)` to it. A list starting out empty, `xs := []`,
+holds what's added to it later (by `append`, `prepend`, or `join`), and so
+does a function's result that starts out empty; one that never has
+anything added to it needs a type annotation, like
+`xs : List of R := []`.
 
 Several new variables can be made at once, each with its own type worked
 out, with a tuple: `u, v := 0, 1` (or `(u, v) := (0, 1)`).

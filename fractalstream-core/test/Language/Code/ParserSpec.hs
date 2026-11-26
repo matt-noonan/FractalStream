@@ -454,6 +454,21 @@ x <- k|] `shouldBe` Right 4
       failsWith "until false:\n  x <- if x stops then 1 else 2" "`stops` can only be used in a loop's condition"
       failsWith "b := x stops" "`stops` can only be used in a loop's condition"
 
+  describe "an empty list" $ do
+    it "takes its items' type from what's added to it" $ do
+      runWithRealX 0 "out := []\nfor each p in [1.5, 2.5]:\n  out <- append(out, p)\nx <- out @ 2" `shouldBe` Right 2.5
+      runWithRealX 0 "out := []\nout <- join(out, [4.0, 5.0])\nx <- length(out)" `shouldBe` Right 2
+      -- (a function's result, starting out empty)
+      runWithRealX 0 [r|
+function backwards(points):
+  backwards <- []
+  for each p in points:
+    backwards <- prepend(backwards, p)
+x <- backwards([1.0, 2.0, 3.0]) @ 1|] `shouldBe` Right 3
+
+    it "still can't be typed if nothing is ever added to it" $
+      runWithRealX 0 "out := []\nx <- 1" `shouldSatisfy` either ("empty list" `isInfixOf`) (const False)
+
   describe "when using `previous` in a loop" $ do
 
     it "is the value at the start of the pass, in the loop's body" $
