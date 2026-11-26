@@ -150,6 +150,10 @@ data ExprF r
     -- ^ The first (@False@) or second (@True@) part of a pair. No script
     -- can write one: tuple assignments and tuple norms use them (see
     -- "Language.Code.Tuples").
+  | ETupleProj Int r
+    -- ^ @proj2(t)@: the k-th part of a tuple, counting the parts of
+    -- @(a, b, c)@ (which is @(a, (b, c))@) as a, b, c. Typing makes it
+    -- 'EProj's, once it knows how many parts the tuple has.
   | EAdvice String
     -- ^ A parse that is accepted only to produce a helpful error
   | EFunRef String

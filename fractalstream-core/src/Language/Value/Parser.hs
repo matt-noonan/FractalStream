@@ -342,7 +342,9 @@ valueAndArithGrammar funs own = mdo
   -- (an if/then/else is a tuple's item, below: see `ifItem`)
   ite <- ruleChoice [ scalar ]
 
-  scalar <- ruleChoice [ list, pair ]
+  -- (a list is one of a pair's alternatives, below, as the last item of a
+  -- tuple can be one: `f(1, [2, 3])`)
+  scalar <- ruleChoice [ pair ]
 
   -- One item in a comma-separated list, like text(a, b, c) or [a, b, c]:
   -- any expression except an unparenthesized pair, which would make
@@ -383,6 +385,7 @@ valueAndArithGrammar funs own = mdo
     [ node (EPair <$> (tupleItem <* token Comma) <*> pair)
     , ifItem
     , pOrOpen
+    , list
     , pOr
     , pointIndex
     , sliceAll
@@ -656,6 +659,11 @@ valueAndArithGrammar funs own = mdo
     [ node (EBin OpMod
         <$> (builtinWord "mod" *> token OpenParen *> argument)
         <*> (token Comma *> argument <* token CloseParen))
+    -- `proj2(t)`: a part of a tuple (see 'ETupleProj')
+    , node (ETupleProj 1 <$> (builtinWord "proj1" *> parenthesized))
+    , node (ETupleProj 2 <$> (builtinWord "proj2" *> parenthesized))
+    , node (ETupleProj 3 <$> (builtinWord "proj3" *> parenthesized))
+    , node (ETupleProj 4 <$> (builtinWord "proj4" *> parenthesized))
     -- a function of no values, `current()`
     , node (ECall <$> funName <*> ([] <$ (token OpenParen *> token CloseParen)))
     ]
@@ -942,7 +950,7 @@ valueAndArithGrammar funs own = mdo
       builtinWords = Set.fromList
         [ "invert", "blend", "rgb", "hsv", "hsl", "mod", "diff", "diff_bar", "point", "table_size", "filled"
         , "table_cell", "table_point", "in", "pixels", "partial"
-        , "infinity", "chart", "affine", "chordal" ]
+        , "infinity", "chart", "affine", "chordal", "proj1", "proj2", "proj3", "proj4" ]
         `Set.union` Set.fromList (map autocolorModeName [minBound .. maxBound])
         `Set.union` Map.keysSet colors
         `Set.union` Map.keysSet commonFunctions

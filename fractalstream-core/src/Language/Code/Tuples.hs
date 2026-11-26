@@ -16,7 +16,9 @@
 -- @((a, b), c) <- ...@, and tuples nest to the right, as pairs do. Where
 -- the value isn't written as a tuple of the same shape (a pair-valued
 -- variable, say), it's held in one fresh variable and taken apart with
--- projections ('EProj'), which no script can write. A tuple @iterate@
+-- projections ('EProj'), which no script can write. A @_@ in the pattern
+-- stands for a part that isn't wanted: it gets no variable (and can come
+-- more than once). A tuple @iterate@
 -- (@iterate (x, y) -> (e1, e2) until c@) is the loop
 -- "Language.Code.Typecheck" makes of an @iterate@, with a tuple
 -- assignment as its body.
@@ -78,12 +80,12 @@ spliced (Stmt sr node) = case node of
 -- its variable.
 assignments :: SourceRange -> Pattern -> Expr -> (String -> Expr -> StmtF) -> Fresh [Stmt]
 assignments sr p e mk = do
-  case duplicate (patternNames p) of
+  case duplicate (filter (/= "_") (patternNames p)) of
     Just n -> lift (advise (patternRange p) ("`" ++ n ++ "` appears more than once here."))
     Nothing -> pure ()
   (temps, finals) <- parts p e
   pure ([ Stmt sr (SDecl t Nothing x) | (t, x) <- temps ]
-        ++ [ Stmt sr (mk n x) | (n, x) <- finals ])
+        ++ [ Stmt sr (mk n x) | (n, x) <- finals, n /= "_" ])
   where
     -- the fresh variables to declare, and what each pattern variable gets
     parts :: Pattern -> Expr -> Fresh ([(String, Expr)], [(String, Expr)])

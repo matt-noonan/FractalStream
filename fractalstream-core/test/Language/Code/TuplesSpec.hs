@@ -101,6 +101,26 @@ y <- y + w
     it "needs its variables to be declared already" $
       runXY (0, 0) "x, q <- 1, 2" `shouldFailWith` "No variable named q"
 
+  describe "`_` in a tuple of variables" $ do
+    it "stands for a part that isn't wanted, as often as needed" $ do
+      runXY (0, 0) "t := (1.0, 2.0, 3.0)\n(_, y0, _) := t\nx, y <- y0, y0" `shouldGive` (2, 2)
+      runXY (0, 0) "x, _ <- 4.0, 9.0" `shouldGive` (4, 0)
+      runXY (0, 0) "s := 0.0\nfor each (_, b) in [(1.0, 10.0), (2.0, 20.0)]:\n  s <- s + b\nx, y <- s, 0" `shouldGive` (30, 0)
+      runXY (0, 0) "define d:\n  (_, _, c) := (1.0, 2.0, 3.0)\n  x <- c\nrun d" `shouldGive` (3, 0)
+
+    it "has no value" $
+      runXY (0, 0) "(a, _) := (1.0, 2.0)\nx, y <- _, 0" `shouldFailWith` "isn't wanted"
+
+  describe "tuple projections" $ do
+    it "give a tuple's parts, counting (a, b, c) as three" $ do
+      runXY (0, 0) "t := (1.0, 2.0, 3.0)\nx, y <- proj1(t), proj3(t)" `shouldGive` (1, 3)
+      runXY (0, 0) "t := (1.0, 2.0, 3.0, 4.0)\nx, y <- proj2(t), proj4(t)" `shouldGive` (2, 4)
+      runXY (0, 0) "x, y <- proj2((5.0, 6.0)), proj1((5.0, 6.0)) + 1" `shouldGive` (6, 6)
+
+    it "say so when there's no such part" $ do
+      runXY (0, 0) "t := (1.0, 2.0)\nx, y <- proj3(t), 0" `shouldFailWith` "has 2 parts"
+      runXY (0, 0) "x, y <- proj1(5.0), 0" `shouldFailWith` "part of a tuple"
+
   describe "tuple declaration" $ do
 
     it "declares each variable, in scope for the rest of the block" $
