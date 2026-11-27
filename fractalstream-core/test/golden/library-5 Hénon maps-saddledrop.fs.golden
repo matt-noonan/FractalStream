@@ -10,22 +10,22 @@ let `[internal] vanishing radius` = vanishing_radius in:
               block:
                 let `y` = ((m * x) + b) in:
                   block:
-                    let `[internal] fresh #35` = 0 in:
-                      let `[internal] fresh #36` = [internal] iteration limit in:
+                    let `[internal] fresh #36` = 0 in:
+                      let `[internal] fresh #37` = [internal] iteration limit in:
                         block:
-                          if (!let #tuple 0 = (x, y) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #35 < [internal] fresh #36)) then:
-                            do-while (!let #tuple 0 = (x, y) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #35 < [internal] fresh #36)):
+                          if (!let #tuple 0 = (x, y) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #36 < [internal] fresh #37)) then:
+                            do-while (!let #tuple 0 = (x, y) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #36 < [internal] fresh #37)):
                               block:
                                 block:
                                   let `[internal] tuple #0` = let [internal] H.x #0 = x in let [internal] H.y #0 = y in let [internal] Hc.x #1 = [internal] H.x #0 in let [internal] Hc.y #1 = [internal] H.y #0 in let [internal] Hc.cc #1 = c in (((([internal] Hc.x #1 ^ 2:R:C) + [internal] Hc.cc #1) - (a * [internal] Hc.y #1)), [internal] Hc.x #1) in:
                                     block:
                                       set `x` := (1st [internal] tuple #0)
                                       set `y` := (2nd [internal] tuple #0)
-                                set `[internal] fresh #35` := ([internal] fresh #35 + 1)
+                                set `[internal] fresh #36` := ([internal] fresh #36 + 1)
                           else:
                             no-op
-                          set `[internal] iteration count` := [internal] fresh #35
-                          set `[internal] stuck` := ([internal] fresh #35 = [internal] fresh #36)
+                          set `[internal] iteration count` := [internal] fresh #36
+                          set `[internal] stuck` := ([internal] fresh #36 = [internal] fresh #37)
                     block:
                       let `[colorizer] Slice: t` = ([internal] iteration count:R / [colorizer] Slice: color_speed) in:
                         block:
@@ -72,22 +72,22 @@ let `[internal] vanishing radius` = vanishing_radius in:
                           block:
                             let `y` = (2nd [internal] tuple #0) in:
                               block:
-                                let `[internal] fresh #39` = 0 in:
-                                  let `[internal] fresh #40` = [internal] iteration limit in:
+                                let `[internal] fresh #40` = 0 in:
+                                  let `[internal] fresh #41` = [internal] iteration limit in:
                                     block:
-                                      if (!let #tuple 0 = (x, y) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #39 < [internal] fresh #40)) then:
-                                        do-while (!let #tuple 0 = (x, y) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #39 < [internal] fresh #40)):
+                                      if (!let #tuple 0 = (x, y) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #40 < [internal] fresh #41)) then:
+                                        do-while (!let #tuple 0 = (x, y) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #40 < [internal] fresh #41)):
                                           block:
                                             block:
                                               let `[internal] tuple #1` = let [internal] H.x #0 = x in let [internal] H.y #0 = y in let [internal] Hc.x #1 = [internal] H.x #0 in let [internal] Hc.y #1 = [internal] H.y #0 in let [internal] Hc.cc #1 = c in (((([internal] Hc.x #1 ^ 2:R:C) + [internal] Hc.cc #1) - (a * [internal] Hc.y #1)), [internal] Hc.x #1) in:
                                                 block:
                                                   set `x` := (1st [internal] tuple #1)
                                                   set `y` := (2nd [internal] tuple #1)
-                                            set `[internal] fresh #39` := ([internal] fresh #39 + 1)
+                                            set `[internal] fresh #40` := ([internal] fresh #40 + 1)
                                       else:
                                         no-op
-                                      set `[internal] iteration count` := [internal] fresh #39
-                                      set `[internal] stuck` := ([internal] fresh #39 = [internal] fresh #40)
+                                      set `[internal] iteration count` := [internal] fresh #40
+                                      set `[internal] stuck` := ([internal] fresh #40 = [internal] fresh #41)
                                 set `z` := let [internal] γinv.x #0 = x in let [internal] γinv.y #0 = y in (([internal] γinv.y #0 - p) / zoom:C)
                                 let `[colorizer] Unstable manifold: t` = ([internal] iteration count:R / [colorizer] Unstable manifold: color_speed) in:
                                   block:
@@ -123,10 +123,10 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                     block:
                                       let `[internal] previous.z #0` = z in:
                                         block:
-                                          let `[internal] fresh #36` = 0 in:
-                                            let `[internal] fresh #37` = [internal] iteration limit in:
+                                          let `[internal] fresh #37` = 0 in:
+                                            let `[internal] fresh #38` = [internal] iteration limit in:
                                               block:
-                                                do-while (!let #tuple 0 = (x, y) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #36 < [internal] fresh #37)):
+                                                do-while (!let #tuple 0 = (x, y) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #37 < [internal] fresh #38)):
                                                   block:
                                                     block:
                                                       set `[internal] previous.z #0` := z
@@ -138,9 +138,9 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                             set `z` := let [internal] γinv.x #0 = x in let [internal] γinv.y #0 = y in (([internal] γinv.y #0 - p) / zoom:C)
                                                             draw point at (z, 1.0 :+ 0.0)
                                                             draw line from ([internal] previous.z #0, 1.0 :+ 0.0) to (z, 1.0 :+ 0.0)
-                                                    set `[internal] fresh #36` := ([internal] fresh #36 + 1)
-                                                set `[internal] iteration count` := [internal] fresh #36
-                                                set `[internal] stuck` := ([internal] fresh #36 = [internal] fresh #37)
+                                                    set `[internal] fresh #37` := ([internal] fresh #37 + 1)
+                                                set `[internal] iteration count` := [internal] fresh #37
+                                                set `[internal] stuck` := ([internal] fresh #37 = [internal] fresh #38)
 
   -- on drag
 let `[internal] vanishing radius` = vanishing_radius in:
@@ -166,10 +166,10 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                       block:
                                         let `[internal] previous.z #0` = z in:
                                           block:
-                                            let `[internal] fresh #39` = 0 in:
-                                              let `[internal] fresh #40` = [internal] iteration limit in:
+                                            let `[internal] fresh #40` = 0 in:
+                                              let `[internal] fresh #41` = [internal] iteration limit in:
                                                 block:
-                                                  do-while (!let #tuple 0 = (x, y) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #39 < [internal] fresh #40)):
+                                                  do-while (!let #tuple 0 = (x, y) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #40 < [internal] fresh #41)):
                                                     block:
                                                       block:
                                                         set `[internal] previous.z #0` := z
@@ -181,9 +181,9 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                               set `z` := let [internal] γinv.x #0 = x in let [internal] γinv.y #0 = y in (([internal] γinv.y #0 - p) / zoom:C)
                                                               draw point at (z, 1.0 :+ 0.0)
                                                               draw line from ([internal] previous.z #0, 1.0 :+ 0.0) to (z, 1.0 :+ 0.0)
-                                                      set `[internal] fresh #39` := ([internal] fresh #39 + 1)
-                                                  set `[internal] iteration count` := [internal] fresh #39
-                                                  set `[internal] stuck` := ([internal] fresh #39 = [internal] fresh #40)
+                                                      set `[internal] fresh #40` := ([internal] fresh #40 + 1)
+                                                  set `[internal] iteration count` := [internal] fresh #40
+                                                  set `[internal] stuck` := ([internal] fresh #40 = [internal] fresh #41)
 
   -- on refresh
 let `[internal] vanishing radius` = vanishing_radius in:
@@ -229,22 +229,22 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                       block:
                                                         let `[internal] critical_point.y #0` = (2nd [internal] tuple #0) in:
                                                           block:
-                                                            let `[internal] fresh #40` = 0 in:
-                                                              let `[internal] fresh #41` = [internal] iteration limit in:
+                                                            let `[internal] fresh #41` = 0 in:
+                                                              let `[internal] fresh #42` = [internal] iteration limit in:
                                                                 block:
-                                                                  if (!let #tuple 0 = ([internal] critical_point.x #0, [internal] critical_point.y #0) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #40 < [internal] fresh #41)) then:
-                                                                    do-while (!let #tuple 0 = ([internal] critical_point.x #0, [internal] critical_point.y #0) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #40 < [internal] fresh #41)):
+                                                                  if (!let #tuple 0 = ([internal] critical_point.x #0, [internal] critical_point.y #0) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #41 < [internal] fresh #42)) then:
+                                                                    do-while (!let #tuple 0 = ([internal] critical_point.x #0, [internal] critical_point.y #0) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #41 < [internal] fresh #42)):
                                                                       block:
                                                                         block:
                                                                           let `[internal] tuple #1` = let [internal] Hc.x #0 = [internal] critical_point.x #0 in let [internal] Hc.y #0 = [internal] critical_point.y #0 in let [internal] Hc.cc #0 = [internal] critical_point.cc #0 in (((([internal] Hc.x #0 ^ 2:R:C) + [internal] Hc.cc #0) - (a * [internal] Hc.y #0)), [internal] Hc.x #0) in:
                                                                             block:
                                                                               set `[internal] critical_point.x #0` := (1st [internal] tuple #1)
                                                                               set `[internal] critical_point.y #0` := (2nd [internal] tuple #1)
-                                                                        set `[internal] fresh #40` := ([internal] fresh #40 + 1)
+                                                                        set `[internal] fresh #41` := ([internal] fresh #41 + 1)
                                                                   else:
                                                                     no-op
-                                                                  set `[internal] iteration count` := [internal] fresh #40
-                                                                  set `[internal] stuck` := ([internal] fresh #40 = [internal] fresh #41)
+                                                                  set `[internal] iteration count` := [internal] fresh #41
+                                                                  set `[internal] stuck` := ([internal] fresh #41 = [internal] fresh #42)
                                                             if ![internal] stuck then:
                                                               block:
                                                                 let `[internal] critical_point.n #0` = ([internal] iteration count + 2) in:
@@ -268,10 +268,10 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                                                     block:
                                                                                                       let `[internal] [std] capped_newton_root.[internal] previous.x #0 #1` = [internal] [std] capped_newton_root.x #1 in:
                                                                                                         block:
-                                                                                                          let `[internal] fresh #49` = 0 in:
-                                                                                                            let `[internal] fresh #50` = [internal] [std] capped_newton_root.N #1 in:
+                                                                                                          let `[internal] fresh #50` = 0 in:
+                                                                                                            let `[internal] fresh #51` = [internal] [std] capped_newton_root.N #1 in:
                                                                                                               block:
-                                                                                                                do-while (!let [internal] [std] capped_newton_root #1.u1 @73:21 = [internal] [std] capped_newton_root.x #1 in let [internal] [std] capped_newton_root #1.u2 @73:21 = [internal] [std] capped_newton_root.[internal] previous.x #0 #1 in (|([internal] [std] capped_newton_root #1.u1 @73:21 - [internal] [std] capped_newton_root #1.u2 @73:21)| < [internal] critical_point.tol #0) and ([internal] fresh #49 < [internal] fresh #50)):
+                                                                                                                do-while (!let [internal] [std] capped_newton_root #1.u1 @74:21 = [internal] [std] capped_newton_root.x #1 in let [internal] [std] capped_newton_root #1.u2 @74:21 = [internal] [std] capped_newton_root.[internal] previous.x #0 #1 in (|([internal] [std] capped_newton_root #1.u1 @74:21 - [internal] [std] capped_newton_root #1.u2 @74:21)| < [internal] critical_point.tol #0) and ([internal] fresh #50 < [internal] fresh #51)):
                                                                                                                   block:
                                                                                                                     block:
                                                                                                                       set `[internal] [std] capped_newton_root.[internal] previous.x #0 #1` := [internal] [std] capped_newton_root.x #1
@@ -324,11 +324,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                                                                                                                                                                   block:
                                                                                                                                                                                                                     let `[internal] green_gradient.y #3` = (2nd [internal] tuple #2) in:
                                                                                                                                                                                                                       block:
-                                                                                                                                                                                                                        let `[internal] fresh #74` = 0 in:
-                                                                                                                                                                                                                          let `[internal] fresh #75` = [internal] green_gradient.n #3 in:
+                                                                                                                                                                                                                        let `[internal] fresh #75` = 0 in:
+                                                                                                                                                                                                                          let `[internal] fresh #76` = [internal] green_gradient.n #3 in:
                                                                                                                                                                                                                             block:
-                                                                                                                                                                                                                              if (True and ([internal] fresh #74 < [internal] fresh #75)) then:
-                                                                                                                                                                                                                                do-while (True and ([internal] fresh #74 < [internal] fresh #75)):
+                                                                                                                                                                                                                              if (True and ([internal] fresh #75 < [internal] fresh #76)) then:
+                                                                                                                                                                                                                                do-while (True and ([internal] fresh #75 < [internal] fresh #76)):
                                                                                                                                                                                                                                   block:
                                                                                                                                                                                                                                     block:
                                                                                                                                                                                                                                       let `d d [internal] tuple #3/d [internal] green_gradient.w #3/d [internal] [std] capped_newton_root.x #1` = let [internal] Hc.x #0 = [internal] green_gradient.x #3 in let [internal] Hc.y #0 = [internal] green_gradient.y #3 in let [internal] Hc.cc #0 = [internal] green_gradient.cc #3 in ((((-a * d d [internal] green_gradient.y #3/d [internal] green_gradient.w #3/d [internal] [std] capped_newton_root.x #1) + ((2:R:C * [internal] Hc.x #0) * d d [internal] green_gradient.x #3/d [internal] green_gradient.w #3/d [internal] [std] capped_newton_root.x #1)) + ((d [internal] green_gradient.x #3/d [internal] green_gradient.w #3 * 2:R:C) * d [internal] green_gradient.x #3/d [internal] [std] capped_newton_root.x #1)), d d [internal] green_gradient.x #3/d [internal] green_gradient.w #3/d [internal] [std] capped_newton_root.x #1) in:
@@ -347,11 +347,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                                                                                                                                                                                                       set `d [internal] green_gradient.y #3/d [internal] green_gradient.w #3` := (2nd d [internal] tuple #3/d [internal] green_gradient.w #3)
                                                                                                                                                                                                                                                       set `d [internal] green_gradient.y #3/d [internal] [std] capped_newton_root.x #1` := (2nd d [internal] tuple #3/d [internal] [std] capped_newton_root.x #1)
                                                                                                                                                                                                                                                       set `[internal] green_gradient.y #3` := (2nd [internal] tuple #3)
-                                                                                                                                                                                                                                    set `[internal] fresh #74` := ([internal] fresh #74 + 1)
+                                                                                                                                                                                                                                    set `[internal] fresh #75` := ([internal] fresh #75 + 1)
                                                                                                                                                                                                                               else:
                                                                                                                                                                                                                                 no-op
-                                                                                                                                                                                                                              set `[internal] iteration count` := [internal] fresh #74
-                                                                                                                                                                                                                              set `[internal] stuck` := ([internal] fresh #74 = [internal] fresh #75)
+                                                                                                                                                                                                                              set `[internal] iteration count` := [internal] fresh #75
+                                                                                                                                                                                                                              set `[internal] stuck` := ([internal] fresh #75 = [internal] fresh #76)
                                                                                                                                                                                                                         set `d [internal] green_gradient #3/d [internal] [std] capped_newton_root.x #1` := let [internal] divisor #4784051861824965761 = [internal] green_gradient.x #3 in ((d d [internal] green_gradient.x #3/d [internal] green_gradient.w #3/d [internal] [std] capped_newton_root.x #1 - ((d [internal] green_gradient.x #3/d [internal] green_gradient.w #3 / [internal] divisor #4784051861824965761) * d [internal] green_gradient.x #3/d [internal] [std] capped_newton_root.x #1)) / [internal] divisor #4784051861824965761)
                                                                                                                                                                                                                         set `[internal] green_gradient #3` := (d [internal] green_gradient.x #3/d [internal] green_gradient.w #3 / [internal] green_gradient.x #3)
                                                                                                                                                 set `[internal] iteration count` := [internal] green_gradient.iterations #3
@@ -368,9 +368,9 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                                                                                                             else:
                                                                                                                                                               no-op
                                                                                                                                                             set `[internal] [std] capped_newton_root.x #1` := ([internal] [std] capped_newton_root.x #1 - [internal] [std] capped_newton_root.step #1)
-                                                                                                                    set `[internal] fresh #49` := ([internal] fresh #49 + 1)
-                                                                                                                set `[internal] iteration count` := [internal] fresh #49
-                                                                                                                set `[internal] stuck` := ([internal] fresh #49 = [internal] fresh #50)
+                                                                                                                    set `[internal] fresh #50` := ([internal] fresh #50 + 1)
+                                                                                                                set `[internal] iteration count` := [internal] fresh #50
+                                                                                                                set `[internal] stuck` := ([internal] fresh #50 = [internal] fresh #51)
                                                                                                     set `[internal] [std] capped_newton_root #1` := (![internal] stuck, [internal] [std] capped_newton_root.x #1)
                                                                                 set `[internal] iteration count` := [internal] [std] capped_newton_root.iterations #1
                                                                                 set `[internal] stuck` := [internal] [std] capped_newton_root.stuck #1
@@ -429,22 +429,22 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                         block:
                                                           let `[internal] critical_point.y #0` = (2nd [internal] tuple #0) in:
                                                             block:
-                                                              let `[internal] fresh #43` = 0 in:
-                                                                let `[internal] fresh #44` = [internal] iteration limit in:
+                                                              let `[internal] fresh #44` = 0 in:
+                                                                let `[internal] fresh #45` = [internal] iteration limit in:
                                                                   block:
-                                                                    if (!let #tuple 0 = ([internal] critical_point.x #0, [internal] critical_point.y #0) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #43 < [internal] fresh #44)) then:
-                                                                      do-while (!let #tuple 0 = ([internal] critical_point.x #0, [internal] critical_point.y #0) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #43 < [internal] fresh #44)):
+                                                                    if (!let #tuple 0 = ([internal] critical_point.x #0, [internal] critical_point.y #0) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #44 < [internal] fresh #45)) then:
+                                                                      do-while (!let #tuple 0 = ([internal] critical_point.x #0, [internal] critical_point.y #0) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #44 < [internal] fresh #45)):
                                                                         block:
                                                                           block:
                                                                             let `[internal] tuple #1` = let [internal] Hc.x #0 = [internal] critical_point.x #0 in let [internal] Hc.y #0 = [internal] critical_point.y #0 in let [internal] Hc.cc #0 = [internal] critical_point.cc #0 in (((([internal] Hc.x #0 ^ 2:R:C) + [internal] Hc.cc #0) - (a * [internal] Hc.y #0)), [internal] Hc.x #0) in:
                                                                               block:
                                                                                 set `[internal] critical_point.x #0` := (1st [internal] tuple #1)
                                                                                 set `[internal] critical_point.y #0` := (2nd [internal] tuple #1)
-                                                                          set `[internal] fresh #43` := ([internal] fresh #43 + 1)
+                                                                          set `[internal] fresh #44` := ([internal] fresh #44 + 1)
                                                                     else:
                                                                       no-op
-                                                                    set `[internal] iteration count` := [internal] fresh #43
-                                                                    set `[internal] stuck` := ([internal] fresh #43 = [internal] fresh #44)
+                                                                    set `[internal] iteration count` := [internal] fresh #44
+                                                                    set `[internal] stuck` := ([internal] fresh #44 = [internal] fresh #45)
                                                               if ![internal] stuck then:
                                                                 block:
                                                                   let `[internal] critical_point.n #0` = ([internal] iteration count + 2) in:
@@ -468,10 +468,10 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                                                       block:
                                                                                                         let `[internal] [std] capped_newton_root.[internal] previous.x #0 #1` = [internal] [std] capped_newton_root.x #1 in:
                                                                                                           block:
-                                                                                                            let `[internal] fresh #52` = 0 in:
-                                                                                                              let `[internal] fresh #53` = [internal] [std] capped_newton_root.N #1 in:
+                                                                                                            let `[internal] fresh #53` = 0 in:
+                                                                                                              let `[internal] fresh #54` = [internal] [std] capped_newton_root.N #1 in:
                                                                                                                 block:
-                                                                                                                  do-while (!let [internal] [std] capped_newton_root #1.u1 @73:21 = [internal] [std] capped_newton_root.x #1 in let [internal] [std] capped_newton_root #1.u2 @73:21 = [internal] [std] capped_newton_root.[internal] previous.x #0 #1 in (|([internal] [std] capped_newton_root #1.u1 @73:21 - [internal] [std] capped_newton_root #1.u2 @73:21)| < [internal] critical_point.tol #0) and ([internal] fresh #52 < [internal] fresh #53)):
+                                                                                                                  do-while (!let [internal] [std] capped_newton_root #1.u1 @74:21 = [internal] [std] capped_newton_root.x #1 in let [internal] [std] capped_newton_root #1.u2 @74:21 = [internal] [std] capped_newton_root.[internal] previous.x #0 #1 in (|([internal] [std] capped_newton_root #1.u1 @74:21 - [internal] [std] capped_newton_root #1.u2 @74:21)| < [internal] critical_point.tol #0) and ([internal] fresh #53 < [internal] fresh #54)):
                                                                                                                     block:
                                                                                                                       block:
                                                                                                                         set `[internal] [std] capped_newton_root.[internal] previous.x #0 #1` := [internal] [std] capped_newton_root.x #1
@@ -524,11 +524,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                                                                                                                                                                     block:
                                                                                                                                                                                                                       let `[internal] green_gradient.y #3` = (2nd [internal] tuple #2) in:
                                                                                                                                                                                                                         block:
-                                                                                                                                                                                                                          let `[internal] fresh #77` = 0 in:
-                                                                                                                                                                                                                            let `[internal] fresh #78` = [internal] green_gradient.n #3 in:
+                                                                                                                                                                                                                          let `[internal] fresh #78` = 0 in:
+                                                                                                                                                                                                                            let `[internal] fresh #79` = [internal] green_gradient.n #3 in:
                                                                                                                                                                                                                               block:
-                                                                                                                                                                                                                                if (True and ([internal] fresh #77 < [internal] fresh #78)) then:
-                                                                                                                                                                                                                                  do-while (True and ([internal] fresh #77 < [internal] fresh #78)):
+                                                                                                                                                                                                                                if (True and ([internal] fresh #78 < [internal] fresh #79)) then:
+                                                                                                                                                                                                                                  do-while (True and ([internal] fresh #78 < [internal] fresh #79)):
                                                                                                                                                                                                                                     block:
                                                                                                                                                                                                                                       block:
                                                                                                                                                                                                                                         let `d d [internal] tuple #3/d [internal] green_gradient.w #3/d [internal] [std] capped_newton_root.x #1` = let [internal] Hc.x #0 = [internal] green_gradient.x #3 in let [internal] Hc.y #0 = [internal] green_gradient.y #3 in let [internal] Hc.cc #0 = [internal] green_gradient.cc #3 in ((((-a * d d [internal] green_gradient.y #3/d [internal] green_gradient.w #3/d [internal] [std] capped_newton_root.x #1) + ((2:R:C * [internal] Hc.x #0) * d d [internal] green_gradient.x #3/d [internal] green_gradient.w #3/d [internal] [std] capped_newton_root.x #1)) + ((d [internal] green_gradient.x #3/d [internal] green_gradient.w #3 * 2:R:C) * d [internal] green_gradient.x #3/d [internal] [std] capped_newton_root.x #1)), d d [internal] green_gradient.x #3/d [internal] green_gradient.w #3/d [internal] [std] capped_newton_root.x #1) in:
@@ -547,11 +547,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                                                                                                                                                                                                         set `d [internal] green_gradient.y #3/d [internal] green_gradient.w #3` := (2nd d [internal] tuple #3/d [internal] green_gradient.w #3)
                                                                                                                                                                                                                                                         set `d [internal] green_gradient.y #3/d [internal] [std] capped_newton_root.x #1` := (2nd d [internal] tuple #3/d [internal] [std] capped_newton_root.x #1)
                                                                                                                                                                                                                                                         set `[internal] green_gradient.y #3` := (2nd [internal] tuple #3)
-                                                                                                                                                                                                                                      set `[internal] fresh #77` := ([internal] fresh #77 + 1)
+                                                                                                                                                                                                                                      set `[internal] fresh #78` := ([internal] fresh #78 + 1)
                                                                                                                                                                                                                                 else:
                                                                                                                                                                                                                                   no-op
-                                                                                                                                                                                                                                set `[internal] iteration count` := [internal] fresh #77
-                                                                                                                                                                                                                                set `[internal] stuck` := ([internal] fresh #77 = [internal] fresh #78)
+                                                                                                                                                                                                                                set `[internal] iteration count` := [internal] fresh #78
+                                                                                                                                                                                                                                set `[internal] stuck` := ([internal] fresh #78 = [internal] fresh #79)
                                                                                                                                                                                                                           set `d [internal] green_gradient #3/d [internal] [std] capped_newton_root.x #1` := let [internal] divisor #4784051861824965761 = [internal] green_gradient.x #3 in ((d d [internal] green_gradient.x #3/d [internal] green_gradient.w #3/d [internal] [std] capped_newton_root.x #1 - ((d [internal] green_gradient.x #3/d [internal] green_gradient.w #3 / [internal] divisor #4784051861824965761) * d [internal] green_gradient.x #3/d [internal] [std] capped_newton_root.x #1)) / [internal] divisor #4784051861824965761)
                                                                                                                                                                                                                           set `[internal] green_gradient #3` := (d [internal] green_gradient.x #3/d [internal] green_gradient.w #3 / [internal] green_gradient.x #3)
                                                                                                                                                   set `[internal] iteration count` := [internal] green_gradient.iterations #3
@@ -568,9 +568,9 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                                                                                                               else:
                                                                                                                                                                 no-op
                                                                                                                                                               set `[internal] [std] capped_newton_root.x #1` := ([internal] [std] capped_newton_root.x #1 - [internal] [std] capped_newton_root.step #1)
-                                                                                                                      set `[internal] fresh #52` := ([internal] fresh #52 + 1)
-                                                                                                                  set `[internal] iteration count` := [internal] fresh #52
-                                                                                                                  set `[internal] stuck` := ([internal] fresh #52 = [internal] fresh #53)
+                                                                                                                      set `[internal] fresh #53` := ([internal] fresh #53 + 1)
+                                                                                                                  set `[internal] iteration count` := [internal] fresh #53
+                                                                                                                  set `[internal] stuck` := ([internal] fresh #53 = [internal] fresh #54)
                                                                                                       set `[internal] [std] capped_newton_root #1` := (![internal] stuck, [internal] [std] capped_newton_root.x #1)
                                                                                   set `[internal] iteration count` := [internal] [std] capped_newton_root.iterations #1
                                                                                   set `[internal] stuck` := [internal] [std] capped_newton_root.stuck #1
@@ -636,7 +636,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                   let `layers` = (2nd (2nd [internal] tuple #0)) in:
                                     block:
                                       block:
-                                        let `[list at 124:2]` = range(1, layers) in:
+                                        let `[list at 185:2]` = range(1, layers) in:
                                           block:
                                             {TODO: ForEach}
 
@@ -746,22 +746,22 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                 block:
                                                                   let `y` = (2nd [internal] tuple #2) in:
                                                                     block:
-                                                                      let `[internal] fresh #50` = 0 in:
-                                                                        let `[internal] fresh #51` = [internal] iteration limit in:
+                                                                      let `[internal] fresh #51` = 0 in:
+                                                                        let `[internal] fresh #52` = [internal] iteration limit in:
                                                                           block:
-                                                                            if (!let #tuple 0 = (x, y) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #50 < [internal] fresh #51)) then:
-                                                                              do-while (!let #tuple 0 = (x, y) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #50 < [internal] fresh #51)):
+                                                                            if (!let #tuple 0 = (x, y) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #51 < [internal] fresh #52)) then:
+                                                                              do-while (!let #tuple 0 = (x, y) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #51 < [internal] fresh #52)):
                                                                                 block:
                                                                                   block:
                                                                                     let `[internal] tuple #3` = let [internal] Hc.x #0 = x in let [internal] Hc.y #0 = y in let [internal] Hc.cc #0 = c in (((([internal] Hc.x #0 ^ 2:R:C) + [internal] Hc.cc #0) - (a * [internal] Hc.y #0)), [internal] Hc.x #0) in:
                                                                                       block:
                                                                                         set `x` := (1st [internal] tuple #3)
                                                                                         set `y` := (2nd [internal] tuple #3)
-                                                                                  set `[internal] fresh #50` := ([internal] fresh #50 + 1)
+                                                                                  set `[internal] fresh #51` := ([internal] fresh #51 + 1)
                                                                             else:
                                                                               no-op
-                                                                            set `[internal] iteration count` := [internal] fresh #50
-                                                                            set `[internal] stuck` := ([internal] fresh #50 = [internal] fresh #51)
+                                                                            set `[internal] iteration count` := [internal] fresh #51
+                                                                            set `[internal] stuck` := ([internal] fresh #51 = [internal] fresh #52)
                                                                       set `color` := if [internal] stuck then Color 0 0 0 else let [internal] [std] rainbow.t #0 = ([internal] iteration count:R / 20:R) in let [internal] [std] wheel8.t #2 = [internal] [std] rainbow.t #0 in let [internal] [std] wheel8.c1 #2 = Color 255 0 0 in let [internal] [std] wheel8.c2 #2 = Color 255 100 0 in let [internal] [std] wheel8.c3 #2 = Color 255 255 0 in let [internal] [std] wheel8.c4 #2 = Color 0 180 0 in let [internal] [std] wheel8.c5 #2 = let [internal] [std] rgb255.r #1 = 0 in let [internal] [std] rgb255.g #1 = 128 in let [internal] [std] rgb255.b #1 = 128 in rgb(([internal] [std] rgb255.r #1:R / 255:R), ([internal] [std] rgb255.g #1:R / 255:R), ([internal] [std] rgb255.b #1:R / 255:R)) in let [internal] [std] wheel8.c6 #2 = Color 0 0 255 in let [internal] [std] wheel8.c7 #2 = Color 128 0 128 in let [internal] [std] wheel8.c8 #2 = Color 255 0 160 in let [internal] [std] wheel8_at.u #3 = ([internal] [std] wheel8.t #2 mod 1.0) in let [internal] [std] wheel8_at.c1 #3 = [internal] [std] wheel8.c1 #2 in let [internal] [std] wheel8_at.c2 #3 = [internal] [std] wheel8.c2 #2 in let [internal] [std] wheel8_at.c3 #3 = [internal] [std] wheel8.c3 #2 in let [internal] [std] wheel8_at.c4 #3 = [internal] [std] wheel8.c4 #2 in let [internal] [std] wheel8_at.c5 #3 = [internal] [std] wheel8.c5 #2 in let [internal] [std] wheel8_at.c6 #3 = [internal] [std] wheel8.c6 #2 in let [internal] [std] wheel8_at.c7 #3 = [internal] [std] wheel8.c7 #2 in let [internal] [std] wheel8_at.c8 #3 = [internal] [std] wheel8.c8 #2 in if ([internal] [std] wheel8_at.u #3 < 0.5) then let [internal] [std] wheel4_at.u #4 = [internal] [std] wheel8_at.u #3 in let [internal] [std] wheel4_at.lo #4 = 0.0 in let [internal] [std] wheel4_at.c1 #4 = [internal] [std] wheel8_at.c1 #3 in let [internal] [std] wheel4_at.c2 #4 = [internal] [std] wheel8_at.c2 #3 in let [internal] [std] wheel4_at.c3 #4 = [internal] [std] wheel8_at.c3 #3 in let [internal] [std] wheel4_at.c4 #4 = [internal] [std] wheel8_at.c4 #3 in let [internal] [std] wheel4_at.c5 #4 = [internal] [std] wheel8_at.c5 #3 in if ([internal] [std] wheel4_at.u #4 < ([internal] [std] wheel4_at.lo #4 + 0.25)) then let [internal] [std] wheel2_at.u #5 = [internal] [std] wheel4_at.u #4 in let [internal] [std] wheel2_at.lo #5 = [internal] [std] wheel4_at.lo #4 in let [internal] [std] wheel2_at.c1 #5 = [internal] [std] wheel4_at.c1 #4 in let [internal] [std] wheel2_at.c2 #5 = [internal] [std] wheel4_at.c2 #4 in let [internal] [std] wheel2_at.c3 #5 = [internal] [std] wheel4_at.c3 #4 in if ([internal] [std] wheel2_at.u #5 < ([internal] [std] wheel2_at.lo #5 + 0.125)) then blend((8:R * ([internal] [std] wheel2_at.u #5 - [internal] [std] wheel2_at.lo #5)), [internal] [std] wheel2_at.c1 #5, [internal] [std] wheel2_at.c2 #5) else blend((8:R * ([internal] [std] wheel2_at.u #5 - ([internal] [std] wheel2_at.lo #5 + 0.125))), [internal] [std] wheel2_at.c2 #5, [internal] [std] wheel2_at.c3 #5) else let [internal] [std] wheel2_at.u #6 = [internal] [std] wheel4_at.u #4 in let [internal] [std] wheel2_at.lo #6 = ([internal] [std] wheel4_at.lo #4 + 0.25) in let [internal] [std] wheel2_at.c1 #6 = [internal] [std] wheel4_at.c3 #4 in let [internal] [std] wheel2_at.c2 #6 = [internal] [std] wheel4_at.c4 #4 in let [internal] [std] wheel2_at.c3 #6 = [internal] [std] wheel4_at.c5 #4 in if ([internal] [std] wheel2_at.u #6 < ([internal] [std] wheel2_at.lo #6 + 0.125)) then blend((8:R * ([internal] [std] wheel2_at.u #6 - [internal] [std] wheel2_at.lo #6)), [internal] [std] wheel2_at.c1 #6, [internal] [std] wheel2_at.c2 #6) else blend((8:R * ([internal] [std] wheel2_at.u #6 - ([internal] [std] wheel2_at.lo #6 + 0.125))), [internal] [std] wheel2_at.c2 #6, [internal] [std] wheel2_at.c3 #6) else let [internal] [std] wheel4_at.u #7 = [internal] [std] wheel8_at.u #3 in let [internal] [std] wheel4_at.lo #7 = 0.5 in let [internal] [std] wheel4_at.c1 #7 = [internal] [std] wheel8_at.c5 #3 in let [internal] [std] wheel4_at.c2 #7 = [internal] [std] wheel8_at.c6 #3 in let [internal] [std] wheel4_at.c3 #7 = [internal] [std] wheel8_at.c7 #3 in let [internal] [std] wheel4_at.c4 #7 = [internal] [std] wheel8_at.c8 #3 in let [internal] [std] wheel4_at.c5 #7 = [internal] [std] wheel8_at.c1 #3 in if ([internal] [std] wheel4_at.u #7 < ([internal] [std] wheel4_at.lo #7 + 0.25)) then let [internal] [std] wheel2_at.u #8 = [internal] [std] wheel4_at.u #7 in let [internal] [std] wheel2_at.lo #8 = [internal] [std] wheel4_at.lo #7 in let [internal] [std] wheel2_at.c1 #8 = [internal] [std] wheel4_at.c1 #7 in let [internal] [std] wheel2_at.c2 #8 = [internal] [std] wheel4_at.c2 #7 in let [internal] [std] wheel2_at.c3 #8 = [internal] [std] wheel4_at.c3 #7 in if ([internal] [std] wheel2_at.u #8 < ([internal] [std] wheel2_at.lo #8 + 0.125)) then blend((8:R * ([internal] [std] wheel2_at.u #8 - [internal] [std] wheel2_at.lo #8)), [internal] [std] wheel2_at.c1 #8, [internal] [std] wheel2_at.c2 #8) else blend((8:R * ([internal] [std] wheel2_at.u #8 - ([internal] [std] wheel2_at.lo #8 + 0.125))), [internal] [std] wheel2_at.c2 #8, [internal] [std] wheel2_at.c3 #8) else let [internal] [std] wheel2_at.u #9 = [internal] [std] wheel4_at.u #7 in let [internal] [std] wheel2_at.lo #9 = ([internal] [std] wheel4_at.lo #7 + 0.25) in let [internal] [std] wheel2_at.c1 #9 = [internal] [std] wheel4_at.c3 #7 in let [internal] [std] wheel2_at.c2 #9 = [internal] [std] wheel4_at.c4 #7 in let [internal] [std] wheel2_at.c3 #9 = [internal] [std] wheel4_at.c5 #7 in if ([internal] [std] wheel2_at.u #9 < ([internal] [std] wheel2_at.lo #9 + 0.125)) then blend((8:R * ([internal] [std] wheel2_at.u #9 - [internal] [std] wheel2_at.lo #9)), [internal] [std] wheel2_at.c1 #9, [internal] [std] wheel2_at.c2 #9) else blend((8:R * ([internal] [std] wheel2_at.u #9 - ([internal] [std] wheel2_at.lo #9 + 0.125))), [internal] [std] wheel2_at.c2 #9, [internal] [std] wheel2_at.c3 #9)
                                                       else:
                                                         if (status = lost) then:
