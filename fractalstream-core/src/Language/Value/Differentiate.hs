@@ -279,20 +279,47 @@ boundFree (Syn _ node) = case node of
 -- | @a + b@ and @a k@, part by part where @a@ and @b@ are pairs (a
 -- function's derivative, where the function gives a pair, as a tuple
 -- assignment's does): the language has no arithmetic on pairs.
+--
+-- (Both are derivatives of the same body, so a binding one has at its top
+-- may be in the other too, further in: a quotient's divisor, by the same
+-- name, for the same value. Taken out to cover both, it's taken out of
+-- the other one, too: see 'dropRebinding'.)
 addParts :: SourceRange -> Expr -> Expr -> Expr
 addParts sr a b = case (a, b) of
   (Syn psr (EPair a1 a2), Syn _ (EPair b1 b2)) -> Syn psr (EPair (addParts sr a1 b1) (addParts sr a2 b2))
   -- (both from the same function body: the same binding, once)
-  (Syn lsr (ELet n v a'), Syn _ (ELet m _ b')) | n == m -> Syn lsr (ELet n v (addParts sr a' b'))
-  (Syn lsr (ELet n v a'), _) | not (isInt 0 b) -> Syn lsr (ELet n v (addParts sr a' b))
-  (_, Syn lsr (ELet n v b')) | not (isInt 0 a) -> Syn lsr (ELet n v (addParts sr a b'))
+  (Syn lsr (ELet n v a'), Syn _ (ELet m _ b')) | n == m ->
+    Syn lsr (ELet n v (addParts sr (dropRebinding n v a') (dropRebinding n v b')))
+  (Syn lsr (ELet n v a'), _) | not (isInt 0 b) -> Syn lsr (ELet n v (addParts sr a' (dropRebinding n v b)))
+  (_, Syn lsr (ELet n v b')) | not (isInt 0 a) -> Syn lsr (ELet n v (addParts sr (dropRebinding n v a) b'))
   _ -> add sr a b
 
 scaleParts :: SourceRange -> Expr -> Expr -> Expr
 scaleParts sr a k = case a of
   Syn psr (EPair a1 a2) -> Syn psr (EPair (scaleParts sr a1 k) (scaleParts sr a2 k))
-  Syn lsr (ELet n v a') -> Syn lsr (ELet n v (scaleParts sr a' k))
+  Syn lsr (ELet n v a') -> Syn lsr (ELet n v (scaleParts sr a' (dropRebinding n v k)))
   _ -> mul sr a k
+
+-- | Inside a binding of @n@ to @v@: the expression without its own
+-- bindings of @n@ to the same @v@ (which would be bound again where it's
+-- already bound, which isn't allowed). Not under anything that binds one
+-- of @v@'s variables, where @v@ might mean something else.
+dropRebinding :: String -> Expr -> Expr -> Expr
+dropRebinding n v = go
+  where
+    vars = boundFree v
+    shape = show . fmap (const ())
+    vShape = shape v
+    rebinds = any (`Set.member` vars)
+    go e@(Syn ann node) = case node of
+      ELet m v' b
+        | m == n && shape v' == vShape -> go b
+        | rebinds [m] -> e
+      ELambda ps _ | rebinds ps -> e
+      ERemove _ m _ | rebinds [m] -> e
+      EFind _ m _ _ | rebinds [m] -> e
+      ETransform _ m _ | rebinds [m] -> e
+      _ -> Syn ann (fmap go node)
 
 -- | The derivatives of the builtin functions: given the argument @a@ and
 -- its derivative @da@, the derivative of @f(a)@.

@@ -733,6 +733,14 @@ x <- total|] `shouldBe` Right 41
       "x <- 2\nx <- diff(1 / x, x, 3)" `gives` (-0.375)
       "x <- 2\nx <- diff((1 / x) / x, x, 2)" `gives` 0.375
       "x <- 1\nx <- diff(x / (x + 1), x, 2)" `gives` (-0.25)
+      -- (the derivative of a derivative of a sum with a quotient in it, by
+      -- a variable that moves both of its arguments: the inner derivative's
+      -- divisor, bound once by each of the outer one's two parts, isn't
+      -- bound twice. f = cos w + p^2 / (3 - cos 2w), at w = 0.7, p = 1.3:
+      -- f_ww + f_wp)
+      unlines [ "g(w, p) := diff(cos(w) + p^2 / (3 - cos(2 w)), w)"
+              , "h(w, p, t) := diff(g(w + t, p + t), t)"
+              , "x <- h(0.7, 1.3, 0.0)" ] `near` (-0.9688602560747719)
 
     it "follow a variable back through a loop" $
       -- z_3 = (c^2 + c)^2 + c, so dz_3/dc = 2 (c^2 + c) (2 c + 1) + 1 = 4 at c = 0.5
