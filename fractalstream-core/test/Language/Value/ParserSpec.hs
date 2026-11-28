@@ -272,6 +272,34 @@ spec = do
       parseF "3 2² cos(1) sin(1)" `shouldBe` Right (3 * 4 * cos 1 * sin 1)
       parseF "2^cos(0) sin(1)" `shouldBe` Right (2 * sin 1)
 
+    it "takes an exponent that starts with a minus" $ do
+      parseF "2^-2" `shouldBe` Right 0.25
+      parseF "2^- 2" `shouldBe` Right 0.25
+      parseF "2^-(1 + 1)" `shouldBe` Right 0.25
+      parseF "2^-cos pi" `shouldBe` Right 2
+      parseF "2^-cos(pi)" `shouldBe` Right 2
+      -- (the minus binds as tightly as the exponent: x^-2 y is x^(-2) y)
+      parseF "2^-1 3" `shouldBe` Right 1.5
+      parseF "2 2^-1 3" `shouldBe` Right 3
+      parseF "1 - 2^-1" `shouldBe` Right 0.5
+      parseF "2^-1 + 1" `shouldBe` Right 1.5
+      parseF "4^-2^-1" `shouldBe` Right 0.5     -- 4^(-(2^(-1)))
+      parseF "2^-2^2" `shouldBe` Right 0.0625   -- 2^(-(2^2))
+      -- (a minus before the base is as before: -2^2 is -(2^2))
+      parseF "-2^2" `shouldBe` Right (-4)
+      parseF "-2^-1" `shouldBe` Right (-0.5)
+
+    it "takes a minus before a product that ends in a function without parentheses" $ do
+      parseF "-2 cos pi" `shouldBe` Right 2
+      parseF "-2 cos 0" `shouldBe` Right (-2)
+      parseF "1 + -2 cos 0" `shouldBe` Right (-1)
+      parseF "1 - 2 cos 0" `shouldBe` Right (-1)
+      parseF "(-2 cos 0)" `shouldBe` Right (-2)
+      parseF "-3 2 cos 0" `shouldBe` Right (-6)
+      parseF "-2^2 cos 0" `shouldBe` Right (-4)
+      parseF "-2 sin 1 cos 2" `shouldBe` Right (-(2 * sin 1 * cos 2))
+      parseF "-cos 0" `shouldBe` Right (-1)
+
   describe "when parsing parameterized values" $ do
 
     let env = declare @"x" IntegerType $ endOfDecls
