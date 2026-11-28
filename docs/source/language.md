@@ -130,7 +130,8 @@ A function applied in parentheses is a value like any other in a product, so `co
 followed by other functions in a product: `2 cos z sin z` is fine, but `cos z 2` is an error,
 since it could mean `(cos z) 2` or `cos(z 2)`. Write `cos(z) 2` or `cos(2 z)`, whichever you mean.
 For the same reason, `sin x^2` is an error, since it could mean `(sin x)^2` or `sin(x^2)`; write
-`sin(x)^2` for the first.
+`sin(x)^2` for the first. A minus sign in front of a product is the whole product's: `-2 cos x`
+means `-(2 cos x)`, and `-x y` means `-(x y)`.
 
 `mod(a, b)` is the remainder of dividing `a` by `b`: the number `r` with `a = b k + r` for a whole
 number `k`, and `0 ≤ r < |b|`. It is never negative, whatever the signs of `a` and `b`:
@@ -141,8 +142,11 @@ both ways: `mod(a, 0)` and `a // 0` are both 0.
 `round(x)` is the whole number nearest `x`, with a half rounding away from zero: `round(2.5)` is 3
 and `round(-2.5)` is -3. `floor(x)` rounds down, and `ceiling(x)` (or `ceil(x)`) rounds up.
 
+An exponent can start with a minus sign: `x^-2` means `x^(-2)`, `10^-6` is 0.000001, and `e^-x²`
+means `e^(-x²)`. The minus sign belongs to the exponent alone, so `x^-2 y` means `x^(-2) y`.
+
 A power of integers is an integer (`2^10` is 1024), unless the exponent is written as a negative
-number (`10^(-2)` is 0.01). With a variable exponent, as in `2^k`, the power is an integer, unless
+number (`10^-2` is 0.01). With a variable exponent, as in `2^k`, the power is an integer, unless
 it is used as a real number (as in `2^k / 3`), where it is computed as a real power. Integers are
 64-bit, and wrap around when they overflow: `2^k` is 0 for `k` of 64 or more, so use `2.0^k`
 when `k` can be large.
