@@ -583,6 +583,9 @@ valueAndArithGrammar funs own = mdo
     , node (EBin OpMul <$> concatenatedFunAps <*> funAp)
     , node (EBin OpMul <$> concatenatedAtoms <*> noFunPower)
     , node (EUn OpNeg <$> (token Minus *> concatenatedAtoms'))
+    -- (and before one that ends in a function applied without
+    -- parentheses: `-2 cos x` is -(2 cos(x)))
+    , node (EUn OpNeg <$> (token Minus *> concatenatedFunAps'))
     , node (EBin OpDiv <$> (mulOrDiv <* token Divide) <*> negated)
     , node (EBin OpIDiv <$> (mulOrDiv <* token IntegerDivide) <*> negated)
     , negated
@@ -590,6 +593,9 @@ valueAndArithGrammar funs own = mdo
 
   concatenatedAtoms' <- rule $ node
     (EBin OpMul <$> concatenatedAtoms <*> noFunPower)
+
+  concatenatedFunAps' <- rule $ node
+    (EBin OpMul <$> concatenatedFunAps <*> funAp)
 
   concatenatedAtoms <- ruleChoice
     [ node (EBin OpMul <$> concatenatedAtoms <*> noFunPower)
@@ -678,14 +684,21 @@ valueAndArithGrammar funs own = mdo
     ]
 
   power <- ruleChoice
-    [ node (EBin OpPow <$> (atom <* token Caret) <*> power)
-    , node ((funAp *> token Caret *> power) $> powerOfBareApplication)
+    [ node (EBin OpPow <$> (atom <* token Caret) <*> exponent)
+    , node ((funAp *> token Caret *> exponent) $> powerOfBareApplication)
     , atomOrFunAp
     , fraction
     ]
 
+  -- (an exponent may start with a minus: `x^-2` is x^(-2), and `e^-x²`
+  -- is e^(-(x²)))
+  exponent <- ruleChoice
+    [ node (EUn OpNeg <$> (token Minus *> power))
+    , power
+    ]
+
   noFunPower <- ruleChoice
-    [ node (EBin OpPow <$> (atom <* token Caret) <*> power)
+    [ node (EBin OpPow <$> (atom <* token Caret) <*> exponent)
     , atom
     , fraction
     ]
@@ -898,6 +911,7 @@ valueAndArithGrammar funs own = mdo
     , node (EBin OpMul <$> concatenatedFunApsNp <*> funAp)
     , node (EBin OpMul <$> concatenatedAtomsNp <*> noFunPowerNp)
     , node (EUn OpNeg <$> (token Minus *> concatenatedAtomsNp'))
+    , node (EUn OpNeg <$> (token Minus *> concatenatedFunApsNp'))
     , node (EBin OpDiv <$> (mulOrDivNp <* token Divide) <*> negatedNp)
     , node (EBin OpIDiv <$> (mulOrDivNp <* token IntegerDivide) <*> negatedNp)
     , negatedNp
@@ -905,6 +919,9 @@ valueAndArithGrammar funs own = mdo
 
   concatenatedAtomsNp' <- rule $ node
     (EBin OpMul <$> concatenatedAtomsNp <*> noFunPowerNp)
+
+  concatenatedFunApsNp' <- rule $ node
+    (EBin OpMul <$> concatenatedFunApsNp <*> funAp)
 
   concatenatedAtomsNp <- ruleChoice
     [ node (EBin OpMul <$> concatenatedAtomsNp <*> noFunPowerNp)
@@ -925,13 +942,18 @@ valueAndArithGrammar funs own = mdo
     ]
 
   powerNp <- ruleChoice
-    [ node (EBin OpPow <$> (atomNp <* token Caret) <*> powerNp)
-    , node ((funAp *> token Caret *> powerNp) $> powerOfBareApplication)
+    [ node (EBin OpPow <$> (atomNp <* token Caret) <*> exponentNp)
+    , node ((funAp *> token Caret *> exponentNp) $> powerOfBareApplication)
     , atomOrFunApNp
     ]
 
+  exponentNp <- ruleChoice
+    [ node (EUn OpNeg <$> (token Minus *> powerNp))
+    , powerNp
+    ]
+
   noFunPowerNp <- ruleChoice
-    [ node (EBin OpPow <$> (atomNp <* token Caret) <*> powerNp)
+    [ node (EBin OpPow <$> (atomNp <* token Caret) <*> exponentNp)
     , atomNp
     ]
 

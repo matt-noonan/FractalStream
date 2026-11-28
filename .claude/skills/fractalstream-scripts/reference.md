@@ -371,7 +371,7 @@ gives 0 both ways. A cast is written `(e : T)`.
 
 **No scientific notation**: `1e-6` (or `3.5e-2`, `2e5`, `1E-6`) is an error,
 since `e` is Euler's number; the message says what to write instead. Write
-`0.000001` or `10^(-6)`. (`2e`, `2e - 1`, and `2e^x` still mean Euler's
+`0.000001` or `10^-6`. (`2e`, `2e - 1`, and `2e^x` still mean Euler's
 number.) A power of integers with a negative constant exponent is real:
 `10^(-2)` is 0.01 and `2 * 10^(-8) - 0.25` is -0.24999998; using one as an
 integer is a type error. With a variable exponent (`2^k`) the power is an
@@ -410,10 +410,13 @@ write `cos(2 z)`. A parenthesized application is an ordinary factor
 anywhere: `cos(z) 2`, `a sin(x) b`, `conj(z) diff(z, c)` all multiply. A bare
 one (`cos z`) can only be followed by other functions: `2 cos z sin z` is
 fine, `cos z 2` is not. `sin x^2` is rejected as ambiguous: write
-`sin(x)^2` or `sin(x^2)`.
+`sin(x)^2` or `sin(x^2)`. A leading minus is the whole product's: `-2 cos x`
+is `-(2 cos x)`.
 
 Powers: `z^2`, `z²` (superscript digits, `z⁻¹`), `2^(-m / S)`, `z^(1/3)`
-(principal branch). `e^(...)` and `e^{...}` for exponentials. Any of
+(principal branch). An exponent can start with a minus: `x^-2` is `x^(-2)`,
+`e^-x²` is `e^(-x²)`, and `x^-2 y` is `x^(-2) y` (the minus is the exponent's
+alone). `e^(...)` and `e^{...}` for exponentials. Any of
 `()`, `[]`, `{}` group, but `[...]` with commas is a list.
 
 Comparisons: `<`, `>`, `<=`/`≤`, `>=`/`≥` (integers and reals only).
